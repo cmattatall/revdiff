@@ -1993,9 +1993,9 @@ func TestModel_AnnotateCtrlEOpensEditor(t *testing.T) {
 	m.startAnnotation()
 	m.annot.input.SetValue("seeded text")
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlE})
+	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}, Alt: true})
 	model := result.(Model)
-	require.NotNil(t, cmd, "Ctrl+E should return a tea.Cmd for ExecProcess")
+	require.NotNil(t, cmd, "Alt+E should return a tea.Cmd for ExecProcess")
 	require.Len(t, fake.CommandCalls(), 1, "editor.Command should be called once")
 	assert.Equal(t, "seeded text", fake.CommandCalls()[0].Content, "editor must receive current input value")
 	assert.True(t, model.annot.annotating, "annotation mode should remain active so editorFinishedMsg routes back correctly")
@@ -2008,7 +2008,7 @@ func TestModel_AnnotateCtrlEOpensEditor(t *testing.T) {
 
 func TestModel_AnnotateCtrlEOpensEditorFileLevel(t *testing.T) {
 	// mirrors TestModel_AnnotateCtrlEOpensEditor but starts from the file-level
-	// annotation entry point — asserts Ctrl+E also dispatches the editor on
+	// annotation entry point — asserts Alt+E also dispatches the editor on
 	// startFileAnnotation() flow.
 	m := testModel([]string{"a.go"}, nil)
 	m.tree = testNewFileTree([]string{"a.go"})
@@ -2021,9 +2021,9 @@ func TestModel_AnnotateCtrlEOpensEditorFileLevel(t *testing.T) {
 	m.startFileAnnotation()
 	m.annot.input.SetValue("file seed")
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlE})
+	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}, Alt: true})
 	model := result.(Model)
-	require.NotNil(t, cmd, "Ctrl+E should return a tea.Cmd for ExecProcess on file-level path")
+	require.NotNil(t, cmd, "Alt+E should return a tea.Cmd for ExecProcess on file-level path")
 	require.Len(t, fake.CommandCalls(), 1, "editor.Command should be called once on file-level path")
 	assert.Equal(t, "file seed", fake.CommandCalls()[0].Content, "editor must receive current file-level input value")
 	assert.True(t, model.annot.annotating, "annotation mode should remain active so editorFinishedMsg routes back correctly")
@@ -2109,7 +2109,7 @@ func TestModel_EditorFinishedErrorPreservesStateFileLevel(t *testing.T) {
 }
 
 func TestModel_EditorFinishedRetryAfterErrorReSeedsWithPreservedInput(t *testing.T) {
-	// after an editor error, pressing Ctrl+E again must re-seed the editor with
+	// after an editor error, pressing Alt+E again must re-seed the editor with
 	// the preserved input content so the user can resume without losing work.
 	lines := []diff.DiffLine{
 		{NewNum: 1, Content: "added", ChangeType: diff.ChangeAdd},
@@ -2127,8 +2127,8 @@ func TestModel_EditorFinishedRetryAfterErrorReSeedsWithPreservedInput(t *testing
 	m.startAnnotation()
 	m.annot.input.SetValue("retry content")
 
-	// first Ctrl+E
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlE})
+	// first Alt+E
+	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}, Alt: true})
 	model := result.(Model)
 	require.NotNil(t, cmd)
 	require.Len(t, fake.CommandCalls(), 1)
@@ -2141,8 +2141,8 @@ func TestModel_EditorFinishedRetryAfterErrorReSeedsWithPreservedInput(t *testing
 	assert.True(t, model.annot.annotating, "annotating must remain true after error")
 	assert.Equal(t, "retry content", model.annot.input.Value(), "input preserved after error")
 
-	// second Ctrl+E — editor must be re-invoked with the preserved content
-	result, cmd2 := model.Update(tea.KeyMsg{Type: tea.KeyCtrlE})
+	// second Alt+E — editor must be re-invoked with the preserved content
+	result, cmd2 := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}, Alt: true})
 	model = result.(Model)
 	require.NotNil(t, cmd2)
 	require.Len(t, fake.CommandCalls(), 2, "editor must be invoked again on retry")
@@ -2286,7 +2286,7 @@ func TestModel_ReAnnotateMultiLineKeepsInputEmptyAndStashesOriginal(t *testing.T
 }
 
 func TestModel_ReAnnotateMultiLineCtrlESeedsFromStash(t *testing.T) {
-	// Ctrl+E after re-opening a multi-line annotation must seed the editor
+	// Alt+E after re-opening a multi-line annotation must seed the editor
 	// with the full stored content, not the empty textinput value.
 	lines := []diff.DiffLine{
 		{NewNum: 1, Content: "added", ChangeType: diff.ChangeAdd},
@@ -2306,13 +2306,13 @@ func TestModel_ReAnnotateMultiLineCtrlESeedsFromStash(t *testing.T) {
 	require.Empty(t, m.annot.input.Value())
 	require.Equal(t, "top\nmiddle\nbottom", m.annot.existingMultiline)
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlE})
+	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}, Alt: true})
 	model := result.(Model)
 	require.NotNil(t, cmd)
 	require.Len(t, fake.CommandCalls(), 1)
 	assert.Equal(t, "top\nmiddle\nbottom", fake.CommandCalls()[0].Content, "editor must be seeded from existingMultiline when input is empty")
 	assert.True(t, model.annot.annotating, "annotation mode remains open while editor runs")
-	assert.Equal(t, "top\nmiddle\nbottom", model.annot.existingMultiline, "stash preserved across Ctrl+E")
+	assert.Equal(t, "top\nmiddle\nbottom", model.annot.existingMultiline, "stash preserved across Alt+E")
 }
 
 func TestModel_ReAnnotateMultiLineTypedOverwriteWins(t *testing.T) {
@@ -2357,7 +2357,7 @@ func TestModel_ReAnnotateSingleLinePreFillsAsBefore(t *testing.T) {
 	m.startAnnotation()
 	assert.Equal(t, "plain note", m.annot.input.Value(), "single-line annotation still pre-fills the textinput")
 	assert.Empty(t, m.annot.existingMultiline, "single-line path does not populate existingMultiline")
-	assert.Contains(t, m.annot.input.Placeholder, "Ctrl+E", "placeholder unchanged for single-line re-annotation")
+	assert.Contains(t, m.annot.input.Placeholder, "Alt+E", "placeholder unchanged for single-line re-annotation")
 }
 
 func TestModel_ReAnnotateFileLevelMultiLineStashedNotFlattened(t *testing.T) {
@@ -2375,11 +2375,11 @@ func TestModel_ReAnnotateFileLevelMultiLineStashedNotFlattened(t *testing.T) {
 
 	fake := mockEditor("", nil)
 	m.editor = fake
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlE})
+	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}, Alt: true})
 	model := result.(Model)
 	require.NotNil(t, cmd)
 	require.Len(t, fake.CommandCalls(), 1)
-	assert.Equal(t, "file\nnote\nspans", fake.CommandCalls()[0].Content, "file-level Ctrl+E seeds from stash")
+	assert.Equal(t, "file\nnote\nspans", fake.CommandCalls()[0].Content, "file-level Alt+E seeds from stash")
 
 	// Esc must clear the stash so it doesn't leak to a later annotation on a different line
 	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -2536,7 +2536,7 @@ func TestModel_EditorFinishedFileLevelGoesToTop(t *testing.T) {
 }
 
 func TestModel_AnnotationPlaceholderMentionsEditor(t *testing.T) {
-	// placeholder is an affordance surfacing Ctrl+E binding without a help overlay.
+	// placeholder is an affordance surfacing Alt+E binding without a help overlay.
 	lines := []diff.DiffLine{
 		{NewNum: 1, Content: "x", ChangeType: diff.ChangeAdd},
 	}
@@ -2548,14 +2548,78 @@ func TestModel_AnnotationPlaceholderMentionsEditor(t *testing.T) {
 	m.nav.diffCursor = 0
 
 	m.startAnnotation()
-	assert.Contains(t, m.annot.input.Placeholder, "Ctrl+E", "line-level placeholder must mention Ctrl+E")
+	assert.Contains(t, m.annot.input.Placeholder, "Alt+E", "line-level placeholder must mention Alt+E")
 
 	m2 := testModel([]string{"a.go"}, nil)
 	m2.tree = testNewFileTree([]string{"a.go"})
 	m2.layout.focus = paneDiff
 	m2.file.name = "a.go"
 	m2.startFileAnnotation()
-	assert.Contains(t, m2.annot.input.Placeholder, "Ctrl+E", "file-level placeholder must mention Ctrl+E")
+	assert.Contains(t, m2.annot.input.Placeholder, "Alt+E", "file-level placeholder must mention Alt+E")
+}
+
+func TestModel_AnnotationStandardTextEditing(t *testing.T) {
+	newModel := func() Model {
+		lines := []diff.DiffLine{{NewNum: 1, Content: "line", ChangeType: diff.ChangeContext}}
+		m := testModel([]string{"a.go"}, map[string][]diff.DiffLine{"a.go": lines})
+		m.layout.focus, m.file.name, m.file.lines, m.nav.diffCursor = paneDiff, "a.go", lines, 0
+		m.startAnnotation()
+		m.annot.input.SetValue("αβ γδ")
+		m.annot.input.SetCursor(3)
+		return m
+	}
+
+	for _, tt := range []struct {
+		name string
+		key  tea.KeyType
+		want string
+		pos  int
+	}{
+		{"home", tea.KeyCtrlA, "αβ γδ", 0},
+		{"end", tea.KeyCtrlE, "αβ γδ", 5},
+		{"back", tea.KeyCtrlB, "αβ γδ", 2},
+		{"forward", tea.KeyCtrlF, "αβ γδ", 4},
+		{"delete word before cursor", tea.KeyCtrlW, "γδ", 0},
+		{"delete before cursor", tea.KeyCtrlU, "γδ", 0},
+		{"delete after cursor", tea.KeyCtrlK, "αβ ", 3},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			m := newModel()
+			result, _ := m.Update(tea.KeyMsg{Type: tt.key})
+			model := result.(Model)
+			assert.Equal(t, tt.want, model.annot.input.Value())
+			assert.Equal(t, tt.pos, model.annot.input.Position())
+		})
+	}
+}
+
+func TestModel_DefaultAltEAndCustomCtrlEOpenEditor(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		custom bool
+		msg    tea.KeyMsg
+	}{
+		{"default alt+e", false, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}, Alt: true}},
+		{"custom ctrl+e", true, tea.KeyMsg{Type: tea.KeyCtrlE}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			lines := []diff.DiffLine{{NewNum: 1, Content: "line", ChangeType: diff.ChangeContext}}
+			m := testModel([]string{"a.go"}, map[string][]diff.DiffLine{"a.go": lines})
+			m.layout.focus, m.file.name, m.file.lines, m.nav.diffCursor = paneDiff, "a.go", lines, 0
+			if tt.custom {
+				m.keymap.Bind("ctrl+e", keymap.ActionOpenEditor)
+			}
+			fake := mockEditor("edited", nil)
+			m.editor = fake
+			m.startAnnotation()
+			m.annot.input.SetValue("seed")
+
+			_, cmd := m.Update(tt.msg)
+			require.NotNil(t, cmd)
+			require.Len(t, fake.CommandCalls(), 1)
+			assert.Equal(t, "seed", fake.CommandCalls()[0].Content)
+		})
+	}
 }
 
 func TestModel_AnnotationPlaceholderRemappedEditor(t *testing.T) {
@@ -2567,7 +2631,7 @@ func TestModel_AnnotationPlaceholderRemappedEditor(t *testing.T) {
 	m.file.lines = lines
 	m.nav.diffCursor = 0
 
-	m.keymap.Unbind("ctrl+e")
+	m.keymap.Unbind("alt+e")
 	m.keymap.Bind("ctrl+g", keymap.ActionOpenEditor)
 
 	m.startAnnotation()
@@ -2584,7 +2648,7 @@ func TestModel_AnnotationPlaceholderUnboundEditor(t *testing.T) {
 	m.file.lines = lines
 	m.nav.diffCursor = 0
 
-	m.keymap.Unbind("ctrl+e")
+	m.keymap.Unbind("alt+e")
 
 	m.startAnnotation()
 	assert.NotContains(t, m.annot.input.Placeholder, "Ctrl+E", "placeholder must not mention editor when unbound")
@@ -2600,7 +2664,7 @@ func TestModel_RemappedEditorKeyOpensEditor(t *testing.T) {
 	m.file.lines = lines
 	m.nav.diffCursor = 0
 
-	m.keymap.Unbind("ctrl+e")
+	m.keymap.Unbind("alt+e")
 	m.keymap.Bind("ctrl+g", keymap.ActionOpenEditor)
 
 	fake := mockEditor("edited", nil)
@@ -2626,15 +2690,15 @@ func TestModel_UnboundEditorKeyFallsThrough(t *testing.T) {
 	m.file.lines = lines
 	m.nav.diffCursor = 0
 
-	m.keymap.Unbind("ctrl+e")
+	m.keymap.Unbind("alt+e")
 
 	fake := mockEditor("edited", nil)
 	m.editor = fake
 
 	m.startAnnotation()
 
-	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlE})
-	assert.Empty(t, fake.CommandCalls(), "unbound ctrl+e must not open editor")
+	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}, Alt: true})
+	assert.Empty(t, fake.CommandCalls(), "unbound alt+e must not open editor")
 }
 
 func TestModel_VisualRowToDiffLine_EmptyFile(t *testing.T) {

@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -28,14 +27,14 @@ type filePickerOverlay struct {
 	entries    []string
 	cursor     int
 	offset     int
-	filter     string
+	filter     filterInput
 	height     int
 	popupWidth int
 }
 
 func (f *filePickerOverlay) open(spec FilePickerSpec) {
 	f.all = slices.Clone(spec.Paths)
-	f.filter = ""
+	f.filter.open()
 	f.entries = slices.Clone(f.all)
 	f.cursor = 0
 	f.offset = 0
@@ -48,10 +47,10 @@ func (f *filePickerOverlay) open(spec FilePickerSpec) {
 }
 
 func (f *filePickerOverlay) applyFilter() {
-	if f.filter == "" {
+	if f.filter.Value() == "" {
 		f.entries = slices.Clone(f.all)
 	} else {
-		needle := strings.ToLower(f.filter)
+		needle := strings.ToLower(f.filter.Value())
 		f.entries = f.entries[:0]
 		for _, path := range f.all {
 			if strings.Contains(strings.ToLower(path), needle) {
@@ -95,7 +94,7 @@ func (f *filePickerOverlay) render(ctx RenderCtx, mgr *Manager) string {
 	}
 
 	title := fmt.Sprintf(" files (%d) ", len(f.all))
-	if f.filter != "" {
+	if f.filter.Value() != "" {
 		title = fmt.Sprintf(" files (%d/%d) ", len(f.entries), len(f.all))
 	}
 	box := ctx.Resolver.Style(style.StyleKeyFilePickerBox).Width(f.popupWidth).Render(strings.Join(parts, "\n"))
@@ -108,12 +107,7 @@ func (f *filePickerOverlay) render(ctx RenderCtx, mgr *Manager) string {
 }
 
 func (f *filePickerOverlay) renderFilter(resolver Resolver) string {
-	if f.filter == "" {
-		return "  " + string(resolver.Color(style.ColorKeyMutedFg)) + "type to filter..." + string(style.ResetFg)
-	}
-	filterWidth := max(f.popupWidth-filePickerBorderPad-3, 0) // 2-cell indent + 1-cell cursor
-	displayFilter := runewidth.Truncate(f.filter, filterWidth, "…")
-	return "  " + displayFilter + string(resolver.Color(style.ColorKeyAccentFg)) + "│" + string(style.ResetFg)
+	return f.filter.render(f.popupWidth-filePickerBorderPad, resolver)
 }
 
 func (f *filePickerOverlay) formatEntry(path string, width int, selected bool, resolver Resolver) string {
@@ -156,8 +150,12 @@ func (f *filePickerOverlay) maxVisible() int {
 }
 
 func (f *filePickerOverlay) handleKey(msg tea.KeyMsg, action keymap.Action) Outcome {
-	if f.appendPrintableRunes(msg) {
-		return Outcome{Kind: OutcomeNone}
+	before := f.filter.Value()
+	if handled, cmd := f.filter.handleKey(msg); handled {
+		if f.filter.Value() != before {
+			f.applyFilter()
+		}
+		return Outcome{Kind: OutcomeNone, Cmd: cmd}
 	}
 	if action == keymap.ActionJumpFile {
 		return Outcome{Kind: OutcomeClosed}
@@ -175,44 +173,15 @@ func (f *filePickerOverlay) handleKey(msg tea.KeyMsg, action keymap.Action) Outc
 	case tea.KeyEnter:
 		return f.chooseCurrent()
 	case tea.KeyEsc:
-		if f.filter == "" {
+		if f.filter.Value() == "" {
 			return Outcome{Kind: OutcomeClosed}
 		}
-		f.filter = ""
+		f.filter.Reset()
 		f.applyFilter()
-		return Outcome{Kind: OutcomeNone}
-	case tea.KeyBackspace:
-		if f.filter != "" {
-			runes := []rune(f.filter)
-			f.filter = string(runes[:len(runes)-1])
-			f.applyFilter()
-		}
 		return Outcome{Kind: OutcomeNone}
 	default:
 		return Outcome{Kind: OutcomeNone}
 	}
-}
-
-// appendPrintableRunes gives unmodified text input priority over configured
-// single-rune actions such as the default j/k navigation bindings. Modified
-// runes and non-printable keys remain available for configured actions.
-func (f *filePickerOverlay) appendPrintableRunes(msg tea.KeyMsg) bool {
-	if msg.Type == tea.KeySpace && !msg.Alt {
-		f.filter += " "
-		f.applyFilter()
-		return true
-	}
-	if msg.Type != tea.KeyRunes || msg.Alt || len(msg.Runes) == 0 {
-		return false
-	}
-	for _, r := range msg.Runes {
-		if !unicode.IsPrint(r) {
-			return false
-		}
-	}
-	f.filter += string(msg.Runes)
-	f.applyFilter()
-	return true
 }
 
 func (f *filePickerOverlay) chooseCurrent() Outcome {

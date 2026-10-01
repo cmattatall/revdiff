@@ -299,7 +299,7 @@ func defaultBindings() map[string]Action {
 		"A":      ActionAnnotateFile,
 		"d":      ActionDeleteAnnotation,
 		"@":      ActionAnnotList,
-		"ctrl+e": ActionOpenEditor,
+		"alt+e":  ActionOpenEditor,
 		"}":      ActionNextAnnotation,
 		"{":      ActionPrevAnnotation,
 		"O":      ActionFlushOutput,

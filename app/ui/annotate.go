@@ -326,14 +326,18 @@ func (m *Model) deleteAnnotation() tea.Cmd {
 }
 
 // editorKeyDisplay returns the display name for the open_editor binding
-// (e.g. "Ctrl+E") for use in placeholder text. Returns empty when unbound.
+// (e.g. "Alt+E") for use in placeholder text. Returns empty when unbound.
 // Filters out chord bindings since they don't fire during annotation input.
 func (m Model) editorKeyDisplay() string {
 	keys := m.keymap.KeysFor(keymap.ActionOpenEditor)
 	var single []string
 	for _, k := range keys {
 		if strings.Index(k, ">") <= 0 {
-			single = append(single, m.displayKeyName(k))
+			display := m.displayKeyName(k)
+			if strings.HasPrefix(display, "alt+") {
+				display = "Alt+" + strings.ToUpper(strings.TrimPrefix(display, "alt+"))
+			}
+			single = append(single, display)
 		}
 	}
 	return strings.Join(single, " / ")

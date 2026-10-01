@@ -72,6 +72,34 @@ func TestModel_JumpFilePrintableNavigationRunesFilter(t *testing.T) {
 	assert.NotNil(t, cmd)
 }
 
+func TestModel_JumpFileTerminalEditingKeys(t *testing.T) {
+	for _, tt := range []struct {
+		key  tea.KeyMsg
+		want string
+	}{
+		{tea.KeyMsg{Type: tea.KeyCtrlW}, "target file.go"},
+		{tea.KeyMsg{Type: tea.KeyBackspace, Alt: true}, "target file.go"},
+		{tea.KeyMsg{Type: tea.KeyCtrlU}, "a.go"},
+	} {
+		t.Run(tt.key.String(), func(t *testing.T) {
+			m := filePickerModel([]string{"a.go", "target file.go"})
+			m.keymap.Bind("ctrl+w>x", keymap.ActionQuit)
+			m.keymap.Bind("alt+backspace", keymap.ActionJumpFile)
+			m.openFilePicker()
+			result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("target nonsense")})
+			result, cmd := result.(Model).Update(tt.key)
+			m = result.(Model)
+			assert.Nil(t, cmd)
+			require.True(t, m.overlay.Active())
+			assert.Empty(t, m.keys.chordPending, "editing must not start a configured chord")
+			result, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			m = result.(Model)
+			assert.False(t, m.overlay.Active())
+			assert.Equal(t, tt.want, m.tree.SelectedFile())
+		})
+	}
+}
+
 func TestModel_JumpFileCurrentSelectionFocusesDiffWithoutReload(t *testing.T) {
 	m := filePickerModel([]string{"a.go", "b.go"})
 	m.layout.focus = paneTree

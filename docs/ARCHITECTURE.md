@@ -159,7 +159,9 @@ across files by concern to keep files under ~500 lines:
   `ThemeCatalog`)
 - **`filepicker.go`** — file picker open and selected-path jump integration; delegates
   visible-order/filter ownership to `FileTreeComponent` and loading to the guarded file loader
-- **`search.go`** — search input handling, match computation, navigation
+- **`search.go`** — search input handling, match computation, navigation. Search and annotation
+  inputs use Bubbles `textinput`; picker filters use the same component so terminal editing
+  behavior is consistent across all single-line text entry.
 - **`mouse.go`** — mouse event routing: `handleMouse` dispatch, `hitTest` pane classification
   (`hitZone`), wheel/left-click helpers (`clickTree`, `clickDiff`), layout helpers
   (`statusBarHeight`, `diffTopRow`, `treeTopRow`). Diff-pane wheel events defer both the cursor pin
@@ -523,7 +525,7 @@ be independently toggled.
 User presses 'a' on diff line
   → annotating = true, annotateInput focused
   → Enter → store.Add(file, line, text)  (single-line fast path)
-  → Ctrl+E → openEditor()
+  → Alt+E → openEditor()
       → editor.Editor.Command(seed)     (app/editor)
       → tea.ExecProcess(cmd, complete)  (suspends bubbletea, hands over tty)
       → editorFinishedMsg{content, err, target...}

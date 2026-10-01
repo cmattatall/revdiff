@@ -120,6 +120,64 @@ func TestFilePickerBackspaceAndEscapeBehavior(t *testing.T) {
 	assert.False(t, mgr.Active())
 }
 
+func TestFilePickerWordDeletion(t *testing.T) {
+	keys := []tea.KeyMsg{
+		{Type: tea.KeyCtrlW},
+		{Type: tea.KeyBackspace, Alt: true},
+		{Type: tea.KeyCtrlH, Alt: true},
+	}
+	for _, msg := range keys {
+		for _, tt := range []struct{ input, want string }{
+			{"docs/release notes.md", "docs/release "},
+			{"docs/release notes.md  ", "docs/release "},
+			{"模型\u2003尾巴 ", "模型\u2003"},
+			{"src/model.go", ""},
+			{" \u2003 ", ""},
+		} {
+			t.Run(msg.String()+"/"+tt.input, func(t *testing.T) {
+				mgr := NewManager()
+				mgr.OpenFilePicker(FilePickerSpec{Paths: []string{"docs/release draft.md", "docs/release notes.md", "README.md"}})
+				mgr.filePick.filter = tt.input
+				mgr.filePick.cursor, mgr.filePick.offset = 1, 1
+				out := mgr.HandleKey(msg, keymap.ActionJumpFile)
+				assert.Equal(t, OutcomeNone, out.Kind, "editing takes priority over configured actions")
+				assert.True(t, mgr.Active())
+				assert.Equal(t, tt.want, mgr.filePick.filter)
+				assert.Zero(t, mgr.filePick.cursor)
+				assert.Zero(t, mgr.filePick.offset)
+				switch tt.want {
+				case "docs/release ":
+					assert.Equal(t, []string{"docs/release draft.md", "docs/release notes.md"}, mgr.filePick.entries)
+				case "":
+					assert.Equal(t, mgr.filePick.all, mgr.filePick.entries)
+				default:
+					assert.Empty(t, mgr.filePick.entries)
+				}
+			})
+		}
+	}
+}
+
+func TestFilePickerClearFilterAndControlBackspace(t *testing.T) {
+	mgr := NewManager()
+	mgr.OpenFilePicker(filePickerSpec())
+	mgr.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("模具")}, "")
+	mgr.HandleKey(tea.KeyMsg{Type: tea.KeyCtrlH}, "")
+	assert.Equal(t, "模", mgr.filePick.filter, "Ctrl+H removes one Unicode rune")
+	mgr.HandleKey(tea.KeyMsg{Type: tea.KeyCtrlU}, keymap.ActionHalfPageUp)
+	assert.Empty(t, mgr.filePick.filter)
+	assert.Equal(t, mgr.filePick.all, mgr.filePick.entries)
+	assert.True(t, mgr.Active(), "Ctrl+U clears without closing")
+
+	mgr.filePick.cursor = 2
+	for _, msg := range []tea.KeyMsg{{Type: tea.KeyCtrlW}, {Type: tea.KeyCtrlU}, {Type: tea.KeyBackspace, Alt: true}, {Type: tea.KeyCtrlH}} {
+		out := mgr.HandleKey(msg, keymap.ActionUp)
+		assert.Equal(t, OutcomeNone, out.Kind)
+		assert.Empty(t, mgr.filePick.filter)
+		assert.Equal(t, 2, mgr.filePick.cursor, "editing an empty filter must not move the selection")
+	}
+}
+
 func TestFilePickerJumpActionCloses(t *testing.T) {
 	mgr := NewManager()
 	mgr.OpenFilePicker(filePickerSpec())

@@ -153,6 +153,37 @@ func TestModel_StartSearch(t *testing.T) {
 	assert.True(t, model.search.input.Focused(), "search input should be focused")
 }
 
+func TestModel_SearchStandardTextEditing(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		key  tea.KeyType
+		want string
+		pos  int
+	}{
+		{"home", tea.KeyCtrlA, "αβ γδ", 0},
+		{"end", tea.KeyCtrlE, "αβ γδ", 5},
+		{"back", tea.KeyCtrlB, "αβ γδ", 2},
+		{"forward", tea.KeyCtrlF, "αβ γδ", 4},
+		{"delete word before cursor", tea.KeyCtrlW, "γδ", 0},
+		{"delete before cursor", tea.KeyCtrlU, "γδ", 0},
+		{"delete after cursor", tea.KeyCtrlK, "αβ ", 3},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			m := testModel(nil, nil)
+			m.search.active = true
+			m.search.input = textinput.New()
+			m.search.input.Focus()
+			m.search.input.SetValue("αβ γδ")
+			m.search.input.SetCursor(3)
+
+			result, _ := m.Update(tea.KeyMsg{Type: tt.key})
+			model := result.(Model)
+			assert.Equal(t, tt.want, model.search.input.Value())
+			assert.Equal(t, tt.pos, model.search.input.Position())
+		})
+	}
+}
+
 func TestModel_StartSearchOnlyFromDiffPane(t *testing.T) {
 	lines := []diff.DiffLine{{NewNum: 1, Content: "line1", ChangeType: diff.ChangeContext}}
 	m := testModel([]string{"a.go"}, map[string][]diff.DiffLine{"a.go": lines})

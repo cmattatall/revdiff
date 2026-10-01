@@ -31,7 +31,7 @@ type ExternalEditor interface {
 	SourceCommand(path string, line int) (*exec.Cmd, error)
 }
 
-// editorFinishedMsg is dispatched after the external editor spawned via Ctrl+E
+// editorFinishedMsg is dispatched after the external editor spawned via Alt+E
 // exits. The target fields (fileName, fileLevel, line, changeType) are
 // captured when the editor is opened so subsequent cursor movement or file
 // navigation during editing does not misroute the saved annotation. The seed
@@ -63,7 +63,7 @@ func (m *Model) openEditor() tea.Cmd {
 	content := m.annot.input.Value()
 	// when re-editing an existing multi-line annotation, the textinput is kept
 	// empty (sanitizer would flatten \n). seed the editor from the stashed
-	// original so Ctrl+E resumes with the full content, not a blank file.
+	// original so the editor shortcut resumes with the full content, not a blank file.
 	if content == "" && m.annot.existingMultiline != "" {
 		content = m.annot.existingMultiline
 	}

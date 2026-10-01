@@ -25,7 +25,7 @@ type themeSelectOverlay struct {
 	entries           []ThemeItem
 	cursor            int
 	offset            int
-	filter            string
+	filter            filterInput
 	lastPreviewedName string
 	height            int // last known terminal height, updated on render
 	popupWidth        int // last known popup width, updated on render; used by handleLeftClick
@@ -33,7 +33,7 @@ type themeSelectOverlay struct {
 
 func (t *themeSelectOverlay) open(spec ThemeSelectSpec) {
 	t.all = spec.Items
-	t.filter = ""
+	t.filter.open()
 	t.lastPreviewedName = ""
 	t.applyFilter()
 
@@ -50,13 +50,13 @@ func (t *themeSelectOverlay) open(spec ThemeSelectSpec) {
 }
 
 func (t *themeSelectOverlay) applyFilter() {
-	if t.filter == "" {
+	if t.filter.Value() == "" {
 		t.entries = t.all
 		t.cursor = 0
 		t.offset = 0
 		return
 	}
-	lower := strings.ToLower(t.filter)
+	lower := strings.ToLower(t.filter.Value())
 	filtered := make([]ThemeItem, 0, len(t.all))
 	for _, item := range t.all {
 		if strings.Contains(strings.ToLower(item.Name), lower) {
@@ -107,7 +107,7 @@ func (t *themeSelectOverlay) render(ctx RenderCtx, mgr *Manager) string {
 	total := len(t.all)
 	showing := len(t.entries)
 	title := fmt.Sprintf(" themes (%d) ", total)
-	if t.filter != "" {
+	if t.filter.Value() != "" {
 		title = fmt.Sprintf(" themes (%d/%d) ", showing, total)
 	}
 
@@ -122,13 +122,7 @@ func (t *themeSelectOverlay) render(ctx RenderCtx, mgr *Manager) string {
 }
 
 func (t *themeSelectOverlay) renderFilter(resolver Resolver) string {
-	accent := resolver.Color(style.ColorKeyAccentFg)
-	muted := resolver.Color(style.ColorKeyMutedFg)
-
-	if t.filter == "" {
-		return "  " + string(muted) + "type to filter..." + string(style.ResetFg)
-	}
-	return "  " + t.filter + string(accent) + "│" + string(style.ResetFg)
+	return t.filter.render(t.popupWidth-themePopupBorderPad, resolver)
 }
 
 func (t *themeSelectOverlay) formatEntry(item ThemeItem, width int, selected bool, resolver Resolver) string {
@@ -180,6 +174,16 @@ func (t *themeSelectOverlay) maxVisible() int {
 }
 
 func (t *themeSelectOverlay) handleKey(msg tea.KeyMsg, action keymap.Action) Outcome {
+	before := t.filter.Value()
+	if handled, cmd := t.filter.handleKey(msg); handled {
+		out := Outcome{Kind: OutcomeNone, Cmd: cmd}
+		if t.filter.Value() != before {
+			t.applyFilter()
+			out = t.previewOutcome()
+			out.Cmd = cmd
+		}
+		return out
+	}
 	if action == keymap.ActionThemeSelect {
 		return Outcome{Kind: OutcomeThemeCanceled}
 	}
@@ -187,27 +191,18 @@ func (t *themeSelectOverlay) handleKey(msg tea.KeyMsg, action keymap.Action) Out
 	switch msg.Type {
 	case tea.KeyEnter:
 		if len(t.entries) == 0 {
-			t.filter = ""
+			t.filter.Reset()
 			return Outcome{Kind: OutcomeThemeCanceled}
 		}
 		return Outcome{Kind: OutcomeThemeConfirmed, ThemeChoice: &ThemeChoice{Name: t.entries[t.cursor].Name}}
 
 	case tea.KeyEsc:
-		if t.filter != "" {
-			t.filter = ""
+		if t.filter.Value() != "" {
+			t.filter.Reset()
 			t.applyFilter()
 			return t.previewOutcome()
 		}
 		return Outcome{Kind: OutcomeThemeCanceled}
-
-	case tea.KeyBackspace:
-		if t.filter != "" {
-			runes := []rune(t.filter)
-			t.filter = string(runes[:len(runes)-1])
-			t.applyFilter()
-			return t.previewOutcome()
-		}
-		return Outcome{Kind: OutcomeNone}
 
 	case tea.KeyUp:
 		if t.moveCursorBy(-1) {
@@ -220,11 +215,6 @@ func (t *themeSelectOverlay) handleKey(msg tea.KeyMsg, action keymap.Action) Out
 			return t.previewOutcome()
 		}
 		return Outcome{Kind: OutcomeNone}
-
-	case tea.KeyRunes:
-		t.filter += string(msg.Runes)
-		t.applyFilter()
-		return t.previewOutcome()
 
 	default:
 		return Outcome{Kind: OutcomeNone}

@@ -55,6 +55,7 @@ type Outcome struct {
 	AnnotationTarget *AnnotationTarget
 	ThemeChoice      *ThemeChoice
 	FileChoice       *FileChoice
+	Cmd              tea.Cmd // asynchronous input work, such as reading the clipboard
 }
 
 // RenderCtx carries per-render parameters passed to Compose.
@@ -298,6 +299,36 @@ func (m *Manager) HandleKey(msg tea.KeyMsg, action keymap.Action) Outcome {
 	}
 
 	return out
+}
+
+// HandleInput delivers asynchronous editor results only to their original popup.
+// Reopening a popup creates a new input identity, discarding late clipboard reads.
+func (m *Manager) HandleInput(msg tea.Msg) Outcome {
+	input, ok := msg.(filterInputMsg)
+	if !ok {
+		return Outcome{}
+	}
+	switch m.kind {
+	case KindFilePicker:
+		if input.identity == m.filePick.filter.identity {
+			before := m.filePick.filter.Value()
+			m.filePick.filter.Model, _ = m.filePick.filter.Update(input.msg)
+			if m.filePick.filter.Value() != before {
+				m.filePick.applyFilter()
+			}
+		}
+	case KindThemeSelect:
+		if input.identity == m.themeSel.filter.identity {
+			before := m.themeSel.filter.Value()
+			m.themeSel.filter.Model, _ = m.themeSel.filter.Update(input.msg)
+			if m.themeSel.filter.Value() != before {
+				m.themeSel.applyFilter()
+				return m.themeSel.previewOutcome()
+			}
+		}
+	default:
+	}
+	return Outcome{}
 }
 
 // HandleMouse routes a mouse event to the active overlay. wheel events drive
