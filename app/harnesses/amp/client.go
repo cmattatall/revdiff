@@ -1,4 +1,4 @@
-// Package amp connects a review to an explicitly selected local Amp thread.
+// Package amp connects a review to a discovered or explicitly selected local Amp thread.
 package amp
 
 import (
@@ -22,6 +22,7 @@ type descriptor struct {
 	Token   string `json:"token"`
 	Root    string `json:"root"`
 	Thread  string `json:"thread"`
+	Title   string `json:"title,omitempty"`
 }
 
 // Client sends feedback; retrying identical pending content reuses its request ID.
@@ -62,6 +63,14 @@ func New(path, root string) (*Client, error) {
 		Transport:     &http.Transport{Proxy: nil},
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
 	}}, nil
+}
+
+// HarnessName identifies the harness providing this session.
+func (c *Client) HarnessName() string { return "amp" }
+
+// DisplayName returns the cached session title and thread ID without IO.
+func (c *Client) DisplayName() string {
+	return strings.TrimSpace(c.descriptor.Title + " " + c.descriptor.Thread)
 }
 
 // Send returns success only after Amp acknowledges appending the feedback.

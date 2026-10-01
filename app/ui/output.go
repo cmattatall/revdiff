@@ -29,6 +29,9 @@ func (m Model) handleFlushOutput() (tea.Model, tea.Cmd) {
 	if m.live.sender != nil {
 		return m.sendFeedback()
 	}
+	if m.live.discover != nil {
+		return m.discoverFeedback(true)
+	}
 	n := m.store.Count()
 	if n == 0 {
 		m.output.hint = "No annotations to flush"

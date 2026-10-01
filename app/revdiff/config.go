@@ -124,6 +124,12 @@ func (o options) startupUntracked() bool {
 	return true
 }
 
+// ampApplicable keeps automatic and explicit connections in working-tree reviews.
+func (o options) ampApplicable() bool {
+	return o.ref() == "" && !o.Staged && !o.AllFiles && !o.Stdin &&
+		o.CompareOld == "" && o.CompareNew == "" && o.Output == "" && o.PostFlushCommand == ""
+}
+
 // parseArgs parses CLI arguments with config file support.
 // config file is loaded first, then CLI args override.
 // precedence: CLI flags > env vars > config file > built-in defaults.
@@ -176,8 +182,7 @@ func parseArgs(args []string) (options, error) {
 	}
 	opts.PostFlushCommand = strings.TrimSpace(opts.PostFlushCommand)
 
-	if opts.Amp != "" && (opts.ref() != "" || opts.Staged || opts.AllFiles || opts.Stdin ||
-		opts.CompareOld != "" || opts.CompareNew != "" || opts.Output != "" || opts.PostFlushCommand != "") {
+	if opts.Amp != "" && !opts.ampApplicable() {
 		return options{}, errors.New("--amp requires a working-tree review without refs, --staged, --all-files, --stdin, --compare-old/--compare-new, --output, or --post-flush-command")
 	}
 

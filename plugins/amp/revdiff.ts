@@ -1,9 +1,9 @@
 import type { PluginAPI, PluginCommandContext, PluginThread } from '@ampcode/plugin'
 
 import { randomBytes } from 'node:crypto'
-import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
-import { tmpdir } from 'node:os'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 export const description = 'Connect revdiff in a sibling terminal to the current Amp thread.'
@@ -25,7 +25,8 @@ async function showConnection(thread: PluginThread, descriptor: string): Promise
     type: 'user-message',
     content: [
       'Revdiff is connected. Setup information for the human user, not a request for the agent to run commands or edit files.',
-      'Run this command in the sibling terminal, in the same Git checkout:',
+      'Run revdiff in the sibling terminal, in the same directory, to connect automatically.',
+      'If multiple Amp sessions match, select this thread with:',
       '',
       '```sh',
       `${shellQuote('revdiff')} --amp ${shellQuote(descriptor)} --untracked`,
@@ -46,6 +47,7 @@ async function closeServer(server: Server): Promise<void> {
 export default async function revdiffPlugin(amp: PluginAPI): Promise<void> {
   const connections = new Map<string, Connection>()
   const connecting = new Map<string, Promise<void>>()
+  const disconnected = new Set<string>()
 
   async function disconnect(threadID: string): Promise<boolean> {
     const connection = connections.get(threadID)
@@ -56,14 +58,14 @@ export default async function revdiffPlugin(amp: PluginAPI): Promise<void> {
     return true
   }
 
-  async function connect(ctx: PluginCommandContext): Promise<void> {
+  async function connect(ctx: PluginCommandContext, announce: boolean): Promise<void> {
     if (!ctx.thread) {
       await ctx.ui.notify('Start a thread before connecting revdiff.')
       return
     }
     const existing = connections.get(ctx.thread.id)
     if (existing) {
-      await showConnection(ctx.thread, existing.descriptor)
+      if (announce) await showConnection(ctx.thread, existing.descriptor)
       return
     }
     const workspaceURI = ctx.system.workspaceRoot
@@ -76,10 +78,12 @@ export default async function revdiffPlugin(amp: PluginAPI): Promise<void> {
     const token = randomBytes(32).toString('hex')
     const outcomes = new Map<string, Outcome>()
     const thread: PluginThread = ctx.thread
+    // A title is optional metadata; failure to read it must not prevent review.
+    const title = await thread.title.get().catch(() => null)
 
     const server = createServer((request, response) => {
       void (async () => {
-        if (request.method !== 'POST' || request.url !== '/feedback') {
+        if (!['GET', 'POST'].includes(request.method ?? '') || request.url !== '/feedback') {
           response.writeHead(404).end('not found')
           return
         }
@@ -89,6 +93,11 @@ export default async function revdiffPlugin(amp: PluginAPI): Promise<void> {
         }
         if (request.headers.authorization !== `Bearer ${token}`) {
           response.writeHead(401).end('unauthorized')
+          return
+        }
+        if (request.method === 'GET') {
+          response.writeHead(200, { 'Content-Type': 'application/json' })
+            .end(JSON.stringify({ version: 1, root, thread: thread.id }))
           return
         }
 
@@ -156,7 +165,15 @@ export default async function revdiffPlugin(amp: PluginAPI): Promise<void> {
     })
     const address = server.address()
     if (!address || typeof address === 'string') throw new Error('revdiff server has no TCP address')
-    const directory = await mkdtemp(join(tmpdir(), 'revdiff-amp-')).catch(async (error) => {
+    const directory = await (async () => {
+      const registry = join(homedir(), '.cache/revdiff/amp')
+      await mkdir(registry, { recursive: true, mode: 0o700 })
+      const info = await lstat(registry)
+      if (!info.isDirectory() || (info.mode & 0o077) !== 0 || info.uid !== process.getuid?.()) {
+        throw new Error('revdiff connection registry must be a private directory owned by you')
+      }
+      return mkdtemp(join(registry, 'session-'))
+    })().catch(async (error) => {
       await closeServer(server)
       throw error
     })
@@ -168,6 +185,7 @@ export default async function revdiffPlugin(amp: PluginAPI): Promise<void> {
         token,
         root,
         thread: thread.id,
+        ...(title ? { title } : {}),
       }), { mode: 0o600 })
       connections.set(thread.id, { server, directory, descriptor })
     } catch (error) {
@@ -175,24 +193,46 @@ export default async function revdiffPlugin(amp: PluginAPI): Promise<void> {
       await rm(directory, { recursive: true, force: true })
       throw error
     }
-    await showConnection(thread, descriptor)
+    if (announce) await showConnection(thread, descriptor)
   }
 
+  async function ensureConnection(ctx: PluginCommandContext, announce: boolean): Promise<void> {
+    if (!ctx.thread) return connect(ctx, announce)
+    const id = ctx.thread.id
+    const pending = connecting.get(id)
+    if (pending) {
+      await pending
+      const connection = connections.get(id)
+      if (announce && connection) await showConnection(ctx.thread, connection.descriptor)
+      return
+    }
+    const task = connect(ctx, announce)
+    connecting.set(id, task)
+    try { await task } finally { connecting.delete(id) }
+  }
+
+  async function autoConnect(_event: unknown, ctx: PluginCommandContext): Promise<void> {
+    if (!ctx.thread || !ctx.system.workspaceRoot || disconnected.has(ctx.thread.id)) return
+    try {
+      await ensureConnection(ctx, false)
+    } catch (error) {
+      amp.logger.log('revdiff automatic connection failed', error)
+    }
+  }
+  amp.on('session.start', autoConnect)
+  // Also registers after reloading the plugin in an already-open session.
+  amp.on('agent.start', autoConnect)
   amp.registerCommand('revdiff-connect', {
     category: 'revdiff', title: 'connect', description: 'Connect sibling-terminal revdiff to this thread',
   }, async (ctx) => {
-    if (!ctx.thread) return connect(ctx)
-    const id = ctx.thread.id
-    const pending = connecting.get(id)
-    if (pending) return pending
-    const task = connect(ctx)
-    connecting.set(id, task)
-    try { await task } finally { connecting.delete(id) }
+    if (ctx.thread) disconnected.delete(ctx.thread.id)
+    await ensureConnection(ctx, true)
   })
   amp.registerCommand('revdiff-disconnect', {
     category: 'revdiff', title: 'disconnect', description: 'Disconnect revdiff from this thread',
   }, async (ctx) => {
     if (!ctx.thread) return void await ctx.ui.notify('No current thread to disconnect.')
+    disconnected.add(ctx.thread.id)
     await connecting.get(ctx.thread.id)
     const removed = await disconnect(ctx.thread.id)
     await ctx.ui.notify(removed ? 'Revdiff disconnected.' : 'Revdiff is not connected to this thread.')

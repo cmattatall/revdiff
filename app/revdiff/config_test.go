@@ -1233,6 +1233,7 @@ func TestParseArgsAmp(t *testing.T) {
 	opts, err := parseArgs(append(noConfigArgs(t), "--amp", "connection.json", "--untracked"))
 	require.NoError(t, err)
 	require.Equal(t, "connection.json", opts.Amp)
+	require.True(t, opts.ampApplicable())
 	for _, args := range [][]string{
 		{"HEAD"}, {"main", "topic"}, {"--staged"}, {"--all-files"}, {"--stdin"},
 		{"--compare-old=a", "--compare-new=b"}, {"--output=out.md"}, {"--post-flush-command=cat"},
@@ -1242,4 +1243,20 @@ func TestParseArgsAmp(t *testing.T) {
 			require.Error(t, err)
 		})
 	}
+}
+
+func TestOptionsAmpApplicable(t *testing.T) {
+	require.True(t, (options{}).ampApplicable())
+	require.True(t, (options{Untracked: true, Only: []string{"README.md"}}).ampApplicable())
+	for _, opts := range []options{
+		{Staged: true}, {AllFiles: true}, {Stdin: true}, {CompareOld: "old"}, {CompareNew: "new"},
+		{Output: "out.md"}, {PostFlushCommand: "cat"},
+	} {
+		require.False(t, opts.ampApplicable(), "%+v", opts)
+	}
+	var opts options
+	opts.Refs.Base = "HEAD"
+	require.False(t, opts.ampApplicable())
+	opts.Refs.Base, opts.Refs.Against = "", "topic"
+	require.False(t, opts.ampApplicable())
 }

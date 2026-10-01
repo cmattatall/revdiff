@@ -2,6 +2,7 @@ package ui
 
 import (
 	"encoding/json"
+	"fmt"
 	"slices"
 	"time"
 
@@ -11,9 +12,12 @@ import (
 	"github.com/umputun/revdiff/app/diff"
 )
 
-// FeedbackSender acknowledges feedback after appending it to the selected thread.
+// FeedbackSender delivers feedback to a bound harness session.
+// Name methods return cached metadata and must not perform IO.
 type FeedbackSender interface {
 	Send(content string) error
+	HarnessName() string
+	DisplayName() string
 }
 
 // HunkStager stages the displayed change, rejecting stale content.
@@ -21,21 +25,108 @@ type HunkStager interface {
 	StageHunk(path string, displayed []diff.DiffLine, cursor int) error
 }
 
+type discoveryState int
+
+const (
+	discoveryIdle discoveryState = iota
+	discoveryBackground
+	discoveryForSend
+)
+
+type liveOperation int
+
+const (
+	liveIdle liveOperation = iota
+	liveSending
+	liveStaging
+)
+
+// Discovery may overlap staging. Sending and staging are mutually exclusive;
+// a failed send returns to idle with its pending snapshot retained for retry.
 type liveState struct {
-	sender  FeedbackSender
-	stager  HunkStager
-	sending bool
-	staging bool
-	pending []annotation.Annotation
-	content string
+	sender      FeedbackSender
+	discover    func() (FeedbackSender, error)
+	discovery   discoveryState
+	stager      HunkStager
+	operation   liveOperation
+	err         error
+	pending     []annotation.Annotation
+	content     string
+	stageAnchor *stageAnchor
+}
+
+// stageAnchor follows the working-tree line, not its changing diff index/type.
+// seq binds it first to the file-list reload, then to its selected file request.
+type stageAnchor struct {
+	file string
+	seq  uint64
+	line int
+	row  int
 }
 
 type liveTickMsg struct{}
+type feedbackTickMsg struct{}
+type feedbackDiscoveredMsg struct {
+	sender FeedbackSender
+	err    error
+}
 type feedbackSentMsg struct{ err error }
 type hunkStagedMsg struct{ err error }
 type liveLoadedMsg struct {
 	files filesLoadedMsg
 	file  fileLoadedMsg
+}
+
+// Discovery has its own timer so an O-triggered lookup cannot multiply the
+// refresh loop. It stops once a sender is bound; pending retries never switch threads.
+func (m Model) feedbackTick() tea.Cmd {
+	if m.live.sender != nil || m.live.discover == nil {
+		return nil
+	}
+	return tea.Tick(time.Second, func(time.Time) tea.Msg { return feedbackTickMsg{} })
+}
+
+func (m Model) discoverFeedback(send bool) (tea.Model, tea.Cmd) {
+	if m.live.sender != nil || m.live.discover == nil {
+		return m, nil
+	}
+	previous := m.live.discovery
+	if send {
+		m.live.discovery = discoveryForSend
+		m.output.hint = "Looking for a harness in this directory"
+	} else if previous == discoveryIdle {
+		m.live.discovery = discoveryBackground
+	}
+	if previous != discoveryIdle {
+		return m, nil
+	}
+	discover := m.live.discover
+	return m, func() tea.Msg {
+		sender, err := discover()
+		return feedbackDiscoveredMsg{sender: sender, err: err}
+	}
+}
+
+func (m Model) handleFeedbackDiscovered(msg feedbackDiscoveredMsg) (tea.Model, tea.Cmd) {
+	m.live.err = msg.err
+	send := m.live.discovery == discoveryForSend
+	m.live.discovery = discoveryIdle
+	if msg.err != nil || msg.sender == nil {
+		if send {
+			m.output.hint = "Harness not connected; start a session in this directory, then press O"
+			if msg.err != nil {
+				m.output.hint = msg.err.Error()
+			}
+		}
+		return m, nil
+	}
+	m.live.sender = msg.sender
+	if send {
+		model, cmd := m.sendFeedback()
+		return model, tea.Batch(cmd, m.liveTick())
+	}
+	m.output.hint = "Harness connected; press O to send feedback"
+	return m, m.liveTick()
 }
 
 func (m Model) liveTick() tea.Cmd {
@@ -47,7 +138,7 @@ func (m Model) liveTick() tea.Cmd {
 
 func (m Model) livePaused() bool {
 	return !m.filesLoaded || m.file.requestedPath != "" || m.annot.annotating || m.store.Count() > 0 ||
-		m.live.sending || m.live.staging || len(m.live.pending) > 0 || m.search.active ||
+		m.live.operation != liveIdle || len(m.live.pending) > 0 || m.search.active ||
 		m.command.active || m.overlay.Active() || m.reload.pending || m.inConfirmDiscard
 }
 
@@ -108,7 +199,7 @@ func (m Model) handleLiveLoaded(msg liveLoadedMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) sendFeedback() (tea.Model, tea.Cmd) {
-	if m.live.sending || m.live.staging {
+	if m.live.operation != liveIdle {
 		return m, nil
 	}
 	if len(m.live.pending) == 0 {
@@ -127,14 +218,15 @@ func (m Model) sendFeedback() (tea.Model, tea.Cmd) {
 		}
 		m.live.content = content
 	}
-	m.live.sending = true
-	m.output.hint = "Sending feedback to Amp"
+	m.live.operation = liveSending
+	m.output.hint = "Sending feedback"
 	sender, content := m.live.sender, m.live.content
 	return m, func() tea.Msg { return feedbackSentMsg{err: sender.Send(content)} }
 }
 
 func (m Model) handleFeedbackSent(msg feedbackSentMsg) (tea.Model, tea.Cmd) {
-	m.live.sending = false
+	m.live.operation = liveIdle
+	m.live.err = msg.err
 	if msg.err != nil {
 		m.output.hint = msg.err.Error()
 		return m, nil
@@ -150,7 +242,7 @@ func (m Model) handleFeedbackSent(msg feedbackSentMsg) (tea.Model, tea.Cmd) {
 	m.live.pending, m.live.content = nil, ""
 	m.tree.RefreshFilter(m.annotatedFiles())
 	m.layout.viewport.SetContent(m.renderDiff())
-	m.output.hint = "Feedback sent to Amp"
+	m.output.hint = "Feedback sent"
 	return m, nil
 }
 
@@ -159,16 +251,71 @@ func (m Model) handleStageHunk() (tea.Model, tea.Cmd) {
 		m.output.hint = "Staging requires an unstaged Git working-tree review"
 		return m, nil
 	}
-	if m.livePaused() || m.layout.focus != paneDiff {
-		m.output.hint = "Focus the diff and send or remove annotations before staging"
-		return m, nil
+	// Explain the actual blocker instead of treating every refresh pause as an
+	// annotation problem. Staging reloads the diff, so pending notes stay guarded.
+	switch {
+	case m.layout.focus != paneDiff:
+		m.output.hint = "Focus the diff pane before staging"
+	case !m.filesLoaded || m.file.requestedPath != "":
+		m.output.hint = "Wait for the diff to finish loading before staging"
+	case m.live.operation == liveSending:
+		m.output.hint = "Wait for feedback to finish sending before staging"
+	case len(m.live.pending) > 0:
+		m.output.hint = "Retry the unconfirmed feedback before staging"
+	case m.store.Count() > 0:
+		m.output.hint = fmt.Sprintf("Send or remove annotations before staging (%d pending across all files)", m.store.Count())
+	case m.livePaused():
+		m.output.hint = "Finish the current interaction before staging"
+	default:
+		if m.tree.FileStatus(m.file.name) != diff.FileModified {
+			m.output.hint = "Hunk staging supports modified tracked text files only"
+			return m, nil
+		}
+		m.live.operation = liveStaging
+		m.output.hint = "Staging hunk"
+		stager, path, lines, cursor := m.live.stager, m.file.name, slices.Clone(m.file.lines), m.nav.diffCursor
+		return m, func() tea.Msg { return hunkStagedMsg{err: stager.StageHunk(path, lines, cursor)} }
 	}
-	if m.tree.FileStatus(m.file.name) != diff.FileModified {
-		m.output.hint = "Hunk staging supports modified tracked text files only"
-		return m, nil
+	return m, nil
+}
+
+func (m Model) captureStageAnchor() *stageAnchor {
+	if m.nav.diffCursor < 0 || m.nav.diffCursor >= len(m.file.lines) {
+		return nil
 	}
-	m.live.staging = true
-	m.output.hint = "Staging hunk"
-	stager, path, lines, cursor := m.live.stager, m.file.name, slices.Clone(m.file.lines), m.nav.diffCursor
-	return m, func() tea.Msg { return hunkStagedMsg{err: stager.StageHunk(path, lines, cursor)} }
+	a := &stageAnchor{file: m.file.name, seq: m.file.loadSeq, row: m.cursorViewportY() - m.layout.viewport.YOffset}
+	// A removed line has no working-tree number. Follow its replacement or
+	// next surviving line, falling back to the preceding line at EOF.
+	for i := m.nav.diffCursor; i < len(m.file.lines); i++ {
+		if line := m.file.lines[i].NewNum; line > 0 {
+			a.line = line
+			return a
+		}
+	}
+	for i := m.nav.diffCursor - 1; i >= 0; i-- {
+		if line := m.file.lines[i].NewNum; line > 0 {
+			a.line = line
+			break
+		}
+	}
+	return a
+}
+
+func (m *Model) applyStageAnchor(a *stageAnchor) {
+	nearest := -1
+	for i, line := range m.file.lines {
+		if line.NewNum <= 0 {
+			continue
+		}
+		distance := max(line.NewNum-a.line, a.line-line.NewNum)
+		if nearest < 0 || distance < max(m.file.lines[nearest].NewNum-a.line, a.line-m.file.lines[nearest].NewNum) {
+			nearest = i
+		}
+	}
+	if nearest >= 0 {
+		m.nav.diffCursor = nearest
+		m.adjustCursorIfHidden()
+	}
+	m.layout.viewport.SetContent(m.renderDiff())
+	m.layout.viewport.SetYOffset(max(0, m.cursorViewportY()-a.row))
 }

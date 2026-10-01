@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/umputun/revdiff/app/diff"
 	"github.com/umputun/revdiff/app/keymap"
@@ -75,12 +76,61 @@ func (m Model) View() string {
 
 	mainView = m.overlay.Compose(mainView, overlay.RenderCtx{Width: m.layout.width, Height: m.layout.height, Resolver: m.resolver})
 
+	if m.command.active {
+		mainView = lipgloss.JoinVertical(lipgloss.Left, mainView, m.commandPaneView())
+	}
 	if m.statusBarHeight() == 0 {
 		return mainView
 	}
 
-	status := m.resolver.Style(style.StyleKeyStatusBar).Width(m.layout.width).Render(m.statusBarText())
+	lines := append(m.sessionPanelLines(), m.statusBarText())
+	status := m.resolver.Style(style.StyleKeyStatusBar).Width(m.layout.width).Render(strings.Join(lines, "\n"))
 	return lipgloss.JoinVertical(lipgloss.Left, mainView, status)
+}
+
+// sessionPanelLines keeps context above the action/input row. Reserve the thread
+// row during discovery so a late connection does not resize an active draft.
+func (m Model) sessionPanelLines() []string {
+	if m.cfg.noStatusBar {
+		return nil
+	}
+	width := max(m.layout.width-2, 0) // status bar's horizontal padding
+	var lines []string
+	if m.live.sender != nil || m.live.discover != nil {
+		lines = append(lines, m.feedbackStatusText(width))
+	}
+	if cfg := m.review.cfg; cfg != nil && cfg.WorkDir != "" {
+		label := "Directory: "
+		if !cfg.Compare && (cfg.VCS == "git" || cfg.VCS == "hg" || cfg.VCS == "jj") {
+			label = "Repository: "
+		}
+		root := style.SanitizeFilenameForDisplay(cfg.WorkDir)
+		lines = append(lines, ansi.Truncate(label+style.TruncateLeftToWidth(root, width-len(label)), width, ""))
+	}
+	return lines
+}
+
+// feedbackStatusText combines identity and delivery state in one footer row.
+// A bound identity implies connected; only exceptional states need a label.
+func (m Model) feedbackStatusText(width int) string {
+	if m.live.sender == nil {
+		state := "waiting"
+		if m.live.err != nil {
+			state = "unavailable"
+		}
+		return ansi.Truncate("Harness: "+state, width, "")
+	}
+	suffix := ""
+	switch {
+	case m.live.operation == liveSending:
+		suffix = " · sending"
+	case m.live.err != nil:
+		suffix = " · unconfirmed"
+	}
+	label := "Harness (" + style.SanitizeFilenameForDisplay(m.live.sender.HarnessName()) + "): "
+	displayText := style.SanitizeFilenameForDisplay(m.live.sender.DisplayName())
+	budget := max(0, width-lipgloss.Width(label)-lipgloss.Width(suffix))
+	return ansi.Truncate(label+style.TruncateLeftToWidth(displayText, budget)+suffix, width, "")
 }
 
 // renderTwoPaneLayout renders a two-pane layout with left (tree/TOC) and right (diff) content.
@@ -161,13 +211,18 @@ func (m Model) transientHint() string {
 	return ""
 }
 
-// statusBarText returns context-sensitive status line content.
-// shows search input (when typing), or filename, diff stats, hunk position,
-// search match position, mode indicators, and right-aligned annotation count + help hint.
+// statusBarText keeps feedback hints on one row; identity has its own panel row.
 func (m Model) statusBarText() string {
-	if m.command.active {
-		return m.commandBarText()
+	if m.live.sender == nil && m.live.discover == nil {
+		return m.statusBarContent()
 	}
+	width := max(m.layout.width-2, 0)
+	content := strings.ReplaceAll(m.statusBarContent(), "\n", "; ")
+	return ansi.Truncate(content, width, "…")
+}
+
+// statusBarContent shows input, transient hints, or file/navigation status.
+func (m Model) statusBarContent() string {
 	if m.search.active {
 		return m.searchBarText()
 	}

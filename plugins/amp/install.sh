@@ -3,17 +3,15 @@
 set -euo pipefail
 
 usage() {
-    echo "Usage: $0 [--force] [--no-path] [--shell bash|zsh]"
+    echo "Usage: $0 [--no-path] [--shell bash|zsh]"
     echo "  --shell overrides automatic shell detection from \$SHELL"
 }
 
-FORCE=0
 UPDATE_PATH=1
 TARGET_SHELL=${SHELL:-}
 TARGET_SHELL=${TARGET_SHELL##*/}
 while [ "$#" -gt 0 ]; do
     case "$1" in
-        --force) FORCE=1 ;;
         --no-path) UPDATE_PATH=0 ;;
         --shell)
             if [ "$#" -lt 2 ]; then usage >&2; exit 2; fi
@@ -45,10 +43,6 @@ check_destination() {
 
 check_destination "$DEST"
 check_destination "$BINARY"
-if [ -f "$DEST" ] && ! cmp -s "$SOURCE_DIR/revdiff.ts" "$DEST" && [ "$FORCE" -ne 1 ]; then
-    echo "A different plugin exists at $DEST; rerun with --force to replace it." >&2
-    exit 1
-fi
 if ! command -v go >/dev/null 2>&1; then
     echo "Go is required to build revdiff from this checkout. Install Go, then rerun this script." >&2
     exit 1
@@ -61,10 +55,6 @@ trap 'rm -f "$PLUGIN_TEMP" "$BINARY_TEMP"' EXIT
 BINARY_TEMP=$(mktemp "$BIN_DIR/.revdiff-install.XXXXXX")
 printf 'Building revdiff from %s\n' "$REPO_ROOT"
 (cd "$REPO_ROOT" && go build -trimpath -o "$BINARY_TEMP" ./app/revdiff)
-if [ -f "$BINARY" ] && ! cmp -s "$BINARY_TEMP" "$BINARY" && [ "$FORCE" -ne 1 ]; then
-    echo "A different binary exists at $BINARY; rerun with --force to replace it." >&2
-    exit 1
-fi
 PLUGIN_TEMP=$(mktemp "$DEST_DIR/.revdiff-install.XXXXXX")
 cp "$SOURCE_DIR/revdiff.ts" "$PLUGIN_TEMP"
 chmod 644 "$PLUGIN_TEMP"

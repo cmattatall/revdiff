@@ -1,32 +1,48 @@
 import assert from 'node:assert/strict'
-import { access, readFile, stat } from 'node:fs/promises'
-import { test } from 'node:test'
-import { pathToFileURL } from 'node:url'
+import { access, chmod, mkdtemp, readFile, readdir, realpath, rm, stat } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { after, before, test } from 'node:test'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import plugin from '../revdiff.ts'
 
 type Command = (ctx: any) => Promise<void>
 
+let home: string
+const originalHome = process.env.HOME
+before(async () => {
+  home = await mkdtemp(join(tmpdir(), 'revdiff-plugin-'))
+  process.env.HOME = home
+})
+after(async () => {
+  if (originalHome === undefined) delete process.env.HOME
+  else process.env.HOME = originalHome
+  await rm(home, { recursive: true, force: true })
+})
+
 function fakeAmp(root = process.cwd()) {
   const commands = new Map<string, Command>()
+  const events = new Map<string, (event: unknown, ctx: any) => Promise<void>>()
   const disposers: Array<() => Promise<void>> = []
   const messages = new Map<string, any[]>()
   const notifications: string[] = []
   const amp: any = {
-    helpers: { filePathFromURI: (uri: URL) => uri.pathname },
+    helpers: { filePathFromURI: fileURLToPath },
     logger: { log() {} },
+    on(event: string, handler: (event: unknown, ctx: any) => Promise<void>) { events.set(event, handler); return { unsubscribe() {} } },
     registerCommand(id: string, _options: unknown, handler: Command) { commands.set(id, handler); return { unsubscribe() {} } },
     onDispose(handler: () => Promise<void>) { disposers.push(handler); return { unsubscribe() {} } },
   }
   const context = (id: string, append?: (...args: any[]) => Promise<void>) => ({
-    thread: { id, appendUserMessage: async (...args: any[]) => {
+    thread: { id, title: { get: async (): Promise<string | null> => null }, appendUserMessage: async (...args: any[]) => {
       (messages.get(id) ?? messages.set(id, []).get(id)!).push(args)
       if (args[1]?.steer) await append?.(...args)
     } },
     system: { workspaceRoot: pathToFileURL(root) },
     ui: { notify: async (value: string) => { notifications.push(value) } },
   })
-  return { amp, commands, disposers, messages, notifications, context }
+  return { amp, commands, events, disposers, messages, notifications, context }
 }
 
 async function connect(f: ReturnType<typeof fakeAmp>, id: string, append?: (...args: any[]) => Promise<void>) {
@@ -53,7 +69,7 @@ test('connect posts a persistent command to its thread, reuses connections, and 
     f.commands.get('revdiff-connect')!(f.context('T-a')),
     f.commands.get('revdiff-connect')!(f.context('T-a')),
   ])
-  assert.equal(f.messages.get('T-a')!.length, 1, 'concurrent connects share one announcement')
+  assert.equal(f.messages.get('T-a')!.length, 2, 'each explicit connect shows the command')
   assert.deepEqual(f.notifications, [], 'the launch command must not be a transient popup')
   const [announcement, options] = f.messages.get('T-a')![0]
   assert.equal(announcement.type, 'user-message')
@@ -74,6 +90,24 @@ test('connect posts a persistent command to its thread, reuses connections, and 
   await assert.rejects(access(a.path)); assert.equal((await fetch(a.descriptor.url).catch(() => null)), null)
   await Promise.all(f.disposers.map((dispose) => dispose()))
   await assert.rejects(access(b.path))
+})
+
+test('thread titles are optional metadata and a failed lookup still connects', async (t) => {
+  const f = fakeAmp(); await plugin(f.amp)
+  t.after(() => Promise.all(f.disposers.map((dispose) => dispose())))
+  for (const title of ['Review installer', null, new Error('title unavailable')]) {
+    const id = `T-${title instanceof Error ? 'failed' : title ? 'titled' : 'untitled'}`
+    const ctx = f.context(id)
+    ctx.thread.title.get = async () => {
+      if (title instanceof Error) throw title
+      return title
+    }
+    await f.events.get('session.start')!({}, ctx)
+    const { descriptor } = await connect(f, id)
+    assert.equal(descriptor.thread, id)
+    assert.equal(descriptor.title, typeof title === 'string' ? title : undefined)
+    assert.equal((await post(descriptor, { id: 'review', content: 'still works' })).status, 204)
+  }
 })
 
 test('valid feedback steers with guidance and enforces endpoint, auth, origin, and input bounds', async () => {
@@ -108,4 +142,62 @@ test('deduplicates concurrent feedback, detects conflicts, and caches ambiguous 
   assert.equal((await post(d.descriptor, { id: 'failed', content: 'note' })).status, 500)
   assert.equal(failures, 1)
   await Promise.all([...f.disposers, ...bad.disposers].map((dispose) => dispose()))
+})
+
+test('session start registers silently, probes authenticate, and disconnect stays disabled', async (t) => {
+  const f = fakeAmp(); await plugin(f.amp)
+  t.after(() => Promise.all(f.disposers.map((dispose) => dispose())))
+  const ctx = f.context('T-auto')
+  await Promise.all([
+    f.events.get('session.start')!({}, ctx),
+    f.events.get('agent.start')!({}, ctx),
+  ])
+  const registry = join(home, '.cache/revdiff/amp')
+  const entries = await readdir(registry)
+  assert.equal(entries.length, 1, 'concurrent events share one registration')
+  const directory = join(registry, entries[0])
+  const path = join(directory, 'connection.json')
+  const descriptor = JSON.parse(await readFile(path, 'utf8'))
+  assert.equal((await stat(registry)).mode & 0o777, 0o700)
+  assert.equal((await stat(directory)).mode & 0o777, 0o700)
+  assert.equal((await stat(path)).mode & 0o777, 0o600)
+  assert.equal(descriptor.root, await realpath(process.cwd()))
+  assert.equal(f.messages.size, 0, 'automatic registration never starts an agent turn')
+  assert.deepEqual(f.notifications, [])
+
+  assert.equal((await fetch(descriptor.url)).status, 401)
+  const headers = { authorization: `Bearer ${descriptor.token}` }
+  assert.equal((await fetch(descriptor.url, { headers: { ...headers, origin: 'https://example.com' } })).status, 403)
+  const probe = await fetch(descriptor.url, { headers })
+  assert.equal(probe.status, 200)
+  assert.deepEqual(await probe.json(), { version: 1, root: descriptor.root, thread: 'T-auto' })
+  assert.equal(f.messages.size, 0, 'probing never appends feedback')
+  const explicit = await connect(f, 'T-auto')
+  assert.equal(explicit.path, path, 'manual connect reuses the automatic connection')
+  assert.equal((await post(descriptor, { id: 'review', content: 'automatic feedback' })).status, 204)
+  assert.match(f.messages.get('T-auto')!.at(-1)![0].content, /automatic feedback/)
+
+  await f.commands.get('revdiff-disconnect')!(ctx)
+  await f.events.get('agent.start')!({}, ctx)
+  await f.events.get('session.start')!({}, ctx)
+  assert.deepEqual(await readdir(registry), [], 'disconnect suppresses automatic reconnect until manual connect or reload')
+  await connect(f, 'T-auto')
+  assert.equal((await readdir(registry)).length, 1)
+})
+
+test('automatic registration skips missing workspaces and rejects a public registry', async (t) => {
+  const f = fakeAmp(); await plugin(f.amp)
+  t.after(() => Promise.all(f.disposers.map((dispose) => dispose())))
+  const registry = join(home, '.cache/revdiff/amp')
+  const ctx = { ...f.context('T-none'), system: { workspaceRoot: null } }
+  await f.events.get('session.start')!({}, ctx)
+  assert.deepEqual(await readdir(registry), [])
+  await chmod(registry, 0o755)
+  try {
+    await f.events.get('session.start')!({}, f.context('T-unsafe'))
+    assert.deepEqual(await readdir(registry), [])
+    await assert.rejects(connect(f, 'T-unsafe'), /private directory/)
+  } finally {
+    await chmod(registry, 0o700)
+  }
 })

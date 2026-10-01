@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/stretchr/testify/require"
 
 	"github.com/umputun/revdiff/app/annotation"
@@ -13,11 +14,316 @@ import (
 type feedbackStub struct {
 	content []string
 	err     error
+	harness string
+	display string
 }
+
+func (s *feedbackStub) HarnessName() string { return s.harness }
+func (s *feedbackStub) DisplayName() string { return s.display }
 
 func (s *feedbackStub) Send(content string) error {
 	s.content = append(s.content, content)
 	return s.err
+}
+
+type hunkStagerFunc func(string, []diff.DiffLine, int) error
+
+func (f hunkStagerFunc) StageHunk(path string, lines []diff.DiffLine, cursor int) error {
+	return f(path, lines, cursor)
+}
+
+func TestStageHunkReportsActualBlocker(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		setup func(*Model)
+		want  string
+	}{
+		{"tree focus", func(m *Model) { m.layout.focus = paneTree }, "Focus the diff pane before staging"},
+		{"file list loading", func(m *Model) { m.filesLoaded = false }, "Wait for the diff to finish loading before staging"},
+		{"diff loading", func(m *Model) { m.file.requestedPath = "other.go" }, "Wait for the diff to finish loading before staging"},
+		{"sending", func(m *Model) { m.live.operation = liveSending }, "Wait for feedback to finish sending before staging"},
+		{"unconfirmed", func(m *Model) {
+			m.live.pending = []annotation.Annotation{{File: "other.go", Line: 7, Comment: "retry me"}}
+		}, "Retry the unconfirmed feedback before staging"},
+		{"annotations in other files", func(m *Model) {
+			m.store.Add(annotation.Annotation{File: "other.go", Line: 7, Comment: "keep me"})
+			m.store.Add(annotation.Annotation{File: "third.go", Line: 9, Comment: "keep me too"})
+		}, "Send or remove annotations before staging (2 pending across all files)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := testModel([]string{"a.go"}, nil)
+			m.layout.focus = paneDiff
+			m.live.stager = hunkStagerFunc(func(string, []diff.DiffLine, int) error {
+				t.Fatal("blocked shortcut must not stage")
+				return nil
+			})
+			tc.setup(&m)
+			count := m.store.Count()
+			model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+			m = model.(Model)
+			require.Nil(t, cmd)
+			require.NotEqual(t, liveStaging, m.live.operation)
+			require.Equal(t, tc.want, m.output.hint)
+			if m.filesLoaded {
+				require.Contains(t, m.View(), tc.want, "render the actual reason in the status bar")
+			} else {
+				require.Equal(t, "loading files...", m.View())
+			}
+			require.Equal(t, count, m.store.Count(), "refusing to stage must preserve annotations")
+		})
+	}
+}
+
+func TestStageShortcutCapturesDisplayedHunk(t *testing.T) {
+	for _, stageErr := range []error{nil, errors.New("file changed since display")} {
+		m := testModel([]string{"a.go"}, nil)
+		loaded, _ := m.handleFilesLoaded(filesLoadedMsg{entries: []diff.FileEntry{{Path: "a.go", Status: diff.FileModified}}})
+		m = loaded.(Model)
+		lines := []diff.DiffLine{{OldNum: 3, NewNum: 3, Content: "context"}, {NewNum: 4, Content: "new", ChangeType: diff.ChangeAdd}}
+		loaded, _ = m.handleFileLoaded(fileLoadedMsg{file: "a.go", lines: lines, seq: m.file.loadSeq})
+		m = loaded.(Model)
+		m.nav.diffCursor = 1
+		m.layout.focus = paneDiff
+		calls := 0
+		m.live.stager = hunkStagerFunc(func(path string, displayed []diff.DiffLine, cursor int) error {
+			calls++
+			require.Equal(t, "a.go", path)
+			require.Equal(t, "new", displayed[1].Content)
+			require.Equal(t, 1, cursor)
+			return stageErr
+		})
+		sender := &feedbackStub{}
+		m.live.discover = func() (FeedbackSender, error) { return sender, nil }
+		model, lookup := m.discoverFeedback(false)
+		m = model.(Model)
+		model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+		m = model.(Model)
+		require.NotNil(t, cmd)
+		require.Equal(t, liveStaging, m.live.operation)
+		require.Equal(t, discoveryBackground, m.live.discovery)
+		model, _ = m.Update(lookup())
+		m = model.(Model)
+		require.Equal(t, discoveryIdle, m.live.discovery)
+		require.Equal(t, liveStaging, m.live.operation, "discovery completion must not clear staging")
+		require.Same(t, sender, m.live.sender)
+		_, blockedSend := m.sendFeedback()
+		require.Nil(t, blockedSend, "sending and staging are mutually exclusive")
+		require.Zero(t, calls, "staging IO belongs in the command")
+		m.file.lines[1].Content = "later"
+		model, reload := m.Update(cmd())
+		m = model.(Model)
+		require.Equal(t, 1, calls)
+		require.Equal(t, liveIdle, m.live.operation)
+		if stageErr != nil {
+			require.Nil(t, reload)
+			require.Equal(t, "Stage failed: file changed since display", m.output.hint)
+		} else {
+			require.NotNil(t, reload)
+			require.False(t, m.filesLoaded, "successful staging refreshes the unstaged diff")
+			require.Equal(t, "Hunk staged", m.output.hint)
+		}
+	}
+}
+
+func TestStageReloadPreservesPosition(t *testing.T) {
+	for _, tc := range []struct {
+		name               string
+		cursor, wantLine   int
+		compact, collapsed bool
+	}{
+		{"added line becomes context", 58, 57, false, false},
+		{"removed line follows replacement", 54, 55, false, false},
+		{"compact hunk disappears", 58, 80, true, false},
+		{"collapsed diff", 58, 57, false, true},
+		{"removed end of file", 102, 100, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var before, after []diff.DiffLine
+			for n := 1; n <= 100; n++ {
+				line := diff.DiffLine{OldNum: n, NewNum: n, Content: "context", ChangeType: diff.ChangeContext}
+				if n == 8 {
+					line.ChangeType = diff.ChangeAdd // an unrelated earlier change must not attract the cursor
+				}
+				if !tc.compact || n <= 10 || n >= 80 {
+					after = append(after, line)
+				}
+				if n == 55 {
+					before = append(before, diff.DiffLine{OldNum: 55, Content: "old one", ChangeType: diff.ChangeRemove},
+						diff.DiffLine{OldNum: 56, Content: "old two", ChangeType: diff.ChangeRemove})
+				}
+				if n >= 55 && n <= 57 {
+					line.OldNum, line.ChangeType = 0, diff.ChangeAdd
+				}
+				before = append(before, line)
+			}
+			before = append(before, diff.DiffLine{OldNum: 101, Content: "removed tail", ChangeType: diff.ChangeRemove})
+			m := testModel([]string{"a.go"}, nil)
+			entries := []diff.FileEntry{{Path: "a.go", Status: diff.FileModified}}
+			model, _ := m.handleFilesLoaded(filesLoadedMsg{entries: entries})
+			m = model.(Model)
+			model, _ = m.handleFileLoaded(fileLoadedMsg{file: "a.go", seq: m.file.loadSeq, lines: before})
+			m = model.(Model)
+			m.cfg.startAtChange = true // staging must override this startup/navigation preference
+			m.modes.compact, m.modes.collapsed.enabled = tc.compact, tc.collapsed
+			m.nav.diffCursor, m.layout.viewport.Height = tc.cursor, 12
+			m.layout.viewport.SetContent(m.renderDiff())
+			m.layout.viewport.SetYOffset(m.cursorViewportY() - 4)
+			row := m.cursorViewportY() - m.layout.viewport.YOffset
+			m.live.stager = hunkStagerFunc(func(string, []diff.DiffLine, int) error { return nil })
+			model, stage := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+			m = model.(Model)
+			require.NotNil(t, stage)
+			model, _ = m.Update(stage())
+			m = model.(Model)
+			model, _ = m.handleFilesLoaded(filesLoadedMsg{seq: m.filesLoadSeq, entries: entries})
+			m = model.(Model)
+			model, _ = m.handleFileLoaded(fileLoadedMsg{file: "a.go", seq: m.file.loadSeq, lines: after})
+			m = model.(Model)
+			require.Equal(t, tc.wantLine, m.file.lines[m.nav.diffCursor].NewNum)
+			require.Equal(t, row, m.cursorViewportY()-m.layout.viewport.YOffset, "preserve the cursor's screen row")
+			require.Nil(t, m.live.stageAnchor)
+		})
+	}
+}
+
+func TestStageAnchorDoesNotLeakToOtherLoads(t *testing.T) {
+	for _, action := range []string{"file disappears", "all files disappear", "navigate before list", "navigate after list", "manual reload", "file error"} {
+		t.Run(action, func(t *testing.T) {
+			m := testModel([]string{"a.go", "b.go"}, nil)
+			lines := []diff.DiffLine{{NewNum: 10, ChangeType: diff.ChangeContext}, {NewNum: 20, ChangeType: diff.ChangeAdd}}
+			entries := []diff.FileEntry{{Path: "a.go", Status: diff.FileModified}, {Path: "b.go", Status: diff.FileModified}}
+			model, _ := m.handleFilesLoaded(filesLoadedMsg{entries: entries})
+			m = model.(Model)
+			model, _ = m.handleFileLoaded(fileLoadedMsg{file: "a.go", seq: m.file.loadSeq, lines: lines})
+			m = model.(Model)
+			m.nav.diffCursor = 1
+			model, _ = m.Update(hunkStagedMsg{})
+			m = model.(Model)
+			switch action {
+			case "file disappears":
+				entries = entries[1:]
+			case "all files disappear":
+				entries = nil
+			case "navigate before list":
+				m.requestFileDiff("b.go")
+			case "manual reload":
+				m.triggerReload()
+			}
+			model, _ = m.handleFilesLoaded(filesLoadedMsg{seq: m.filesLoadSeq, entries: entries})
+			m = model.(Model)
+			if action == "all files disappear" {
+				require.Empty(t, m.file.name)
+				require.Nil(t, m.live.stageAnchor)
+				return
+			}
+			if action == "navigate after list" {
+				m.requestFileDiff("b.go")
+			}
+			msg := fileLoadedMsg{file: m.file.requestedPath, seq: m.file.loadSeq, lines: lines}
+			if action == "file error" {
+				msg.err = errors.New("read failed")
+			}
+			model, _ = m.handleFileLoaded(msg)
+			m = model.(Model)
+			require.Nil(t, m.live.stageAnchor)
+			if msg.err == nil {
+				require.Zero(t, m.nav.diffCursor, "unrelated loads retain normal positioning")
+			}
+		})
+	}
+}
+
+func TestFeedbackDiscoveryAfterLaunchPreservesDrafts(t *testing.T) {
+	var available FeedbackSender
+	store := annotation.NewStore()
+	store.Add(annotation.Annotation{File: "a.go", Line: 7, Comment: "keep this"})
+	m := testNewModel(t, plainRenderer(), store, noopHighlighter(), ModelConfig{
+		DiscoverFeedback: func() (FeedbackSender, error) { return available, nil },
+	})
+	require.NotNil(t, m.feedbackTick())
+	require.Nil(t, m.liveTick(), "do not refresh files before connecting")
+	model, cmd := m.handleFlushOutput()
+	m = model.(Model)
+	model, next := m.Update(cmd())
+	m = model.(Model)
+	require.Nil(t, next)
+	require.Contains(t, m.output.hint, "Harness not connected")
+	require.NotContains(t, m.output.hint, "--output")
+	require.Equal(t, 1, store.Count())
+	require.Equal(t, discoveryIdle, m.live.discovery, "a failed lookup must not leave a queued send")
+
+	sender := &feedbackStub{}
+	available = sender
+	m.annot.annotating = true
+	model, cmd = m.Update(feedbackTickMsg{})
+	m = model.(Model)
+	lookup := cmd().(tea.BatchMsg)[0] // the other command schedules another discovery tick
+	model, next = m.Update(lookup())
+	m = model.(Model)
+	require.Same(t, sender, m.live.sender)
+	require.True(t, m.annot.annotating)
+	require.Equal(t, 1, store.Count())
+	require.Equal(t, "Harness connected; press O to send feedback", m.output.hint)
+	require.Empty(t, sender.content, "background connection must not send annotations")
+	require.NotNil(t, next, "start live refresh after connecting")
+	require.Nil(t, m.feedbackTick(), "stop discovery once bound")
+	_, next = m.Update(feedbackTickMsg{})
+	require.Nil(t, next, "an already scheduled discovery tick must stop too")
+}
+
+func TestFlushJoinsInFlightDiscoveryAndSendsOnce(t *testing.T) {
+	sender := &feedbackStub{}
+	lookups := 0
+	store := annotation.NewStore()
+	store.Add(annotation.Annotation{File: "review.md", Line: 12, Comment: "late connection"})
+	m := testNewModel(t, plainRenderer(), store, noopHighlighter(), ModelConfig{
+		DiscoverFeedback: func() (FeedbackSender, error) { lookups++; return sender, nil },
+	})
+	model, lookup := m.discoverFeedback(false)
+	m = model.(Model)
+	require.Equal(t, discoveryBackground, m.live.discovery)
+	for range 2 {
+		var cmd tea.Cmd
+		model, cmd = m.handleFlushOutput()
+		m = model.(Model)
+		require.Nil(t, cmd, "O joins rather than duplicates an in-flight lookup")
+		require.Equal(t, discoveryForSend, m.live.discovery)
+	}
+	model, duplicate := m.discoverFeedback(false)
+	m = model.(Model)
+	require.Nil(t, duplicate)
+	require.Equal(t, discoveryForSend, m.live.discovery, "background tick must not downgrade a queued send")
+	model, cmd := m.Update(lookup())
+	m = model.(Model)
+	require.Equal(t, discoveryIdle, m.live.discovery)
+	require.Equal(t, liveSending, m.live.operation)
+	commands := cmd().(tea.BatchMsg)
+	model, _ = m.Update(commands[0]()) // send; the other command schedules live refresh
+	m = model.(Model)
+	require.Equal(t, 1, lookups)
+	require.Len(t, sender.content, 1)
+	require.Contains(t, sender.content[0], "review.md:12")
+	require.Contains(t, sender.content[0], "late connection")
+	require.Zero(t, store.Count())
+	require.Equal(t, liveIdle, m.live.operation)
+	require.Equal(t, "Feedback sent", m.output.hint)
+}
+
+func TestFeedbackDiscoveryFailureRetainsAnnotations(t *testing.T) {
+	store := annotation.NewStore()
+	store.Add(annotation.Annotation{File: "a.go", Line: 3, Comment: "keep"})
+	m := testNewModel(t, plainRenderer(), store, noopHighlighter(), ModelConfig{
+		DiscoverFeedback: func() (FeedbackSender, error) { return nil, errors.New("multiple Amp sessions") },
+	})
+	model, cmd := m.handleFlushOutput()
+	m = model.(Model)
+	model, _ = m.Update(cmd())
+	m = model.(Model)
+	require.Equal(t, "multiple Amp sessions", m.output.hint)
+	require.Nil(t, m.live.sender)
+	require.Equal(t, liveIdle, m.live.operation)
+	require.Equal(t, discoveryIdle, m.live.discovery)
+	require.Equal(t, 1, store.Count())
 }
 
 func TestFeedbackRetryPreservesNewAndEditedAnnotations(t *testing.T) {
@@ -27,15 +333,21 @@ func TestFeedbackRetryPreservesNewAndEditedAnnotations(t *testing.T) {
 	b := annotation.Annotation{File: "a.go", Line: 9, Type: "+", Comment: "second"}
 	store.Add(a)
 	store.Add(b)
-	m := testNewModel(t, plainRenderer(), store, noopHighlighter(), ModelConfig{Feedback: sender})
+	m := testNewModel(t, plainRenderer(), store, noopHighlighter(), ModelConfig{
+		Feedback:         sender,
+		DiscoverFeedback: func() (FeedbackSender, error) { t.Fatal("must not switch threads on send failure"); return nil, nil },
+	})
 	model, cmd := m.handleFlushOutput()
 	m = model.(Model)
-	require.True(t, m.live.sending)
+	require.Equal(t, liveSending, m.live.operation)
 	_, duplicate := m.handleFlushOutput()
 	require.Nil(t, duplicate)
 	model, _ = m.Update(cmd())
 	m = model.(Model)
 	require.Equal(t, 2, store.Count())
+	require.Error(t, m.live.err)
+	require.Equal(t, liveIdle, m.live.operation)
+	require.NotEmpty(t, m.live.pending, "failed sends stay retryable after returning to idle")
 	a.Comment = "edited during delivery"
 	store.Add(a)
 	store.Add(annotation.Annotation{File: "b.go", Line: 1, Comment: "new"})
@@ -48,7 +360,8 @@ func TestFeedbackRetryPreservesNewAndEditedAnnotations(t *testing.T) {
 	require.Equal(t, 2, store.Count())
 	require.Equal(t, []annotation.Annotation{a}, store.Get("a.go"))
 	require.Empty(t, m.live.pending)
-	require.Equal(t, "Feedback sent to Amp", m.output.hint)
+	require.NoError(t, m.live.err)
+	require.Equal(t, "Feedback sent", m.output.hint)
 }
 
 func TestLiveRefreshGuardsAndCursor(t *testing.T) {

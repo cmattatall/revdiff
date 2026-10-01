@@ -27,12 +27,12 @@ func (m *Model) startCommand() tea.Cmd {
 	m.clearPendingInputState()
 	ti := textinput.New()
 	ti.Prompt = ":"
-	ti.Placeholder = "line number · Enter to jump · Esc to cancel"
+	ti.Placeholder = "line number"
 	ti.CharLimit = 20
-	ti.Width = max(1, m.layout.width-2)
+	ti.Width = max(1, m.layout.width-5) // borders, padding, and ':'
 	cmd := ti.Focus()
 	m.command = commandState{active: true, input: ti}
-	// The prompt gets a row even with --no-status-bar.
+	// The command pane remains independent of --no-status-bar.
 	m.layout.viewport.Height = m.paneHeight() - 1
 	return cmd
 }
@@ -103,12 +103,21 @@ func (m Model) sourceLineIndex(n int) int {
 	return -1
 }
 
-func (m Model) commandBarText() string {
-	suffix := ""
-	if m.command.err != "" {
-		suffix = "  " + m.command.err
+func (m Model) commandPaneHeight() int {
+	if m.command.active {
+		return 4 // input, help/error, and two borders
 	}
-	width := max(0, m.layout.width-m.resolver.Style(style.StyleKeyStatusBar).GetHorizontalFrameSize())
-	m.command.input.Width = max(1, width-2-ansi.StringWidth(suffix))
-	return ansi.Truncate(m.command.input.View()+suffix, width, "")
+	return 0
+}
+
+func (m Model) commandPaneView() string {
+	width := max(0, m.layout.width-4) // borders and horizontal padding
+	help := "Command · Enter jump · Esc cancel"
+	if m.command.err != "" {
+		help = m.command.err
+	}
+	input := ansi.Truncate(m.command.input.View(), width, "")
+	help = ansi.Truncate(help, width, "…")
+	return m.resolver.Style(style.StyleKeyDiffPaneActive).
+		Padding(0, 1).Width(max(0, m.layout.width-2)).Render(input + "\n" + help)
 }

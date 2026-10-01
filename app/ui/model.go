@@ -577,7 +577,7 @@ type Model struct {
 	postFlushHook PostFlushHook  // optional command run after an in-session output flush
 
 	// grouped state
-	live   liveState        // Amp feedback, automatic refresh, and index staging
+	live   liveState        // harness feedback, automatic refresh, and index staging
 	cfg    modelConfigState // immutable session config
 	layout layoutState      // viewport and layout
 	modes  modeState        // user-togglable view modes
@@ -725,11 +725,12 @@ type ModelConfig struct {
 	// entry instead of a delete + all-add pair. Nil for non-git VCS (rename detection
 	// is git-only); only consulted in unstaged working-tree mode.
 	LoadUntrackedRenames func([]string) ([]diff.FileEntry, error)
-	Keymap               *keymap.Keymap // custom key bindings (nil uses defaults)
-	Editor               ExternalEditor // external-editor driver (nil uses app/editor.Editor{})
-	PostFlushHook        PostFlushHook  // optional command run after an in-session output flush
-	Feedback             FeedbackSender // optional Amp connection; enables live refresh
-	Stager               HunkStager     // optional unstaged Git hunk staging
+	Keymap               *keymap.Keymap                 // custom key bindings (nil uses defaults)
+	Editor               ExternalEditor                 // external-editor driver (nil uses app/editor.Editor{})
+	PostFlushHook        PostFlushHook                  // optional command run after an in-session output flush
+	Feedback             FeedbackSender                 // optional harness connection; enables live refresh
+	DiscoverFeedback     func() (FeedbackSender, error) // optional lookup until a connection is found
+	Stager               HunkStager                     // optional unstaged Git hunk staging
 	// CommitLog enumerates commits in the current ref range for the info popup's
 	// commit-log section. When nil, NewModel attempts to derive the source by
 	// type-asserting the Renderer against diff.CommitLogger; if the assertion
@@ -953,7 +954,7 @@ func NewModel(cfg ModelConfig) (Model, error) {
 		},
 		reviewed:             reviewedState{cache: make(map[string]string), pending: make(map[string]uint64)},
 		reload:               reloadState{applicable: cfg.ReloadApplicable},
-		live:                 liveState{sender: cfg.Feedback, stager: cfg.Stager},
+		live:                 liveState{sender: cfg.Feedback, discover: cfg.DiscoverFeedback, stager: cfg.Stager},
 		compact:              compactState{applicable: cfg.CompactApplicable},
 		annot:                annotationState{rowCache: make(map[annotCacheKey][]string)},
 		renderCache:          &diffRenderCache{},
@@ -978,12 +979,17 @@ func (m Model) Discarded() bool {
 // (e.g. --stdin, standalone file, working-tree review), so tea.Batch harmlessly
 // drops it in those cases.
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.loadFiles(), m.loadCommits(), m.liveTick())
+	return tea.Batch(m.loadFiles(), m.loadCommits(), m.liveTick(), m.feedbackTick())
 }
 
 // Update handles messages and updates the model state.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case feedbackTickMsg:
+		model, cmd := m.discoverFeedback(false)
+		return model, tea.Batch(cmd, m.feedbackTick())
+	case feedbackDiscoveredMsg:
+		return m.handleFeedbackDiscovered(msg)
 	case liveTickMsg:
 		return m.pollLive()
 	case liveLoadedMsg:
@@ -991,15 +997,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case feedbackSentMsg:
 		return m.handleFeedbackSent(msg)
 	case hunkStagedMsg:
-		m.live.staging = false
+		m.live.operation = liveIdle
 		if msg.err != nil {
 			m.output.hint = "Stage failed: " + msg.err.Error()
 			return m, nil
 		}
 		m.output.hint = "Hunk staged"
-		return m, m.triggerReload()
+		cmd := m.triggerReload()
+		m.live.stageAnchor = m.captureStageAnchor()
+		return m, cmd
 	case tea.KeyMsg:
-		if m.live.staging {
+		if m.live.operation == liveStaging {
 			return m, nil
 		}
 		if m.inConfirmDiscard {
@@ -1007,7 +1015,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m.handleKey(msg)
 	case tea.MouseMsg:
-		if m.live.staging {
+		if m.live.operation == liveStaging {
 			return m, nil
 		}
 		return m.handleMouse(msg)
@@ -1299,8 +1307,8 @@ func (m Model) handleChordSecond(keyStr string) (tea.Model, tea.Cmd) {
 // exist, enters pending-confirmation state (waiting for y/other key in
 // handlePendingReload).
 func (m Model) handleReload() (tea.Model, tea.Cmd) {
-	if m.live.sending || m.live.staging || len(m.live.pending) > 0 {
-		m.output.hint = "Finish the pending Amp send or stage first"
+	if m.live.operation != liveIdle || len(m.live.pending) > 0 {
+		m.output.hint = "Finish the pending feedback send or stage first"
 		return m, nil
 	}
 	if !m.reload.applicable {
@@ -1544,6 +1552,10 @@ func (m *Model) toggleWrapMode() {
 func (m Model) handleResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.layout.width = msg.Width
 	m.layout.height = msg.Height
+	if m.command.active {
+		m.command.input.Width = max(1, m.layout.width-5)
+		m.command.input.SetCursor(m.command.input.Position())
+	}
 
 	var diffWidth int
 	if m.treePaneHidden() {

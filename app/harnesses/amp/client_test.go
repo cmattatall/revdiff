@@ -11,6 +11,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestClientIdentity(t *testing.T) {
+	for _, tc := range []struct{ title, display string }{
+		{"", "T-review"},
+		{"Review installer", "Review installer T-review"},
+	} {
+		t.Run(tc.title, func(t *testing.T) {
+			root := t.TempDir()
+			d := descriptor{Version: 1, URL: "http://127.0.0.1:1/feedback", Token: "secret", Root: root, Thread: "T-review", Title: tc.title}
+			data, err := json.Marshal(d)
+			require.NoError(t, err)
+			path := filepath.Join(root, "connection.json")
+			require.NoError(t, os.WriteFile(path, data, 0o600))
+			client, err := New(path, root)
+			require.NoError(t, err)
+			require.Equal(t, "amp", client.HarnessName())
+			require.Equal(t, tc.display, client.DisplayName())
+		})
+	}
+}
+
 func TestClientRetryAndAcknowledgement(t *testing.T) {
 	var ids []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -85,16 +85,20 @@ Installs the `revdiff` binary into `GOBIN` (defaults to `$(go env GOPATH)/bin`).
 
 ## Amp live review (this fork)
 
-Build this fork with `make build` and put `.bin/revdiff` on your PATH; upstream releases do not include this integration. Run `./plugins/amp/install.sh` from the repository root to install the bundled plugin into `~/.config/amp/plugins/revdiff.ts`, then reload Amp plugins. To replace a different installed version, rerun with `--force` after saving any local customizations.
+Run `./plugins/amp/install.sh` from this fork's repository root (requires Go). It builds and installs `revdiff` into `~/.local/bin` and the plugin into `~/.config/amp/plugins/revdiff.ts`. It detects bash or zsh from `$SHELL` and adds `~/.local/bin` to your shell startup files; `--shell bash|zsh` is an optional override and `--no-path` skips that edit. Open a new terminal or run `export PATH="$HOME/.local/bin:$PATH"`, then reload Amp plugins. Rerunning the script updates the installed binary and plugin automatically, replacing any local customizations. Upstream releases do not include this integration.
 
-1. In your Amp thread, press **Ctrl+O** and choose **revdiff: connect**. The launch command is posted as a persistent thread message, not a popup; Amp may acknowledge the setup message.
-2. Copy that message's command, with its real connection-file path, into the other terminal pane in the same Git checkout. If using this checkout's build, replace the initial `revdiff` executable with `./.bin/revdiff`.
+1. Open an Amp thread in your Git checkout. The plugin registers the session automatically, without posting a setup message. After reloading the plugin in an existing thread, registration happens when you next send a prompt or choose **revdiff: connect**.
+2. Run `revdiff` in another terminal pane in the **same directory**. It automatically connects when exactly one live Amp session matches. Use `revdiff --untracked` to include new files. If multiple sessions match, disconnect the extras or use **Ctrl+O → revdiff: connect** in the intended Amp thread to get an explicit `--amp` command.
 3. Annotate with `Enter` or `a` (line) and `A` (file). Press `O` to send feedback to that Amp thread without leaving revdiff. Amp receives it as a steering message, including while working.
 4. Press `s` on an added/removed line to stage that contiguous change. Staging supports modified, tracked regular text files in an unstaged Git working-tree review; new/deleted files, renames, binary files, mode changes, refs, and staged views are not supported. Staging changes the index, never the working file, and rejects stale displayed changes.
 
+The bottom panel shows **Harness: waiting** until a session is found, then **Harness (amp): &lt;title&gt; &lt;thread ID&gt;**. The identity itself indicates the connection; there is no separate "connected" label. Each harness supplies its own name and display text. Revdiff checks once per second while waiting, even if you are writing annotations; `O` also retries discovery. Connecting never sends comments automatically. **sending** and **unconfirmed** appear beside the identity during an active send or after an unacknowledged delivery; **Harness: unavailable** indicates a discovery error. This row remains visible during input and status messages, unless the status bar is disabled.
+
+The panel also shows the **repository root** above the status/input row. Titles are captured when the plugin registers a connection; untitled threads show the ID alone. Narrow terminals shorten the title before the ID and preserve the end of long repository paths. The root remains visible without an Amp connection. `--no-status-bar` hides the panel too.
+
 The file list and selected diff refresh about once per second. Refresh pauses during annotation input, while unsent comments exist, and during modal interactions. Successful sends clear only the delivered, unchanged comments; failed sends retain the snapshot, and `O` retries it without duplicating an acknowledged request in the same plugin process. Comments added or edited during delivery stay for the next send. Quit does not send; remaining comments follow the normal output/history behavior. Use **revdiff: disconnect** to close the connection.
 
-Both processes must run on the same host/filesystem. `--amp` requires a Git working-tree review and cannot be combined with refs, `--staged`, `--all-files`, stdin/compare modes, `--output`, or `--post-flush-command`. Connections use authenticated loopback HTTP and private temporary connection files. Plugin restart/disconnect requires reconnecting and relaunching revdiff; check the thread before resending an uncertain delivery across restarts. See [Amp plugin details](plugins/amp/README.md).
+Both processes must run on the same host/filesystem and user account. Automatic connection is limited to Git working-tree reviews; refs, `--staged`, `--all-files`, stdin/compare modes, `--output`, and `--post-flush-command` skip discovery and cannot be combined with explicit `--amp`. Without a matching session, annotations stay local and quit uses normal output/history behavior. Connections use authenticated loopback HTTP and private files under `~/.cache/revdiff/amp`; stale connections are ignored. **revdiff: disconnect** disables that thread's automatic connection until manual reconnect or plugin reload. Once bound, revdiff never switches connections: after reconnecting or restarting the plugin, relaunch a previously connected revdiff instance. Check the thread before resending an uncertain delivery across restarts. See [Amp plugin details](plugins/amp/README.md).
 
 ## Claude Code Plugin
 
@@ -771,6 +775,8 @@ The file picker lists paths currently visible in the sidebar, so annotated-only 
 
 Press `L` in the file viewer to show line numbers, or launch with `--line-numbers`. Type `:123` and press `Enter` to jump to source line 123; no Vim preset is required. Diff jumps use the new-file line numbers, or old-file numbers when the file is entirely deleted. A line omitted by compact mode or outside the file reports "not shown" and leaves the prompt open for correction. The `:` shortcut is rebindable as `command`.
 
+Pressing `:` opens a dedicated bordered command pane above the footer, with separate input and help/error rows. Thread, repository, and status information remain visible while you type. `Esc` cancels; a successful jump closes the pane and restores the diff's height. The command pane also works with `--no-status-bar`.
+
 Single-line annotation, search, command, file-picker, and theme-picker inputs use revdiff's built-in Bubbles text-input bindings, not your shell's keymap: arrows and `Ctrl+B`/`Ctrl+F` move by character, `Ctrl+A`/`Ctrl+E` move to the start/end, `Backspace`/`Ctrl+H` delete backward, `Ctrl+W` (or `Alt+Backspace`) deletes the previous word, and `Ctrl+U`/`Ctrl+K` delete from the cursor to the start/end. Existing `Enter`, `Esc`, search-history, and list-navigation behavior is unchanged. The terminal sends key sequences; revdiff cannot inherit zsh/readline bindings or Command-key shortcuts. Configure Option/Alt to send Meta for Alt bindings.
 
 **Search:**
@@ -793,7 +799,7 @@ Single-line annotation, search, command, file-picker, and theme-picker inputs us
 | `@` | Toggle annotation list popup (navigate and jump to any annotation) |
 | `}` / `{` | Jump to next/previous annotation (always crosses file boundaries; silent no-op at the first/last annotation) |
 | `d` | Delete annotation under cursor |
-| `O` | Send feedback with `--amp`, or export via `--output` / `--post-flush-command` |
+| `O` | Send feedback to connected Amp, or export via `--output` / `--post-flush-command` |
 | `s` | Stage change under cursor (modified tracked text, Git working tree) |
 | `Alt+E` (during annotation input) | Open `$EDITOR` for multi-line annotation (`open_editor` — rebindable) |
 | `Esc` | Cancel annotation input |

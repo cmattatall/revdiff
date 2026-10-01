@@ -12,7 +12,6 @@ import (
 
 	"github.com/umputun/revdiff/app/diff"
 	"github.com/umputun/revdiff/app/ui/sidepane"
-	"github.com/umputun/revdiff/app/ui/style"
 )
 
 func TestModel_CommandSourceLine(t *testing.T) {
@@ -78,7 +77,7 @@ func TestModel_CommandValidation(t *testing.T) {
 			m = model.(Model)
 			assert.True(t, m.command.active, "invalid commands stay editable")
 			assert.Equal(t, 0, m.nav.diffCursor)
-			assert.Contains(t, ansi.Strip(m.statusBarText()), tt.err)
+			assert.Contains(t, ansi.Strip(m.commandPaneView()), tt.err)
 			// Correct the input without leaving the prompt.
 			model, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
 			m = model.(Model)
@@ -139,9 +138,11 @@ func TestModel_CommandModalLifecycle(t *testing.T) {
 		assert.Zero(t, m.vim.count)
 		assert.Empty(t, m.vim.leader)
 		assert.True(t, m.livePaused())
-		assert.Equal(t, originalHeight-1, m.layout.viewport.Height)
-		assert.Equal(t, 1, m.statusBarHeight())
+		assert.Equal(t, originalHeight-4, m.layout.viewport.Height)
+		assert.Zero(t, m.statusBarHeight())
+		assert.Equal(t, 4, m.commandPaneHeight())
 		assert.Contains(t, ansi.Strip(m.View()), ":line number")
+		assert.Equal(t, 24, lipgloss.Height(m.View()))
 		model, _ := m.Update(tea.MouseMsg{Button: tea.MouseButtonWheelDown})
 		m = model.(Model)
 		assert.Zero(t, m.nav.diffCursor)
@@ -152,6 +153,7 @@ func TestModel_CommandModalLifecycle(t *testing.T) {
 		assert.False(t, m.command.input.Focused())
 		assert.Equal(t, originalHeight, m.layout.viewport.Height)
 		assert.Zero(t, m.statusBarHeight())
+		assert.Zero(t, m.commandPaneHeight())
 		assert.False(t, m.livePaused())
 	}
 }
@@ -174,13 +176,50 @@ func TestModel_CommandInputEditingAndWidth(t *testing.T) {
 	assert.Equal(t, "5123", m.command.input.Value())
 	assert.Equal(t, 4, m.command.input.Position())
 	m.command.err = "Enter a positive line number"
+	m.file.singleFile = true
 	for _, width := range []int{12, 30, 100} {
-		m.layout.width = width
-		assert.LessOrEqual(t, ansi.StringWidth(m.statusBarText()), width)
-		assert.False(t, strings.Contains(m.statusBarText(), "\n"))
-		rendered := m.resolver.Style(style.StyleKeyStatusBar).Width(width).Render(m.statusBarText())
-		assert.Equal(t, 1, lipgloss.Height(rendered), "status padding must not wrap command errors")
+		model, _ := m.Update(tea.WindowSizeMsg{Width: width, Height: 24})
+		m = model.(Model)
+		rendered := m.commandPaneView()
+		assert.Equal(t, 4, lipgloss.Height(rendered), "errors must not change pane height")
+		for _, line := range strings.Split(rendered, "\n") {
+			assert.LessOrEqual(t, ansi.StringWidth(line), width)
+		}
+		assert.Contains(t, ansi.Strip(rendered), ":5123", "error must not crowd out input")
+		assert.Equal(t, 4, m.command.input.Position(), "resize preserves editing position")
 	}
+}
+
+func TestModel_CommandPaneKeepsSessionFooter(t *testing.T) {
+	m := testModel([]string{"a.go"}, nil)
+	m.file.name, m.file.singleFile = "a.go", true
+	m.review.cfg = &ReviewInfoConfig{VCS: "git", WorkDir: "/work/review"}
+	m.live.sender = &feedbackStub{harness: "amp", display: "Review commands T-review"}
+	model, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = model.(Model)
+	originalHeight := m.layout.viewport.Height
+	m.startCommand()
+	m.command.input.SetValue("999")
+	m.submitCommand()
+	view := ansi.Strip(m.View())
+	require.Equal(t, 30, lipgloss.Height(view))
+	require.Equal(t, originalHeight-4, m.layout.viewport.Height)
+	rows := strings.Split(view, "\n")
+	require.Contains(t, rows[24], ":999")
+	require.Contains(t, rows[25], "Line 999 is not shown")
+	require.Contains(t, rows[27], "Harness (amp): Review commands T-review")
+	require.Contains(t, rows[28], "Repository: /work/review")
+	require.NotContains(t, rows[29], "Harness")
+	require.NotContains(t, view, "connected")
+	require.NotContains(t, rows[29], ":999")
+	for y := 23; y < 30; y++ {
+		require.Equal(t, hitStatus, m.hitTest(5, y), "footer must not map into the diff")
+	}
+	require.Equal(t, hitNone, m.hitTest(5, 22))
+	require.Equal(t, hitDiff, m.hitTest(5, 21))
+	m.closeCommand()
+	require.Equal(t, originalHeight, m.layout.viewport.Height)
+	require.NotContains(t, ansi.Strip(m.View()), "Line 999 is not shown")
 }
 
 func TestModel_CommandDoesNotStealTextInput(t *testing.T) {

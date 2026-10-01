@@ -218,11 +218,28 @@ func run(opts options) (int, error) {
 	}
 
 	var feedback ui.FeedbackSender
+	var discoverFeedback func() (ui.FeedbackSender, error)
 	if opts.Amp != "" {
 		if vcsType != diff.VCSGit {
 			return 0, errors.New("--amp requires a Git working tree")
 		}
 		feedback, err = amp.New(opts.Amp, workDir)
+		if err != nil {
+			return 0, err
+		}
+	} else if vcsType == diff.VCSGit && opts.ampApplicable() {
+		cwd, cwdErr := os.Getwd()
+		if cwdErr != nil {
+			return 0, cwdErr
+		}
+		discoverFeedback = func() (ui.FeedbackSender, error) {
+			client, discoverErr := amp.Discover(cwd)
+			if client == nil {
+				return nil, discoverErr
+			}
+			return client, discoverErr
+		}
+		feedback, err = discoverFeedback()
 		if err != nil {
 			return 0, err
 		}
@@ -248,6 +265,7 @@ func run(opts options) (int, error) {
 		Keymap:               km,
 		PostFlushHook:        postFlushHook,
 		Feedback:             feedback,
+		DiscoverFeedback:     discoverFeedback,
 		Stager:               stager,
 		CommitLog:            commitLogger,
 		CommitsApplicable:    commitsApplicable(opts, commitLogger),

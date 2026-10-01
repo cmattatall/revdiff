@@ -18,6 +18,78 @@ import (
 	"github.com/umputun/revdiff/app/ui/style"
 )
 
+func TestModel_SessionPanel(t *testing.T) {
+	m := testModel([]string{"a.go"}, nil)
+	m.review.cfg = &ReviewInfoConfig{VCS: "git", WorkDir: "/work/revdiff"}
+	sender := &feedbackStub{harness: "amp", display: "Review installer T-01a0f870-8501-7158-bd5f-36a7bcca868a"}
+	m.live.discover = func() (FeedbackSender, error) { return sender, nil }
+	resized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = resized.(Model)
+	require.Equal(t, []string{"Harness: waiting", "Repository: /work/revdiff"}, m.sessionPanelLines())
+	require.Equal(t, 3, m.statusBarHeight())
+	require.Equal(t, 24, m.layout.viewport.Height)
+	connected, _ := m.handleFeedbackDiscovered(feedbackDiscoveredMsg{sender: sender})
+	m = connected.(Model)
+	require.Equal(t, 24, m.layout.viewport.Height, "late connection must preserve viewport geometry")
+	require.Equal(t, []string{"Harness (amp): Review installer T-01a0f870-8501-7158-bd5f-36a7bcca868a", "Repository: /work/revdiff"}, m.sessionPanelLines())
+
+	m.annot.annotating = true
+	m.output.hint = "Feedback sent"
+	view := ansi.Strip(m.View())
+	require.Contains(t, view, "Harness (amp): Review installer T-01a0f870-8501-7158-bd5f-36a7bcca868a")
+	require.Equal(t, 1, strings.Count(view, "Harness (amp):"), "identity and connection state share one row")
+	require.NotContains(t, view, "connected")
+	require.Contains(t, view, "Repository: /work/revdiff")
+	require.Equal(t, 30, lipgloss.Height(view))
+	for _, y := range []int{27, 28, 29} {
+		require.Equal(t, hitStatus, m.hitTest(20, y), "footer must not select a diff line")
+	}
+	require.Equal(t, hitNone, m.hitTest(50, 26), "bottom border")
+	require.Equal(t, hitDiff, m.hitTest(50, 25), "last diff row")
+
+	sender.display = "T-review"
+	require.Equal(t, "Harness (amp): T-review", m.sessionPanelLines()[0])
+	m.cfg.noStatusBar = true
+	require.Empty(t, m.sessionPanelLines())
+	require.Zero(t, m.statusBarHeight())
+	m.command.active = true
+	require.Zero(t, m.statusBarHeight())
+	require.Equal(t, 4, m.commandPaneHeight(), "hidden status must not hide the command pane")
+}
+
+func TestModel_SessionPanelWidthAndSanitization(t *testing.T) {
+	m := testModel(nil, nil)
+	m.review.cfg = &ReviewInfoConfig{VCS: "git", WorkDir: "/long/parent/目录/\nreview\t\u202e"}
+	const id = "T-01a0f870-8501-7158-bd5f-36a7bcca868a"
+	sender := &feedbackStub{harness: "am\np\u202e", display: strings.Repeat("审查", 40) + "\n\r\u202e " + id}
+	m.live.sender = sender
+	for _, width := range []int{0, 2, 8, 30, 54, 55, 56, 80, 120} {
+		m.layout.width = width
+		lines := m.sessionPanelLines()
+		require.Len(t, lines, 2)
+		for _, line := range lines {
+			require.LessOrEqual(t, lipgloss.Width(line), max(width-2, 0))
+			require.NotContains(t, line, "\n")
+			require.NotContains(t, line, "\r")
+			require.NotContains(t, line, "\t")
+			require.NotContains(t, line, "\u202e")
+		}
+		if width >= 56 {
+			require.Contains(t, lines[0], id, "left truncation preserves the identifying suffix")
+			require.True(t, strings.HasPrefix(lines[0], "Harness (amp): "))
+		}
+		if width >= 30 {
+			require.True(t, strings.HasSuffix(lines[1], "/目录/review"), "preserve the repository tail")
+		}
+	}
+	m.layout.width = 80
+	m.live.sender = nil
+	m.review.cfg.VCS = "none"
+	require.Equal(t, []string{"Directory: /long/parent/目录/review"}, m.sessionPanelLines())
+	m.review.cfg.WorkDir = ""
+	require.Empty(t, m.sessionPanelLines(), "stdin has no repository metadata")
+}
+
 func TestModel_ResizeInSingleFileMode(t *testing.T) {
 	m := testModel(nil, nil)
 	// set up single-file mode via filesLoadedMsg
@@ -117,6 +189,50 @@ func TestModel_StatusBarWrapIndicator(t *testing.T) {
 		status := m.statusBarText()
 		assert.Contains(t, status, "↩", "indicator always shown, muted when inactive")
 	})
+}
+
+func TestModel_SessionPanelFeedbackConnection(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		state liveState
+		want  string
+	}{
+		{"standalone", liveState{}, ""},
+		{"waiting", liveState{discover: func() (FeedbackSender, error) { return nil, nil }}, "Harness: waiting"},
+		{"connected", liveState{sender: &feedbackStub{harness: "amp", display: "T-review"}}, "Harness (amp): T-review"},
+		{"different harness", liveState{sender: &feedbackStub{harness: "codex", display: "Implementation plan · session 42"}}, "Harness (codex): Implementation plan · session 42"},
+		{"sending", liveState{sender: &feedbackStub{harness: "codex", display: "session 42"}, operation: liveSending}, "Harness (codex): session 42 · sending"},
+		{"unconfirmed", liveState{sender: &feedbackStub{harness: "amp", display: "T-review"}, err: fmt.Errorf("offline")}, "Harness (amp): T-review · unconfirmed"},
+		{"unavailable", liveState{discover: func() (FeedbackSender, error) { return nil, nil }, err: fmt.Errorf("ambiguous")}, "Harness: unavailable"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := testModel(nil, nil)
+			m.file.name = "path/to/review.md"
+			m.layout.width = 140
+			m.live = tc.state
+			require.NotContains(t, m.statusBarText(), "Harness", "do not repeat identity in the action row")
+			if tc.want == "" {
+				require.Empty(t, m.sessionPanelLines())
+				return
+			}
+			require.Equal(t, tc.want, m.sessionPanelLines()[0])
+			m.annot.annotating = true
+			require.Equal(t, tc.want, m.sessionPanelLines()[0])
+			require.Contains(t, m.statusBarText(), "[enter] save")
+			m.annot.annotating = false
+			m.output.hint = "delivery details\nsecond line"
+			require.Equal(t, tc.want, m.sessionPanelLines()[0])
+			require.Contains(t, m.statusBarText(), "delivery details; second line")
+			for _, width := range []int{0, 8, 18, 40, 80, 140} {
+				m.layout.width = width
+				status := m.statusBarText()
+				require.LessOrEqual(t, lipgloss.Width(status), max(width-2, 0))
+				require.LessOrEqual(t, lipgloss.Width(m.sessionPanelLines()[0]), max(width-2, 0))
+				require.NotContains(t, status, "\n")
+				require.Equal(t, width, m.layout.width, "rendering must not shrink the stored layout")
+			}
+		})
+	}
 }
 
 func TestModel_StatusBarShowsFilenameAndStats(t *testing.T) {

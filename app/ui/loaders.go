@@ -398,6 +398,7 @@ func (m Model) loadSelectedIfChanged() (tea.Model, tea.Cmd) {
 // first change when start-at-change is enabled. Named
 // triggerReload (not reload) to avoid shadowing the Model.reload field.
 func (m *Model) triggerReload() tea.Cmd {
+	m.live.stageAnchor = nil
 	m.filesLoadSeq++
 	m.file.loadSeq++ // invalidate in-flight fileLoadedMsg from pre-reload selection
 	m.commits.loadSeq++
@@ -425,6 +426,8 @@ func (m Model) handleFilesLoaded(msg filesLoadedMsg) (tea.Model, tea.Cmd) {
 	if msg.seq != m.filesLoadSeq {
 		return m, nil
 	}
+	stageAnchor := m.live.stageAnchor
+	m.live.stageAnchor = nil
 	m.filesLoaded = true
 	if msg.err != nil {
 		m.layout.viewport.SetContent(fmt.Sprintf("error loading files: %v", msg.err))
@@ -496,7 +499,13 @@ func (m Model) handleFilesLoaded(msg filesLoadedMsg) (tea.Model, tea.Cmd) {
 
 	// auto-select first file
 	if f := m.tree.SelectedFile(); f != "" {
-		return m, tea.Batch(m.requestFileDiff(f), statsCmd)
+		seq := m.file.loadSeq
+		cmd := m.requestFileDiff(f)
+		if stageAnchor != nil && stageAnchor.file == f && stageAnchor.seq == seq {
+			stageAnchor.seq = m.file.loadSeq
+			m.live.stageAnchor = stageAnchor
+		}
+		return m, tea.Batch(cmd, statsCmd)
 	}
 	return m, statsCmd
 }
@@ -533,6 +542,8 @@ func (m Model) handleFileLoaded(msg fileLoadedMsg) (tea.Model, tea.Cmd) {
 	if msg.seq == m.file.canceledLoadSeq && msg.file == m.file.canceledLoadPath {
 		return m, nil
 	}
+	stageAnchor := m.live.stageAnchor
+	m.live.stageAnchor = nil
 	m.file.requestedPath = ""
 	if msg.err != nil {
 		m.layout.viewport.SetContent(fmt.Sprintf("error loading diff: %v", msg.err))
@@ -611,6 +622,11 @@ func (m Model) handleFileLoaded(msg fileLoadedMsg) (tea.Model, tea.Cmd) {
 			m.applyCompactAnchor(a)
 			return m, blameCmd
 		}
+	}
+
+	if stageAnchor != nil && stageAnchor.file == msg.file && stageAnchor.seq == msg.seq {
+		m.applyStageAnchor(stageAnchor)
+		return m, blameCmd
 	}
 
 	// sits below the three jump branches so an explicit jump target always wins, and must return

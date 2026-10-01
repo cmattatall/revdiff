@@ -66,13 +66,12 @@ const (
 	hitHeader                // diff header row (file path) — currently a no-op zone
 )
 
-// statusBarHeight returns the number of rows occupied by the status bar.
-// The command prompt remains visible even when the status bar is hidden.
+// statusBarHeight includes the session panel, but not the command pane.
 func (m Model) statusBarHeight() int {
-	if m.cfg.noStatusBar && !m.command.active {
+	if m.cfg.noStatusBar {
 		return 0
 	}
-	return 1
+	return 1 + len(m.sessionPanelLines())
 }
 
 // diffTopRow returns the first screen row (0-based y) of diff viewport content.
@@ -100,14 +99,15 @@ func (m Model) hitTest(x, y int) hitZone {
 	if x < 0 || y < 0 || x >= m.layout.width || y >= m.layout.height {
 		return hitNone
 	}
-	if sbh := m.statusBarHeight(); sbh > 0 && y >= m.layout.height-sbh {
+	footerHeight := m.statusBarHeight() + m.commandPaneHeight()
+	if footerHeight > 0 && y >= m.layout.height-footerHeight {
 		return hitStatus
 	}
-	// pane bottom border row sits just above the status bar (or the last
-	// row when the status bar is hidden). clicks on the border must not
+	// pane bottom border row sits just above the footer (or the last
+	// row when the footer is hidden). clicks on the border must not
 	// map into the viewport — without this guard, clickDiff would compute
 	// a row one past the visible content.
-	if y == m.layout.height-m.statusBarHeight()-1 {
+	if y == m.layout.height-footerHeight-1 {
 		return hitNone
 	}
 
