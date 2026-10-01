@@ -206,7 +206,7 @@ func defaultDescriptions() []HelpEntry {
 		{ActionHalfPageUp, "half page up", "Navigation"},
 		{ActionHome, "go to top", "Navigation"},
 		{ActionEnd, "go to bottom", "Navigation"},
-		{ActionCommand, "command prompt (:line to jump)", "Navigation"},
+		{ActionCommand, "command palette (:action or :line)", "Navigation"},
 		{ActionScrollLeft, "scroll left", "Navigation"},
 		{ActionScrollRight, "scroll right / focus diff", "Navigation"},
 		{ActionScrollCenter, "center viewport on cursor", "Navigation"},
@@ -390,6 +390,14 @@ func (km *Keymap) ResolveChord(prefix, second string) Action {
 		}
 	}
 	return ""
+}
+
+// Actions returns an independent, alphabetically sorted list of all canonical
+// actions, including those without a key binding.
+func (km *Keymap) Actions() []HelpEntry {
+	entries := append([]HelpEntry(nil), km.descriptions...)
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Action < entries[j].Action })
+	return entries
 }
 
 // KeysFor returns all keys bound to the given action, sorted alphabetically.

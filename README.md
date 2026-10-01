@@ -765,6 +765,7 @@ In the Claude Code and Codex plugins, you can also tell the agent to use a past 
 | `Ctrl+d/Ctrl+u` | Half-page scroll in file tree and diff pane |
 | `J/K` | Scroll diff viewport (works from either pane) |
 | `Home/End` | Jump to first/last item |
+| `:` | Open command palette (action name or source line; `Tab` completes, arrows browse) |
 | `:<line>` then `Enter` | Jump to a source line in the displayed file (`Esc` cancels) |
 | `Enter` | Switch to diff pane (tree) / start annotation (diff pane) |
 | `n/p` | Next/previous changed file; next/prev header in markdown TOC mode (n = next match when search active) |
@@ -776,7 +777,13 @@ The file picker lists paths currently visible in the sidebar, so annotated-only 
 
 Press `L` in the file viewer to show line numbers, or launch with `--line-numbers`. Type `:123` and press `Enter` to jump to source line 123; no Vim preset is required. Diff jumps use the new-file line numbers, or old-file numbers when the file is entirely deleted. A line omitted by compact mode or outside the file reports "not shown" and leaves the prompt open for correction. The `:` shortcut is rebindable as `command`.
 
-Pressing `:` opens a dedicated bordered command pane above the footer, with separate input and help/error rows. Thread, repository, and status information remain visible while you type. `Esc` cancels; a successful jump closes the pane and restores the diff's height. The command pane also works with `--no-status-bar`.
+Pressing `:` opens a dedicated bordered command palette above the footer. Run any keymap action by name, including unbound actions: `:stage_file`, `:stage_hunk`, `:reload`, `:toggle_line_numbers`, `:help`, or `:quit`. Type part of a name or description to filter suggestions, use `↑`/`↓` to browse, then `Tab` to complete. `Enter` runs only a complete action name or line number; partial and unknown names stay editable. Actions use the focused pane and retain their normal availability checks and confirmations. `:open_editor` opens the annotation at the focused diff line in `$EDITOR`.
+
+Matching prefixes show a muted inline completion: typing `:h` displays `:help` with only `elp` dimmed. Arrow-key browsing changes the suggestion; `Tab` accepts it. Suggestions never change the typed command until accepted.
+
+Vim-style commands are available too: `:set number` / `:set nonumber` show/hide line numbers, and `:set wrap` / `:set nowrap` enable/disable wrapping. Repeating a `set` command keeps the requested state rather than toggling it. `:q` quits normally, `:q!` uses revdiff's discard-and-quit confirmation, and `:w` flushes annotations to the configured output or connected harness (it does not write source files). These names also support completion.
+
+Thread, repository, and status information remain visible while you type. `Esc` cancels; running a command closes the palette and restores the diff's height. The command pane also works with `--no-status-bar` and, for commands such as `help` and `quit`, without a selected file.
 
 Single-line annotation, search, command, file-picker, and theme-picker inputs use revdiff's built-in Bubbles text-input bindings, not your shell's keymap: arrows and `Ctrl+B`/`Ctrl+F` move by character, `Ctrl+A`/`Ctrl+E` move to the start/end, `Backspace`/`Ctrl+H` delete backward, `Ctrl+W` (or `Alt+Backspace`) deletes the previous word, and `Ctrl+U`/`Ctrl+K` delete from the cursor to the start/end. Existing `Enter`, `Esc`, search-history, and list-navigation behavior is unchanged. The terminal sends key sequences; revdiff cannot inherit zsh/readline bindings or Command-key shortcuts. Configure Option/Alt to send Meta for Alt bindings.
 

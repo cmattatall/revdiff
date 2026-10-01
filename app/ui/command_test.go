@@ -10,7 +10,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/umputun/revdiff/app/annotation"
 	"github.com/umputun/revdiff/app/diff"
+	"github.com/umputun/revdiff/app/keymap"
 	"github.com/umputun/revdiff/app/ui/sidepane"
 )
 
@@ -55,7 +57,9 @@ func TestModel_CommandValidation(t *testing.T) {
 		{"0", "positive line number"},
 		{"-1", "positive line number"},
 		{"+2", "positive line number"},
-		{"q", "positive line number"},
+		{"unknown", "Unknown command"},
+		{"stage", "Unknown command"},
+		{"quit now", "Unknown command"},
 		{"99999999999999999999", "positive line number"},
 		{"2", "Line 2 is not shown"},
 		{"200", "Line 200 is not shown"},
@@ -141,7 +145,7 @@ func TestModel_CommandModalLifecycle(t *testing.T) {
 		assert.Equal(t, originalHeight-4, m.layout.viewport.Height)
 		assert.Zero(t, m.statusBarHeight())
 		assert.Equal(t, 4, m.commandPaneHeight())
-		assert.Contains(t, ansi.Strip(m.View()), ":line number")
+		assert.Contains(t, ansi.Strip(m.View()), ":action or line number")
 		assert.Equal(t, 24, lipgloss.Height(m.View()))
 		model, _ := m.Update(tea.MouseMsg{Button: tea.MouseButtonWheelDown})
 		m = model.(Model)
@@ -242,4 +246,262 @@ func TestModel_CommandDoesNotStealTextInput(t *testing.T) {
 			assert.Equal(t, ":", m.search.input.Value())
 		}
 	}
+}
+
+func TestModel_CommandCompletion(t *testing.T) {
+	m := testModel(nil, nil)
+	m.startCommand()
+	m.command.input.SetValue("STAGE")
+	require.Contains(t, ansi.Strip(m.commandPaneView()), "stage_file (1/2)")
+	for _, key := range []tea.KeyType{tea.KeyUp, tea.KeyDown, tea.KeyDown} {
+		model, _ := m.Update(tea.KeyMsg{Type: key})
+		m = model.(Model)
+	}
+	require.Contains(t, ansi.Strip(m.commandPaneView()), "stage_hunk (2/2)")
+	model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(Model)
+	require.Nil(t, cmd, "partial action names must not execute")
+	require.True(t, m.command.active)
+	require.Equal(t, "STAGE", m.command.input.Value())
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = model.(Model)
+	require.Equal(t, "stage_hunk", m.command.input.Value())
+	require.Equal(t, len("stage_hunk"), m.command.input.Position())
+	require.Empty(t, m.command.err)
+	// Editing a query resets selection, including when there are no matches.
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("xyz")})
+	m = model.(Model)
+	require.Zero(t, m.command.selected)
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = model.(Model)
+	require.Equal(t, "stage_hunkxyz", m.command.input.Value())
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
+	m = model.(Model)
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("toggle word wrap")})
+	m = model.(Model)
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = model.(Model)
+	require.Equal(t, "toggle_wrap", m.command.input.Value(), "descriptions are searchable")
+}
+
+func TestModel_CommandGhostCompletion(t *testing.T) {
+	m := testModel(nil, nil)
+	m.startCommand()
+	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
+	m = model.(Model)
+	inputRow := func() string { return strings.Split(ansi.Strip(m.commandPaneView()), "\n")[1] }
+	require.Contains(t, inputRow(), ":help", "short prefixes prefer help over half_page_down")
+	require.Equal(t, "h", m.command.input.Value(), "rendering must not accept the suggestion")
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = model.(Model)
+	require.Contains(t, inputRow(), ":home", "ghost text follows the browsed candidate")
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	m = model.(Model)
+	require.NotContains(t, inputRow(), ":home", "hide the suffix while editing inside the query")
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlE})
+	m = model.(Model)
+	require.Contains(t, inputRow(), ":home")
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m = model.(Model)
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(Model)
+	require.True(t, m.command.active, "Enter must not implicitly accept ghost text")
+	require.False(t, m.overlay.Active())
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = model.(Model)
+	require.Equal(t, "help", m.command.input.Value())
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(Model)
+	require.True(t, m.overlay.Active())
+	require.False(t, m.command.active)
+}
+
+func TestModel_CommandVimSettings(t *testing.T) {
+	for _, command := range []string{"set number", "set nonumber", "set wrap", "set nowrap"} {
+		for _, initial := range []bool{false, true} {
+			m := testModel([]string{"a.go"}, nil)
+			m.file.name, m.layout.focus = "a.go", paneDiff
+			m.file.lines = []diff.DiffLine{{NewNum: 12, Content: "line", ChangeType: diff.ChangeContext}}
+			m.modes.lineNumbers, m.modes.wrap = initial, initial
+			for range 2 {
+				m.startCommand()
+				m.command.input.SetValue(command)
+				model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+				m = model.(Model)
+				require.False(t, m.command.active)
+				if strings.Contains(command, "number") {
+					require.Equal(t, command == "set number", m.modes.lineNumbers, command)
+					require.Equal(t, initial, m.modes.wrap, "number must not change wrap")
+				} else {
+					require.Equal(t, command == "set wrap", m.modes.wrap, command)
+					require.Equal(t, initial, m.modes.lineNumbers, "wrap must not change number")
+				}
+			}
+		}
+	}
+	m := testModel(nil, nil)
+	m.startCommand()
+	m.command.input.SetValue("set nu")
+	require.Contains(t, strings.Split(ansi.Strip(m.commandPaneView()), "\n")[1], ":set number")
+	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = model.(Model)
+	require.Equal(t, "set number", m.command.input.Value())
+}
+
+func TestModel_CommandVimAliases(t *testing.T) {
+	for _, command := range []string{"q", "q!", "w"} {
+		m := testModel(nil, nil)
+		m.store.Add(annotation.Annotation{File: "a.go", Line: 1, Comment: "keep this note"})
+		sender := &feedbackStub{}
+		m.live.sender = sender
+		m.startCommand()
+		m.command.input.SetValue(command)
+		model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		m = model.(Model)
+		require.False(t, m.command.active)
+		switch command {
+		case "q":
+			require.NotNil(t, cmd)
+			require.IsType(t, tea.QuitMsg{}, cmd())
+			require.False(t, m.discarded)
+			require.Equal(t, 1, m.store.Count())
+		case "q!":
+			require.Nil(t, cmd)
+			require.True(t, m.inConfirmDiscard, "retain revdiff's existing discard confirmation")
+		case "w":
+			require.NotNil(t, cmd)
+			model, _ = m.Update(cmd())
+			m = model.(Model)
+			require.Equal(t, "Feedback sent", m.output.hint)
+			require.Len(t, sender.content, 1)
+			require.Contains(t, sender.content[0], "keep this note")
+		}
+	}
+}
+
+func TestModel_CommandDispatch(t *testing.T) {
+	for _, action := range []keymap.Action{keymap.ActionHelp, keymap.ActionSearch, keymap.ActionConfirm,
+		keymap.ActionTogglePane, keymap.ActionQuit, keymap.ActionCommand, keymap.ActionScrollDiffHalfPageDown} {
+		t.Run(string(action), func(t *testing.T) {
+			m := testModel([]string{"a.go"}, nil)
+			m.file.name, m.layout.focus = "a.go", paneDiff
+			for i := 1; i <= 100; i++ {
+				m.file.lines = append(m.file.lines, diff.DiffLine{NewNum: i, Content: "line", ChangeType: diff.ChangeContext})
+			}
+			m.layout.viewport.Height = 20
+			m.layout.viewport.SetContent(m.renderDiff())
+			for _, key := range m.keymap.KeysFor(action) {
+				m.keymap.Unbind(key)
+			}
+			m.startCommand()
+			model, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(string(action))})
+			m = model.(Model)
+			require.Equal(t, string(action), m.command.input.Value(), "long action names must not be truncated")
+			model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			m = model.(Model)
+			require.Equal(t, action == keymap.ActionCommand, m.command.active)
+			switch action {
+			case keymap.ActionHelp:
+				require.True(t, m.overlay.Active())
+			case keymap.ActionSearch:
+				require.True(t, m.search.active)
+			case keymap.ActionConfirm:
+				require.True(t, m.annot.annotating)
+			case keymap.ActionTogglePane:
+				require.Equal(t, paneTree, m.layout.focus)
+			case keymap.ActionQuit:
+				require.NotNil(t, cmd)
+				require.IsType(t, tea.QuitMsg{}, cmd())
+			case keymap.ActionCommand:
+				require.Empty(t, m.command.input.Value())
+			case keymap.ActionScrollDiffHalfPageDown:
+				require.Positive(t, m.layout.viewport.YOffset)
+			}
+		})
+	}
+}
+
+func TestModel_CommandStage(t *testing.T) {
+	for _, action := range []keymap.Action{keymap.ActionStageHunk, keymap.ActionStageFile} {
+		for _, annotated := range []bool{false, true} {
+			m := testModel([]string{"a.go"}, nil)
+			m.tree = sidepane.NewFileTree([]diff.FileEntry{{Path: "a.go", Status: diff.FileModified}})
+			m.file.name, m.layout.focus = "a.go", paneDiff
+			m.file.lines = []diff.DiffLine{{NewNum: 1, Content: "new", ChangeType: diff.ChangeAdd}}
+			calls := 0
+			m.live.stager = stagerStub{
+				hunk: func(path string, lines []diff.DiffLine, cursor int) error {
+					require.Equal(t, keymap.ActionStageHunk, action)
+					require.Equal(t, "a.go", path)
+					require.Equal(t, "new", lines[cursor].Content)
+					calls++
+					return nil
+				},
+				file: func(path, old string) error {
+					require.Equal(t, keymap.ActionStageFile, action)
+					require.Equal(t, "a.go", path)
+					calls++
+					return nil
+				},
+			}
+			if annotated {
+				m.store.Add(annotation.Annotation{File: "a.go", Line: 1, Comment: "keep"})
+			}
+			m.startCommand()
+			m.command.input.SetValue(string(action))
+			model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			m = model.(Model)
+			require.False(t, m.command.active)
+			require.Zero(t, calls, "staging must remain asynchronous")
+			if annotated {
+				require.Nil(t, cmd)
+				require.Contains(t, m.output.hint, "Send or remove annotations")
+				continue
+			}
+			require.NotNil(t, cmd, "palette must close before the live-operation guard")
+			require.Equal(t, liveStaging, m.live.operation)
+			model, reload := m.Update(cmd())
+			m = model.(Model)
+			require.Equal(t, 1, calls)
+			require.NotNil(t, reload)
+			require.False(t, m.filesLoaded)
+		}
+	}
+}
+
+func TestModel_CommandWithoutFile(t *testing.T) {
+	m := testModel(nil, nil)
+	m.startCommand()
+	require.True(t, m.command.active)
+	m.command.input.SetValue(" QUIT ")
+	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = model.(Model)
+	require.Equal(t, "quit", m.command.input.Value(), "must not complete to discard_quit")
+	require.Contains(t, ansi.Strip(m.commandPaneView()), "Enter run · Esc cancel · quit")
+	model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	require.False(t, model.(Model).command.active)
+	require.NotNil(t, cmd)
+	require.IsType(t, tea.QuitMsg{}, cmd())
+	m.closeCommand()
+	m.filesLoaded = false
+	m.startCommand()
+	require.False(t, m.command.active, "do not open an invisible palette while loading")
+}
+
+func TestModel_CommandOpenEditor(t *testing.T) {
+	m := testModel([]string{"a.go"}, nil)
+	m.file.name, m.layout.focus = "a.go", paneDiff
+	m.file.lines = []diff.DiffLine{{NewNum: 3, Content: "line", ChangeType: diff.ChangeAdd}}
+	m.store.Add(annotation.Annotation{File: "a.go", Line: 3, Comment: "first\nsecond", Type: "+"})
+	fake := mockEditor("", nil)
+	m.editor = fake
+	m.startCommand()
+	m.command.input.SetValue("open_editor")
+	model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(Model)
+	require.False(t, m.command.active)
+	require.True(t, m.annot.annotating)
+	require.NotNil(t, cmd)
+	require.Len(t, fake.CommandCalls(), 1)
+	require.Equal(t, "first\nsecond", fake.CommandCalls()[0].Content)
 }

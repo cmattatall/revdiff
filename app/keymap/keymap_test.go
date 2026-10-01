@@ -18,6 +18,26 @@ func TestDefault(t *testing.T) {
 	assert.NotEmpty(t, km.descriptions)
 }
 
+func TestActions(t *testing.T) {
+	km := Default()
+	for key := range km.bindings {
+		km.Unbind(key)
+	}
+	entries := km.Actions()
+	seen := make(map[Action]bool)
+	for i, entry := range entries {
+		require.False(t, seen[entry.Action], "duplicate action %s", entry.Action)
+		seen[entry.Action] = true
+		require.NotEmpty(t, entry.Description)
+		if i > 0 {
+			require.Less(t, string(entries[i-1].Action), string(entry.Action))
+		}
+	}
+	require.Equal(t, validActions, seen, "palette must include every canonical action, even unbound ones")
+	entries[0].Description = "modified copy"
+	require.NotEqual(t, entries[0].Description, km.Actions()[0].Description)
+}
+
 func TestDefault_allExpectedBindings(t *testing.T) {
 	km := Default()
 	tests := []struct {

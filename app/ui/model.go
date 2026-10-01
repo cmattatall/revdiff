@@ -1074,8 +1074,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 	if m.command.active {
-		var cmd tea.Cmd
-		m.command.input, cmd = m.command.input.Update(msg)
+		cmd := m.updateCommandInput(msg)
 		return m, cmd
 	}
 
@@ -1146,8 +1145,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // dispatchAction routes a resolved keymap action through overlay-open, the
 // global action switch, and the pane-specific nav fallback. It is the unified
-// dispatch path shared by keymap-resolved single keys (handleKey) and by
-// chord-resolved actions (handleChordSecond).
+// dispatch path shared by single keys, chords, and the command palette.
 func (m Model) dispatchAction(action keymap.Action) (tea.Model, tea.Cmd) {
 	if model, cmd, ok := m.handleOverlayOpen(action); ok {
 		return model, cmd
