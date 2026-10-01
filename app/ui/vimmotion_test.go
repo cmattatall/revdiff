@@ -512,6 +512,75 @@ func paneName(p pane) string {
 // keymap.Resolve, dispatchAction). Each test simulates a realistic key
 // sequence and asserts the final model state.
 
+func TestCursorCountsWithoutVimPreset(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		keys []tea.KeyMsg
+		want int
+	}{
+		{"down", []tea.KeyMsg{keyMsg('5'), keyMsg('j')}, 12},
+		{"up", []tea.KeyMsg{keyMsg('3'), keyMsg('k')}, 4},
+		{"multi digit", []tea.KeyMsg{keyMsg('1'), keyMsg('0'), keyMsg('j')}, 17},
+		{"bottom boundary", []tea.KeyMsg{keyMsg('9'), keyMsg('9'), keyMsg('j')}, 29},
+		{"top boundary", []tea.KeyMsg{keyMsg('9'), keyMsg('k')}, 0},
+		{"consumed once", []tea.KeyMsg{keyMsg('5'), keyMsg('j'), keyMsg('k')}, 11},
+		{"cancel", []tea.KeyMsg{keyMsg('5'), {Type: tea.KeyEsc}, keyMsg('j')}, 8},
+		{"arrow", []tea.KeyMsg{keyMsg('5'), {Type: tea.KeyDown}}, 12},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := vimTestModel(t, 30)
+			m.modes.vimMotion = false
+			m.nav.diffCursor = 7
+			for _, key := range tc.keys {
+				model, _ := m.Update(key)
+				m = model.(Model)
+			}
+			require.Equal(t, tc.want, m.nav.diffCursor)
+			require.Zero(t, m.vim.count)
+			require.Empty(t, m.vim.leader)
+		})
+	}
+}
+
+func TestDefaultCursorCountsRespectBindingsAndInputs(t *testing.T) {
+	for _, binding := range []string{"5", "j"} {
+		m := vimTestModel(t, 30)
+		m.modes.vimMotion = false
+		m.keymap.Bind(binding, keymap.ActionToggleLineNums)
+		for _, key := range "5j" {
+			model, _ := m.Update(keyMsg(key))
+			m = model.(Model)
+		}
+		require.True(t, m.modes.lineNumbers, "binding %s must still run", binding)
+		want := 0
+		if binding == "5" {
+			want = 1 // the digit toggles numbers, then j moves once
+		}
+		require.Equal(t, want, m.nav.diffCursor)
+		require.Zero(t, m.vim.count)
+	}
+	for _, input := range []string{"command", "search", "annotation"} {
+		m := vimTestModel(t, 30)
+		m.modes.vimMotion = false
+		switch input {
+		case "command":
+			m.startCommand()
+		case "search":
+			m.startSearch()
+		case "annotation":
+			m.startAnnotation()
+		}
+		for _, key := range "5j" {
+			model, _ := m.Update(keyMsg(key))
+			m = model.(Model)
+		}
+		values := map[string]string{"command": m.command.input.Value(), "search": m.search.input.Value(), "annotation": m.annot.input.Value()}
+		require.Equal(t, "5j", values[input])
+		require.Zero(t, m.nav.diffCursor)
+		require.Zero(t, m.vim.count)
+	}
+}
+
 func TestVimMotion_FullFlow_5j(t *testing.T) {
 	m := vimTestModel(t, 100)
 

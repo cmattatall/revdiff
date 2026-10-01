@@ -19,13 +19,16 @@ send means the plugin acknowledged appending the feedback to the selected thread
 exact current directory (resolving symlinks), and probes the authenticated endpoint
 without posting feedback. No live match returns no client; multiple live matches
 require explicit `--amp` selection. Malformed or stale registrations are ignored,
-not removed. The composition root gates discovery to compatible Git working-tree
-reviews; explicit `--amp` takes precedence. Once selected, clients never switch threads.
+not removed. The composition root gates discovery to compatible staged or unstaged
+Git working-tree reviews; explicit `--amp` takes precedence. Once selected, clients never switch threads.
 
 The composition root in `app/revdiff/main.go` constructs `amp.Client` and injects
 it through `ui.ModelConfig.Feedback`. It also supplies `DiscoverFeedback` for
 automatic mode, so the UI can asynchronously retry discovery on a one-second timer
-or an `O` press until a client is bound. Discovery does not pause for unsent drafts,
+or an `O` press until a client is bound. Named lookups in `ModelConfig.Harnesses`
+provide `:harness connect amp` and completion without hardcoding harness types in
+the UI. Connecting never sends annotations; `:harness send` dispatches the same
+send/flush action as `O`. Discovery does not pause for unsent drafts,
 but file refresh still does. The status bar reports connection and delivery state.
 The bottom panel shows `Harness (amp): <title> <thread ID>`, alongside the
 repository root supplied through `ReviewInfoConfig`. The client formats its cached

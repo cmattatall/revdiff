@@ -33,6 +33,7 @@ func (m Model) commandEntries() []commandEntry {
 	entries := []commandEntry{
 		{"q", "quit", keymap.ActionQuit},
 		{"w", "flush annotations to output or harness", keymap.ActionFlushOutput},
+		{"harness send", "send annotations to the connected harness", keymap.ActionFlushOutput},
 		{"set number", "show line numbers", keymap.ActionToggleLineNums},
 		{"set nonumber", "hide line numbers", keymap.ActionToggleLineNums},
 		{"set wrap", "enable word wrap", keymap.ActionToggleWrap},
@@ -40,6 +41,9 @@ func (m Model) commandEntries() []commandEntry {
 	}
 	for _, entry := range m.keymap.Actions() {
 		entries = append(entries, commandEntry{string(entry.Action), entry.Description, entry.Action})
+	}
+	for name := range m.live.harnesses {
+		entries = append(entries, commandEntry{"harness connect " + name, "connect to " + name + " in this directory", ""})
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].name < entries[j].name })
 	return entries
@@ -118,6 +122,17 @@ func (m *Model) submitCommand() (tea.Model, tea.Cmd) {
 	if value == "" {
 		m.closeCommand()
 		return *m, nil
+	}
+	if matches := m.commandMatches(); len(matches) == 1 {
+		value = matches[0].name
+	}
+	if name, ok := strings.CutPrefix(value, "harness connect "); ok {
+		if m.live.harnesses[name] == nil {
+			m.command.err = "Unknown or unavailable harness in this review: " + name
+			return *m, nil
+		}
+		m.closeCommand()
+		return m.connectHarness(name)
 	}
 	for _, entry := range m.commandEntries() {
 		if entry.name == value {
@@ -244,7 +259,7 @@ func (m Model) commandPaneView() string {
 		help = fmt.Sprintf("%s (%d/%d) · Tab complete · ↑↓ browse · %s",
 			entry.name, m.command.selected+1, len(matches), entry.description)
 		query := strings.ToLower(strings.TrimSpace(m.command.input.Value()))
-		if query == entry.name || (query == "h" && entry.name == "help") {
+		if len(matches) == 1 || query == entry.name || (query == "h" && entry.name == "help") {
 			help = "Enter run · Esc cancel · " + entry.description
 		}
 	}

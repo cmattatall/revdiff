@@ -219,15 +219,11 @@ func run(opts options) (int, error) {
 
 	var feedback ui.FeedbackSender
 	var discoverFeedback func() (ui.FeedbackSender, error)
-	if opts.Amp != "" {
-		if vcsType != diff.VCSGit {
-			return 0, errors.New("--amp requires a Git working tree")
-		}
-		feedback, err = amp.New(opts.Amp, workDir)
-		if err != nil {
-			return 0, err
-		}
-	} else if vcsType == diff.VCSGit && opts.ampApplicable() {
+	var harnesses map[string]func() (ui.FeedbackSender, error)
+	if opts.Amp != "" && vcsType != diff.VCSGit {
+		return 0, errors.New("--amp requires a Git working tree")
+	}
+	if vcsType == diff.VCSGit && opts.ampApplicable() {
 		cwd, cwdErr := os.Getwd()
 		if cwdErr != nil {
 			return 0, cwdErr
@@ -239,7 +235,13 @@ func run(opts options) (int, error) {
 			}
 			return client, discoverErr
 		}
-		feedback, err = discoverFeedback()
+		harnesses = map[string]func() (ui.FeedbackSender, error){"amp": discoverFeedback}
+		if opts.Amp != "" {
+			feedback, err = amp.New(opts.Amp, cwd)
+			discoverFeedback = nil // an explicit selection must never switch threads
+		} else {
+			feedback, err = discoverFeedback()
+		}
 		if err != nil {
 			return 0, err
 		}
@@ -266,6 +268,7 @@ func run(opts options) (int, error) {
 		PostFlushHook:        postFlushHook,
 		Feedback:             feedback,
 		DiscoverFeedback:     discoverFeedback,
+		Harnesses:            harnesses,
 		Stager:               stager,
 		CommitLog:            commitLogger,
 		CommitsApplicable:    commitsApplicable(opts, commitLogger),

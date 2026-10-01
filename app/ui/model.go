@@ -358,7 +358,7 @@ type modeState struct {
 	compact        bool           // true when diffs are fetched with small context around changes
 	compactContext int            // number of context lines around changes when compact is enabled
 	pageOverlap    int            // rows carried over from the previous screen on page up/down; 0 disables
-	vimMotion      bool           // true when the --vim-motion preset is active (gates the vim-motion interceptor in handleKey)
+	vimMotion      bool           // enables preset motions beyond the default cursor counts
 }
 
 // navigationState holds cursor and navigation-adjacent state.
@@ -525,11 +525,11 @@ type keyState struct {
 	hint         string // transient status-bar message; cleared on next key press
 }
 
-// vimState holds vim-motion preset state: count prefix accumulator and
+// vimState holds cursor-count and vim-motion preset state: count prefix accumulator and
 // pending letter leader. Distinct from keyState (ctrl/alt chord dispatch);
-// the two are orthogonal and run in different guards of handleKey. The vim
-// interceptor runs only when modes.vimMotion is true; when off, all fields
-// stay at their zero values. Invariant: count > 0 and leader != "" never
+// the two are orthogonal and run in different guards of handleKey. Counts
+// work without the preset; letter leaders require modes.vimMotion.
+// Invariant: count > 0 and leader != "" never
 // coexist (enforced in interceptor code, not types).
 type vimState struct {
 	count  int    // accumulated count prefix; 0 = none pending
@@ -722,12 +722,13 @@ type ModelConfig struct {
 	// entry instead of a delete + all-add pair. Nil for non-git VCS (rename detection
 	// is git-only); only consulted in unstaged working-tree mode.
 	LoadUntrackedRenames func([]string) ([]diff.FileEntry, error)
-	Keymap               *keymap.Keymap                 // custom key bindings (nil uses defaults)
-	Editor               ExternalEditor                 // external-editor driver (nil uses app/editor.Editor{})
-	PostFlushHook        PostFlushHook                  // optional command run after an in-session output flush
-	Feedback             FeedbackSender                 // optional harness connection; enables live refresh
-	DiscoverFeedback     func() (FeedbackSender, error) // optional lookup until a connection is found
-	Stager               Stager                         // optional unstaged Git staging
+	Keymap               *keymap.Keymap                            // custom key bindings (nil uses defaults)
+	Editor               ExternalEditor                            // external-editor driver (nil uses app/editor.Editor{})
+	PostFlushHook        PostFlushHook                             // optional command run after an in-session output flush
+	Feedback             FeedbackSender                            // optional harness connection; enables live refresh
+	DiscoverFeedback     func() (FeedbackSender, error)            // optional lookup until a connection is found
+	Harnesses            map[string]func() (FeedbackSender, error) // named lookups for :harness connect <type>
+	Stager               Stager                                    // optional unstaged Git staging
 	// CommitLog enumerates commits in the current ref range for the info popup's
 	// commit-log section. When nil, NewModel attempts to derive the source by
 	// type-asserting the Renderer against diff.CommitLogger; if the assertion
@@ -785,8 +786,8 @@ type ModelConfig struct {
 	// contextualize). Computed once in main.go and copied into Model state.
 	// Follows the same pattern as CommitsApplicable.
 	CompactApplicable bool
-	// VimMotion enables the vim-style motion preset (counts, gg, G, zz/zt/zb,
-	// ZZ). When true, the vim-motion interceptor in handleKey runs between
+	// VimMotion enables additional vim-style motions (gg, G, zz/zt/zb, ZZ).
+	// Cursor counts work without the preset. The interceptor runs between
 	// the modal-key handler and keymap.Resolve. Copied into modes.vimMotion at
 	// construction; the feature is gated on that field everywhere.
 	VimMotion bool
@@ -947,7 +948,7 @@ func NewModel(cfg ModelConfig) (Model, error) {
 		},
 		reviewed:             reviewedState{cache: make(map[string]string), pending: make(map[string]uint64)},
 		reload:               reloadState{applicable: cfg.ReloadApplicable},
-		live:                 liveState{sender: cfg.Feedback, discover: cfg.DiscoverFeedback, stager: cfg.Stager},
+		live:                 liveState{sender: cfg.Feedback, discover: cfg.DiscoverFeedback, harnesses: cfg.Harnesses, stager: cfg.Stager},
 		compact:              compactState{applicable: cfg.CompactApplicable},
 		annot:                annotationState{rowCache: make(map[annotCacheKey][]string)},
 		renderCache:          &diffRenderCache{},
@@ -1101,13 +1102,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return model, cmd
 	}
 
-	// vim-motion interceptor: runs AFTER handleModalKey so modals consume keys
+	// Count/preset interceptor: runs AFTER handleModalKey so modals consume keys
 	// first (digits and letters belong to the modal's textinput when active),
 	// and BEFORE keymap.Resolve so vim chords/counts preempt normal bindings.
 	// propagate the interceptor's model on fall-through so state cleared inside
 	// the interceptor (e.g., count dropped after an unrelated key like "5q")
 	// is visible to the standard keymap path that runs next.
-	if m.modes.vimMotion {
+	if m.modes.vimMotion || m.layout.focus == paneDiff || m.vim.count > 0 {
 		model, cmd, handled := m.interceptVimMotion(msg)
 		if handled {
 			return model, cmd
@@ -1412,7 +1413,7 @@ func (m *Model) toggleTreePane() {
 
 // toggleLineNumbers toggles line number display on/off and recomputes gutter width.
 func (m *Model) toggleLineNumbers() {
-	if m.layout.focus != paneDiff || m.file.name == "" {
+	if m.file.name == "" {
 		return
 	}
 	m.modes.lineNumbers = !m.modes.lineNumbers

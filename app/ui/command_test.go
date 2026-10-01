@@ -260,7 +260,7 @@ func TestModel_CommandCompletion(t *testing.T) {
 	require.Contains(t, ansi.Strip(m.commandPaneView()), "stage_hunk (2/2)")
 	model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = model.(Model)
-	require.Nil(t, cmd, "partial action names must not execute")
+	require.Nil(t, cmd, "ambiguous action names must not execute")
 	require.True(t, m.command.active)
 	require.Equal(t, "STAGE", m.command.input.Value())
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
@@ -282,6 +282,32 @@ func TestModel_CommandCompletion(t *testing.T) {
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = model.(Model)
 	require.Equal(t, "toggle_wrap", m.command.input.Value(), "descriptions are searchable")
+}
+
+func TestModel_CommandUniqueCompletionOnEnter(t *testing.T) {
+	for _, query := range []string{"set num", "set numb", "show line numbers"} {
+		m := testModel([]string{"a.go"}, nil)
+		m.file.name = "a.go"
+		m.file.lines = []diff.DiffLine{{NewNum: 12, Content: "line", ChangeType: diff.ChangeContext}}
+		m.layout.focus = paneTree
+		m.startCommand()
+		m.command.input.SetValue(query)
+		require.Contains(t, ansi.Strip(m.commandPaneView()), "Enter run")
+		require.Equal(t, query, m.command.input.Value(), "rendering must not accept completion")
+		model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		m = model.(Model)
+		require.False(t, m.command.active, query)
+		require.True(t, m.modes.lineNumbers, query)
+		require.Equal(t, paneTree, m.layout.focus)
+	}
+	m := testModel(nil, nil)
+	m.startCommand()
+	m.command.input.SetValue("set n")
+	model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(Model)
+	require.Nil(t, cmd)
+	require.True(t, m.command.active, "number, nonumber, and nowrap are ambiguous")
+	require.False(t, m.modes.lineNumbers)
 }
 
 func TestModel_CommandGhostCompletion(t *testing.T) {
@@ -345,7 +371,7 @@ func TestModel_CommandVimSettings(t *testing.T) {
 }
 
 func TestModel_CommandVimAliases(t *testing.T) {
-	for _, command := range []string{"q", "w"} {
+	for _, command := range []string{"q", "w", "harness send"} {
 		m := testModel(nil, nil)
 		m.store.Add(annotation.Annotation{File: "a.go", Line: 1, Comment: "keep this note"})
 		sender := &feedbackStub{}
@@ -360,7 +386,7 @@ func TestModel_CommandVimAliases(t *testing.T) {
 			require.NotNil(t, cmd)
 			require.IsType(t, tea.QuitMsg{}, cmd())
 			require.Equal(t, 1, m.store.Count())
-		case "w":
+		case "w", "harness send":
 			require.NotNil(t, cmd)
 			model, _ = m.Update(cmd())
 			m = model.(Model)
@@ -369,6 +395,54 @@ func TestModel_CommandVimAliases(t *testing.T) {
 			require.Contains(t, sender.content[0], "keep this note")
 		}
 	}
+}
+
+func TestModel_CommandHarnessConnect(t *testing.T) {
+	for _, name := range []string{"amp", "example"} {
+		for _, focus := range []pane{paneTree, paneDiff} {
+			sender := &feedbackStub{harness: name, display: "Selected session"}
+			calls := 0
+			m := testNewModel(t, plainRenderer(), annotation.NewStore(), noopHighlighter(), ModelConfig{
+				Harnesses: map[string]func() (FeedbackSender, error){name: func() (FeedbackSender, error) {
+					calls++
+					return sender, nil
+				}},
+			})
+			m.layout.focus = focus
+			m.store.Add(annotation.Annotation{File: "a.go", Line: 7, Comment: "keep until send"})
+			m.startCommand()
+			m.command.input.SetValue("harness con")
+			require.Equal(t, "harness connect "+name, m.commandMatches()[0].name)
+			model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			m = model.(Model)
+			require.False(t, m.command.active)
+			require.Equal(t, discoveryForConnect, m.live.discovery)
+			require.Zero(t, calls, "connection IO must run asynchronously")
+			require.NotNil(t, cmd)
+			model, _ = m.Update(cmd())
+			m = model.(Model)
+			require.Same(t, sender, m.live.sender)
+			require.Equal(t, focus, m.layout.focus)
+			require.Equal(t, 1, calls)
+			require.Equal(t, 1, m.store.Count())
+			require.Empty(t, sender.content, "connecting must never send annotations")
+			m.startCommand()
+			m.command.input.SetValue("harness connect " + name)
+			model, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			m = model.(Model)
+			require.Nil(t, cmd, "a bound session must not be replaced")
+			require.Contains(t, m.output.hint, "Already connected")
+			require.Equal(t, 1, calls)
+		}
+	}
+	m := testModel(nil, nil)
+	m.startCommand()
+	m.command.input.SetValue("harness connect unknown")
+	model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(Model)
+	require.Nil(t, cmd)
+	require.True(t, m.command.active)
+	require.Contains(t, m.command.err, "Unknown or unavailable harness")
 }
 
 func TestModel_CommandDispatch(t *testing.T) {

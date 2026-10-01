@@ -122,9 +122,9 @@ func (o options) startupUntracked() bool {
 	return true
 }
 
-// ampApplicable keeps automatic and explicit connections in working-tree reviews.
+// ampApplicable allows feedback from staged and unstaged working-tree reviews.
 func (o options) ampApplicable() bool {
-	return o.ref() == "" && !o.Staged && !o.AllFiles && !o.Stdin &&
+	return o.ref() == "" && !o.AllFiles && !o.Stdin &&
 		o.CompareOld == "" && o.CompareNew == "" && o.Output == "" && o.PostFlushCommand == ""
 }
 
@@ -181,7 +181,7 @@ func parseArgs(args []string) (options, error) {
 	opts.PostFlushCommand = strings.TrimSpace(opts.PostFlushCommand)
 
 	if opts.Amp != "" && !opts.ampApplicable() {
-		return options{}, errors.New("--amp requires a working-tree review without refs, --staged, --all-files, --stdin, --compare-old/--compare-new, --output, or --post-flush-command")
+		return options{}, errors.New("--amp requires a working-tree review without refs, --all-files, --stdin, --compare-old/--compare-new, --output, or --post-flush-command")
 	}
 
 	if err := validateStdinFlags(opts); err != nil {

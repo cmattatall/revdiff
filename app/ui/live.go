@@ -32,6 +32,7 @@ type discoveryState int
 const (
 	discoveryIdle discoveryState = iota
 	discoveryBackground
+	discoveryForConnect
 	discoveryForSend
 )
 
@@ -48,6 +49,7 @@ const (
 type liveState struct {
 	sender      FeedbackSender
 	discover    func() (FeedbackSender, error)
+	harnesses   map[string]func() (FeedbackSender, error)
 	discovery   discoveryState
 	stager      Stager
 	operation   liveOperation
@@ -82,6 +84,30 @@ type liveLoadedMsg struct {
 	file  fileLoadedMsg
 }
 
+// connectHarness performs a user-requested lookup without sending annotations.
+// Once bound, preserve the connection and its retry cache rather than switching threads.
+func (m Model) connectHarness(name string) (tea.Model, tea.Cmd) {
+	if m.live.sender != nil {
+		m.output.hint = "Already connected; " + m.feedbackStatusText(m.layout.width)
+		return m, nil
+	}
+	if m.live.discovery != discoveryIdle {
+		m.output.hint = "Harness discovery in progress; retry after it finishes"
+		return m, nil
+	}
+	connect := m.live.harnesses[name]
+	if connect == nil {
+		m.output.hint = "Harness unavailable in this review: " + name
+		return m, nil
+	}
+	m.live.discovery = discoveryForConnect
+	m.output.hint = "Looking for harness " + name + " in this directory"
+	return m, func() tea.Msg {
+		sender, err := connect()
+		return feedbackDiscoveredMsg{sender: sender, err: err}
+	}
+}
+
 // Discovery has its own timer so an O-triggered lookup cannot multiply the
 // refresh loop. It stops once a sender is bound; pending retries never switch threads.
 func (m Model) feedbackTick() tea.Cmd {
@@ -92,7 +118,7 @@ func (m Model) feedbackTick() tea.Cmd {
 }
 
 func (m Model) discoverFeedback(send bool) (tea.Model, tea.Cmd) {
-	if m.live.sender != nil || m.live.discover == nil {
+	if m.live.sender != nil || (m.live.discover == nil && m.live.discovery == discoveryIdle) {
 		return m, nil
 	}
 	previous := m.live.discovery
@@ -115,9 +141,10 @@ func (m Model) discoverFeedback(send bool) (tea.Model, tea.Cmd) {
 func (m Model) handleFeedbackDiscovered(msg feedbackDiscoveredMsg) (tea.Model, tea.Cmd) {
 	m.live.err = msg.err
 	send := m.live.discovery == discoveryForSend
+	requested := send || m.live.discovery == discoveryForConnect
 	m.live.discovery = discoveryIdle
 	if msg.err != nil || msg.sender == nil {
-		if send {
+		if requested {
 			m.output.hint = "Harness not connected; start a session in this directory, then press O"
 			if msg.err != nil {
 				m.output.hint = msg.err.Error()

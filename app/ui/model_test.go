@@ -1555,17 +1555,18 @@ func TestHandleKey_ChordPrecedence(t *testing.T) {
 	}
 }
 
-func TestHandleKey_VimMotionOff_InterceptorSkipped(t *testing.T) {
+func TestHandleKey_VimMotionOff_TreeIgnoresCount(t *testing.T) {
 	m := testModel([]string{"a.go"}, nil)
 	m.modes.vimMotion = false
+	m.layout.focus = paneTree
 
-	// digit key with vim-motion off must not touch vim state
+	// Default counts apply to the diff pane, not the file tree.
 	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'5'}})
 	model := result.(Model)
 
-	assert.Equal(t, 0, model.vim.count, "vim.count must stay 0 when vim-motion is off")
-	assert.Empty(t, model.vim.hint, "vim.hint must stay empty when vim-motion is off")
-	assert.Empty(t, model.vim.leader, "vim.leader must stay empty when vim-motion is off")
+	assert.Zero(t, model.vim.count)
+	assert.Empty(t, model.vim.hint)
+	assert.Empty(t, model.vim.leader)
 }
 
 func TestHandleKey_VimMotionOn_DigitAccumulates(t *testing.T) {

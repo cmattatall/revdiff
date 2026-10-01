@@ -88,8 +88,8 @@ Installs the `revdiff` binary into `GOBIN` (defaults to `$(go env GOPATH)/bin`).
 Run `./plugins/amp/install.sh` from this fork's repository root (requires Go). It builds and installs `revdiff` into `~/.local/bin` and the plugin into `~/.config/amp/plugins/revdiff.ts`. It detects bash or zsh from `$SHELL` and adds `~/.local/bin` to your shell startup files; `--shell bash|zsh` is an optional override and `--no-path` skips that edit. Open a new terminal or run `export PATH="$HOME/.local/bin:$PATH"`, then reload Amp plugins. Rerunning the script updates the installed binary and plugin automatically, replacing any local customizations. Upstream releases do not include this integration.
 
 1. Open an Amp thread in your Git checkout. The plugin registers the session automatically, without posting a setup message. After reloading the plugin in an existing thread, registration happens when you next send a prompt or choose **revdiff: connect**.
-2. Run `revdiff` in another terminal pane in the **same directory**. It automatically connects when exactly one live Amp session matches. Use `revdiff --untracked` to include new files. If multiple sessions match, disconnect the extras or use **Ctrl+O → revdiff: connect** in the intended Amp thread to get an explicit `--amp` command.
-3. Annotate with `Enter` or `a` (line) and `A` (file). Press `O` to send feedback to that Amp thread without leaving revdiff. Amp receives it as a steering message, including while working.
+2. Run `revdiff` or `revdiff --staged` in another terminal pane in the **same directory**. It automatically connects when exactly one live Amp session matches. Use `revdiff --untracked` to include new files. Type `:harness connect amp` to retry discovery manually without sending annotations. If multiple sessions match, disconnect the extras or use **Ctrl+O → revdiff: connect** in the intended Amp thread to get an explicit `--amp` command.
+3. Annotate with `Enter` or `a` (line) and `A` (file). Press `O` (Shift+O) or run `:harness send` to send feedback to that Amp thread without leaving revdiff. Amp receives it as a steering message, including while working.
 4. Press `s` on an added/removed line to stage that contiguous change. Hunk staging supports modified, tracked regular text files in an unstaged Git working-tree review; new/deleted files, renames, binary files, mode changes, refs, and staged views are not supported. Hunk staging changes the index, never the working file, and rejects stale displayed changes.
 5. Press `S` (Shift+S) to stage the entire selected file from the tree or diff pane (`stage_file`, rebindable). This stages the current working-tree version, including edits since the last render, like `git add`. It also supports new/deleted files, renames, binaries, symlinks, and mode changes; directories and submodules are excluded. Both staging shortcuts require an unstaged Git working-tree review and no pending annotations. Neither changes the working file.
 
@@ -99,7 +99,7 @@ The panel also shows the **repository root** above the status/input row. Titles 
 
 The file list and selected diff refresh about once per second. Refresh pauses during annotation input, while unsent comments exist, and during modal interactions. Successful sends clear only the delivered, unchanged comments; failed sends retain the snapshot, and `O` retries it without duplicating an acknowledged request in the same plugin process. Comments added or edited during delivery stay for the next send. Quit does not send; remaining comments follow the normal output/history behavior. Use **revdiff: disconnect** to close the connection.
 
-Both processes must run on the same host/filesystem and user account. Automatic connection is limited to Git working-tree reviews; refs, `--staged`, `--all-files`, stdin/compare modes, `--output`, and `--post-flush-command` skip discovery and cannot be combined with explicit `--amp`. Without a matching session, annotations stay local and quit uses normal output/history behavior. Connections use authenticated loopback HTTP and private files under `~/.cache/revdiff/amp`; stale connections are ignored. **revdiff: disconnect** disables that thread's automatic connection until manual reconnect or plugin reload. Once bound, revdiff never switches connections: after reconnecting or restarting the plugin, relaunch a previously connected revdiff instance. Check the thread before resending an uncertain delivery across restarts. See [Amp plugin details](plugins/amp/README.md).
+Both processes must run on the same host/filesystem and user account. Automatic connection is limited to staged and unstaged Git working-tree reviews; refs, `--all-files`, stdin/compare modes, `--output`, and `--post-flush-command` skip discovery and cannot be combined with explicit `--amp`. Without a matching session, annotations stay local and quit uses normal output/history behavior. Connections use authenticated loopback HTTP and private files under `~/.cache/revdiff/amp`; stale connections are ignored. **revdiff: disconnect** disables that thread's automatic connection until manual reconnect or plugin reload. Once bound, revdiff never switches connections: after reconnecting or restarting the plugin, relaunch a previously connected revdiff instance. Check the thread before resending an uncertain delivery across restarts. See [Amp plugin details](plugins/amp/README.md).
 
 ## Claude Code Plugin
 
@@ -756,6 +756,7 @@ In the Claude Code and Codex plugins, you can also tell the agent to use a past 
 | Key | Action |
 |-----|--------|
 | `j/k` or up/down | Navigate files (tree) / scroll diff (diff pane) |
+| `<N>j` / `<N>k` | Move N cursor positions down/up in the file pane (e.g. `5j`; no preset required) |
 | `h/l` | Switch between file tree and diff pane |
 | left/right | Horizontal scroll in diff pane (truncated lines show `«` / `»` overflow indicators at the edges) |
 | `Tab` | Switch between file tree and diff pane |
@@ -775,13 +776,15 @@ The file picker lists paths currently visible in the sidebar, so annotated-only 
 
 Press `L` in the file viewer to show line numbers, or launch with `--line-numbers`. Type `:123` and press `Enter` to jump to source line 123; no Vim preset is required. Diff jumps use the new-file line numbers, or old-file numbers when the file is entirely deleted. A line omitted by compact mode or outside the file reports "not shown" and leaves the prompt open for correction. The `:` shortcut is rebindable as `command`.
 
-Pressing `:` opens a dedicated bordered command palette above the footer. Run any keymap action by name, including unbound actions: `:stage_file`, `:stage_hunk`, `:reload`, `:toggle_line_numbers`, `:help`, or `:quit`. Type part of a name or description to filter suggestions, use `↑`/`↓` to browse, then `Tab` to complete. `Enter` runs only a complete action name or line number; partial and unknown names stay editable. Actions use the focused pane and retain their normal availability checks and confirmations. `:open_editor` opens the annotation at the focused diff line in `$EDITOR`.
+Pressing `:` opens a dedicated bordered command palette above the footer. Run any keymap action by name, including unbound actions: `:stage_file`, `:stage_hunk`, `:reload`, `:toggle_line_numbers`, `:help`, or `:quit`. Type part of a name or description to filter suggestions, use `↑`/`↓` to browse, then `Tab` to complete. `Enter` runs a complete action name, line number, or the sole matching suggestion: both `:set num` and `:set numb` run `:set number` without Tab. Ambiguous and unknown names stay editable. Actions use the focused pane and retain their normal availability checks and confirmations. `:open_editor` opens the annotation at the focused diff line in `$EDITOR`.
 
 Matching prefixes show a muted inline completion: typing `:h` displays `:help` with only `elp` dimmed. Arrow-key browsing changes the suggestion; `Tab` accepts it. Suggestions never change the typed command until accepted.
 
 `:h` is also an explicit alias for `:help`, so Enter opens help directly. The command palette works from either pane, including while files are loading.
 
 Vim-style commands are available too: `:set number` / `:set nonumber` show/hide line numbers, and `:set wrap` / `:set nowrap` enable/disable wrapping. Repeating a `set` command keeps the requested state rather than toggling it. `:q` quits normally, and `:w` flushes annotations to the configured output or connected harness (it does not write source files). These names also support completion.
+
+Harness commands support completion too: `:harness connect amp` looks for an Amp session in the current directory without sending annotations; `:harness send` uses the same send/flush action as `O` and `:w`. An existing connection stays bound to its original session, including after an unconfirmed send.
 
 Thread, repository, and status information remain visible while you type. `Esc` cancels; running a command closes the palette and restores the diff's height. The command pane also works with `--no-status-bar` and, for commands such as `help` and `quit`, without a selected file.
 
@@ -985,6 +988,8 @@ When the leader is pressed, the status bar shows `Pending: ctrl+w, esc to cancel
 ### Vim-motion Preset
 
 Opt-in vim-style motion layer activated via `--vim-motion`, `REVDIFF_VIM_MOTION=true`, or `vim-motion = true` in the config file. Off by default — when off, existing single-key bindings are unchanged.
+
+Cursor counts such as `5j` and `12k` work in the file pane **without this preset**. They repeat normal cursor movement, including annotation rows and skipping hidden lines, and stop at file boundaries. Counts range from 1 to 9999; `Esc` cancels a pending count. Without the preset, counts follow your up/down bindings (including arrows), explicit digit bindings take precedence, and digits in text inputs remain text.
 
 | Keys | Action |
 |------|--------|

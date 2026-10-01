@@ -24,7 +24,7 @@ var vimChordTable = map[string]keymap.Action{
 	"ZZ": keymap.ActionQuit,
 }
 
-// interceptVimMotion runs the vim-motion preset state machine for a single key
+// interceptVimMotion runs count prefixes and the optional vim-motion preset for a single key
 // event. Returns handled=true when the interceptor consumed the key; handled
 // =false lets handleKey fall through to the standard keymap resolution.
 //
@@ -37,9 +37,8 @@ var vimChordTable = map[string]keymap.Action{
 //  4. count consumer keys — j/k repeat cursor motion (diff pane only)
 //  5. leader entry — g/z require diff pane, Z is pane-agnostic
 //
-// The interceptor is a pure state-machine layer: it never calls handleModalKey
-// and never resolves through the keymap. Callers must gate invocation on
-// m.modes.vimMotion to keep the cost at one branch per keypress when off.
+// Modal inputs take precedence. Without the preset, only count-prefixed cursor
+// movement in the diff pane is enabled, and explicit digit bindings take precedence.
 //
 // Invariant: every fall-through branch (handled=false) returns cmd=nil.
 // handleKey relies on this — on fall-through it keeps the returned model but
@@ -58,6 +57,11 @@ func (m Model) interceptVimMotion(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 
 	// priority 2: digit accumulation
 	if isDigit(keyStr) {
+		if !m.modes.vimMotion && (m.layout.focus != paneDiff ||
+			m.keymap.Resolve(msg.String()) != "" || m.keymap.IsChordLeader(msg.String())) {
+			m.consumeVimCount()
+			return m, nil, false
+		}
 		// bare "0" with no pending count falls through so it can bind normally
 		if keyStr == "0" && m.vim.count == 0 {
 			return m, nil, false
@@ -68,7 +72,7 @@ func (m Model) interceptVimMotion(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 	}
 
 	// priority 3: screen-position motions (diff pane only)
-	if m.layout.focus == paneDiff {
+	if m.modes.vimMotion && m.layout.focus == paneDiff {
 		switch keyStr {
 		case "G": // bare G goes to last line, <N>G goes to line N
 			n := m.consumeVimCount()
@@ -92,10 +96,20 @@ func (m Model) interceptVimMotion(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 
 	// priority 4: other count consumer keys
 	if m.vim.count > 0 {
+		action := m.keymap.Resolve(msg.String())
+		if m.modes.vimMotion {
+			// The preset deliberately overrides the normal j/k bindings.
+			action = ""
+			if keyStr == "j" {
+				action = keymap.ActionDown
+			} else if keyStr == "k" {
+				action = keymap.ActionUp
+			}
+		}
 		switch {
-		case keyStr == "j" && m.layout.focus == paneDiff:
+		case action == keymap.ActionDown && m.layout.focus == paneDiff:
 			return m.repeatDiffAction(keymap.ActionDown, m.vim.count), nil, true
-		case keyStr == "k" && m.layout.focus == paneDiff:
+		case action == keymap.ActionUp && m.layout.focus == paneDiff:
 			return m.repeatDiffAction(keymap.ActionUp, m.vim.count), nil, true
 		}
 		// count is active but key is not a consumer (or wrong pane): drop count
@@ -107,6 +121,9 @@ func (m Model) interceptVimMotion(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 	}
 
 	// priority 5: leader entry
+	if !m.modes.vimMotion {
+		return m, nil, false
+	}
 	if (keyStr == "g" || keyStr == "z") && m.layout.focus == paneDiff {
 		m.vim.leader = keyStr
 		m.vim.hint = keyStr + "…"

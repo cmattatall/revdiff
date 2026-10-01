@@ -1177,12 +1177,14 @@ func TestParseArgs_InstallThemeFlag(t *testing.T) {
 }
 
 func TestParseArgsAmp(t *testing.T) {
-	opts, err := parseArgs(append(noConfigArgs(t), "--amp", "connection.json", "--untracked"))
-	require.NoError(t, err)
-	require.Equal(t, "connection.json", opts.Amp)
-	require.True(t, opts.ampApplicable())
+	for _, mode := range []string{"--untracked", "--staged"} {
+		opts, err := parseArgs(append(noConfigArgs(t), "--amp", "connection.json", mode))
+		require.NoError(t, err)
+		require.Equal(t, "connection.json", opts.Amp)
+		require.True(t, opts.ampApplicable())
+	}
 	for _, args := range [][]string{
-		{"HEAD"}, {"main", "topic"}, {"--staged"}, {"--all-files"}, {"--stdin"},
+		{"HEAD"}, {"main", "topic"}, {"--all-files"}, {"--stdin"},
 		{"--compare-old=a", "--compare-new=b"}, {"--output=out.md"}, {"--post-flush-command=cat"},
 	} {
 		t.Run(args[0], func(t *testing.T) {
@@ -1194,9 +1196,10 @@ func TestParseArgsAmp(t *testing.T) {
 
 func TestOptionsAmpApplicable(t *testing.T) {
 	require.True(t, (options{}).ampApplicable())
+	require.True(t, (options{Staged: true}).ampApplicable())
 	require.True(t, (options{Untracked: true, Only: []string{"README.md"}}).ampApplicable())
 	for _, opts := range []options{
-		{Staged: true}, {AllFiles: true}, {Stdin: true}, {CompareOld: "old"}, {CompareNew: "new"},
+		{AllFiles: true}, {Stdin: true}, {CompareOld: "old"}, {CompareNew: "new"},
 		{Output: "out.md"}, {PostFlushCommand: "cat"},
 	} {
 		require.False(t, opts.ampApplicable(), "%+v", opts)

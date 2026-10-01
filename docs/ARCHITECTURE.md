@@ -169,7 +169,9 @@ across files by concern to keep files under ~500 lines:
   Navigation/file-list/file-load generations reject stale results; tree navigation retains focus.
 - **`command.go`** — action palette and `:<line>` source-line lookup, separate from search state;
   filters all canonical keymap actions (including unbound ones), browses/completes suggestions,
-  and closes before forwarding exact action names through `dispatchAction`. It
+  accepts a unique completion on Enter, and closes before forwarding resolved action names
+  through `dispatchAction`. Named lookups injected through `ModelConfig.Harnesses` supply
+  `:harness connect <type>`; `:harness send` shares the normal flush action. It
   pauses live refresh and renders a four-row bordered command pane above the footer,
   with separate input and help/error rows, even with the status bar hidden. Search uses the
   same pane frame and height accounting while retaining its own matching and query-history state.

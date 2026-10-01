@@ -312,6 +312,71 @@ func TestStageAnchorDoesNotLeakToOtherLoads(t *testing.T) {
 	}
 }
 
+func TestHarnessConnectFailurePreservesAnnotations(t *testing.T) {
+	for _, lookupErr := range []error{nil, errors.New("multiple Amp sessions")} {
+		m := testNewModel(t, plainRenderer(), annotation.NewStore(), noopHighlighter(), ModelConfig{
+			Harnesses: map[string]func() (FeedbackSender, error){"amp": func() (FeedbackSender, error) {
+				return nil, lookupErr
+			}},
+		})
+		m.store.Add(annotation.Annotation{File: "a.go", Line: 4, Comment: "preserve"})
+		model, cmd := m.connectHarness("amp")
+		m = model.(Model)
+		require.NotNil(t, cmd)
+		_, duplicate := m.connectHarness("amp")
+		require.Nil(t, duplicate)
+		model, _ = m.Update(cmd())
+		m = model.(Model)
+		require.Nil(t, m.live.sender)
+		require.Equal(t, discoveryIdle, m.live.discovery)
+		require.Equal(t, 1, m.store.Count())
+		if lookupErr == nil {
+			require.Contains(t, m.output.hint, "Harness not connected")
+		} else {
+			require.Equal(t, lookupErr.Error(), m.output.hint)
+		}
+	}
+}
+
+func TestHarnessSendJoinsManualConnect(t *testing.T) {
+	sender := &feedbackStub{harness: "amp", err: errors.New("unconfirmed")}
+	lookups := 0
+	m := testNewModel(t, plainRenderer(), annotation.NewStore(), noopHighlighter(), ModelConfig{
+		Harnesses: map[string]func() (FeedbackSender, error){"amp": func() (FeedbackSender, error) {
+			lookups++
+			return sender, nil
+		}},
+	})
+	m.store.Add(annotation.Annotation{File: "review.go", Line: 8, Comment: "send once"})
+	model, lookup := m.connectHarness("amp")
+	m = model.(Model)
+	m.startCommand()
+	m.command.input.SetValue("harness send")
+	model, duplicate := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(Model)
+	require.Nil(t, duplicate, "send joins the manual lookup, even without automatic discovery")
+	require.Equal(t, discoveryForSend, m.live.discovery)
+	model, send := m.Update(lookup())
+	m = model.(Model)
+	model, _ = m.Update(send().(tea.BatchMsg)[0]())
+	m = model.(Model)
+	require.Equal(t, 1, lookups)
+	require.Len(t, sender.content, 1)
+	require.Equal(t, 1, m.store.Count(), "unconfirmed sends retain annotations")
+	model, cmd := m.connectHarness("amp")
+	m = model.(Model)
+	require.Nil(t, cmd, "connect cannot discard the bound session's retry cache")
+	sender.err = nil
+	m.startCommand()
+	m.command.input.SetValue("harness send")
+	model, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(Model)
+	model, _ = m.Update(cmd())
+	m = model.(Model)
+	require.Equal(t, []string{sender.content[0], sender.content[0]}, sender.content)
+	require.Zero(t, m.store.Count())
+}
+
 func TestFeedbackDiscoveryAfterLaunchPreservesDrafts(t *testing.T) {
 	var available FeedbackSender
 	store := annotation.NewStore()
