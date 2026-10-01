@@ -167,7 +167,7 @@ func (m Model) handleFileAnnotateKey() (tea.Model, tea.Cmd) {
 
 // handleEscKey clears active search results on esc.
 func (m Model) handleEscKey() (tea.Model, tea.Cmd) {
-	if m.search.term != "" || len(m.search.matches) > 0 {
+	if m.search.term != "" || len(m.search.matches) > 0 || m.nav.scanKind != treeScanIdle {
 		m.clearSearch()
 		m.layout.viewport.SetContent(m.renderDiff())
 	}
@@ -281,7 +281,7 @@ func (m Model) handleMarkReviewed() (tea.Model, tea.Cmd) {
 // is active, otherwise navigates files or TOC entries (no-op in single-file mode without TOC).
 func (m Model) handleFileOrSearchNav(forward bool) (tea.Model, tea.Cmd) {
 	if m.search.term != "" && m.layout.focus == paneTree && m.file.mdTOC == nil {
-		cmd := m.searchTree(forward, false)
+		cmd := m.scanTree(treeScanSearch, forward, false)
 		return m, cmd
 	}
 	if len(m.search.matches) > 0 {

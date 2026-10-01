@@ -382,7 +382,7 @@ func (m Model) joinStatusSections(left, right, sep string) string {
 // returns empty string when no search matches exist. shows 0/N when all matches are hidden
 // in collapsed mode (e.g. matches only on removed lines).
 func (m Model) searchSegment() string {
-	if m.search.scanPhase == searchScanRunning {
+	if m.nav.scanKind != treeScanIdle {
 		return "searching…"
 	}
 	if len(m.search.matches) == 0 {

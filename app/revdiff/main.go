@@ -282,7 +282,6 @@ func run(opts options) (int, error) {
 		Collapsed:            opts.Collapsed,
 		Compact:              opts.Compact,
 		CompactContext:       opts.CompactContext,
-		CrossFileHunks:       opts.CrossFileHunks,
 		StartAtChange:        opts.StartAtChange,
 		LineNumbers:          opts.LineNumbers,
 		ShowBlame:            opts.Blame,

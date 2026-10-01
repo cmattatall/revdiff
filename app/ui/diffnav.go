@@ -627,42 +627,38 @@ func (m *Model) moveToPrevHunk() {
 	}
 }
 
-// handleHunkNav moves to the next or previous hunk, crossing file boundaries when needed.
-// when cross-file hunk navigation is enabled, forward at the last hunk navigates to the next file
-// and lands on its first hunk, and backward at the first hunk navigates to the previous file and
-// lands on its last hunk.
-// always shifts focus to the diff pane. no-op when no file is loaded.
+// handleHunkNav cycles within the focused file, or across files with tree focus.
 func (m Model) handleHunkNav(forward bool) (tea.Model, tea.Cmd) {
-	if m.file.name == "" {
+	if m.file.name == "" || m.file.requestedPath != "" {
 		return m, nil
 	}
-	m.layout.focus = paneDiff
+	if m.layout.focus == paneTree && m.file.mdTOC == nil {
+		cmd := m.scanTree(treeScanHunk, forward, false)
+		return m, cmd
+	}
+	m.nav.scanSeq++
+	m.nav.scanKind = treeScanIdle
 	prevCursor := m.nav.diffCursor
 	if forward {
 		m.moveToNextHunk()
 	} else {
 		m.moveToPrevHunk()
 	}
-	if m.nav.diffCursor != prevCursor || m.file.singleFile || !m.cfg.crossFileHunks {
-		m.syncTOCActiveSection()
-		return m, nil
-	}
-	// cursor did not move — we are at the boundary; try to cross to adjacent file
-	if forward {
-		if m.tree.HasFile(sidepane.DirectionNext) {
-			fwd := true
-			m.nav.pendingHunkJump = &fwd
-			m.tree.StepFile(sidepane.DirectionNext)
-			return m.loadSelectedIfChanged()
-		}
-	} else {
-		if m.tree.HasFile(sidepane.DirectionPrev) {
-			bwd := false
-			m.nav.pendingHunkJump = &bwd
-			m.tree.StepFile(sidepane.DirectionPrev)
-			return m.loadSelectedIfChanged()
+	if m.nav.diffCursor == prevCursor {
+		hunks := m.findHunks()
+		for i := range hunks {
+			index := i
+			if !forward {
+				index = len(hunks) - 1 - i
+			}
+			if target := m.firstVisibleInHunk(hunks[index], hunks); target >= 0 {
+				m.nav.diffCursor = target
+				m.centerHunkInViewport()
+				break
+			}
 		}
 	}
+	m.realignSearchCursor()
 	m.syncTOCActiveSection()
 	return m, nil
 }

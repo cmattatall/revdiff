@@ -326,7 +326,6 @@ type modelConfigState struct {
 	mouseTracking      bool               // true when the session enabled mouse tracking
 	noStatusBar        bool               // hide the status bar
 	noConfirmReload    bool               // skip confirmation prompt on reload (R)
-	crossFileHunks     bool               // allow [ and ] to jump across file boundaries
 	startAtChange      bool               // put the cursor on the first changed line when a file loads
 	treeWidthRatio     int                // 1-10 units for file tree panel
 	tabSpaces          string             // spaces to replace tabs with
@@ -366,16 +365,16 @@ type modeState struct {
 type navigationState struct {
 	diffCursor      int   // index into file.lines for current cursor line
 	pendingHunkJump *bool // pending hunk jump after cross-file hunk navigation (true=first, false=last)
+	scanSeq         uint64
+	scanKind        treeScanKind // asynchronous tree navigation: idle, search, or hunk
 }
 
 // searchState holds all search lifecycle state.
 type searchState struct {
-	active     bool   // true when search textinput is active (typing)
-	term       string // last submitted search query
-	matches    []int  // indices into file.lines that match
-	cursor     int    // current position in matches (0-based)
-	scanSeq    uint64 // invalidates asynchronous tree searches
-	scanPhase  searchScanPhase
+	active     bool            // true when search textinput is active (typing)
+	term       string          // last submitted search query
+	matches    []int           // indices into file.lines that match
+	cursor     int             // current position in matches (0-based)
 	input      textinput.Model // dedicated textinput for search
 	matchSet   map[int]bool    // set of file.lines indices that match, computed per render
 	history    []string        // submitted queries, oldest-first; in-memory, session-scoped
@@ -751,7 +750,6 @@ type ModelConfig struct {
 	WrapIndent       int      // extra indent (cols) for wrap continuation rows; 0 disables
 	PageOverlap      int      // rows carried over from the previous screen on page up/down; 0 disables
 	Collapsed        bool     // start in collapsed diff mode
-	CrossFileHunks   bool     // allow [ and ] to jump across file boundaries
 	StartAtChange    bool     // put the cursor on the first changed line when a file loads
 	LineNumbers      bool     // show line numbers in diff gutter
 	ShowBlame        bool     // show blame gutter; requires Blamer
@@ -915,7 +913,6 @@ func NewModel(cfg ModelConfig) (Model, error) {
 			mouseTracking:      cfg.MouseTracking,
 			noStatusBar:        cfg.NoStatusBar,
 			noConfirmReload:    cfg.NoConfirmReload,
-			crossFileHunks:     cfg.CrossFileHunks,
 			startAtChange:      cfg.StartAtChange,
 			treeWidthRatio:     cfg.TreeWidthRatio,
 			tabSpaces:          strings.Repeat(" ", cfg.TabWidth),
@@ -1020,8 +1017,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleReviewStatsLoaded(msg)
 	case fileLoadedMsg:
 		return m.handleFileLoaded(msg)
-	case treeSearchMsg:
-		return m.handleTreeSearch(msg)
+	case treeScanMsg:
+		return m.handleTreeScan(msg)
 	case reviewFingerprintLoadedMsg:
 		return m.handleReviewFingerprintLoaded(msg)
 	case blameLoadedMsg:

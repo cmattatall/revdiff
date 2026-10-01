@@ -2533,8 +2533,8 @@ func loadFileIntoModel(t *testing.T, files []string, diffs map[string][]diff.Dif
 	m.layout.viewport.Height = 20
 	return m
 }
-func TestModel_HunkNav_FromTreePane_SwitchesFocusToDiff(t *testing.T) {
-	// pressing ] from tree pane should switch focus to diff and jump to first hunk
+func TestModel_HunkNav_FromTreePane_KeepsFocus(t *testing.T) {
+	// Tree navigation must retain tree focus for the next cross-file jump.
 	diffs := map[string][]diff.DiffLine{
 		"a.go": {
 			{ChangeType: diff.ChangeContext, Content: "ctx", NewNum: 1},
@@ -2545,14 +2545,12 @@ func TestModel_HunkNav_FromTreePane_SwitchesFocusToDiff(t *testing.T) {
 	m.layout.focus = paneTree
 	m.nav.diffCursor = 0 // on context line
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
-	model := result.(Model)
-
-	assert.Equal(t, paneDiff, model.layout.focus, "] from tree pane should switch focus to diff")
+	model := treeSearchKey(t, m, "]")
+	assert.Equal(t, paneTree, model.layout.focus)
 	assert.Equal(t, 1, model.nav.diffCursor, "] should land on the add line (hunk start)")
 }
-func TestModel_HunkNav_PrevFromTreePane_SwitchesFocusToDiff(t *testing.T) {
-	// pressing [ from tree pane should switch focus to diff and jump to prev hunk
+func TestModel_HunkNav_PrevFromTreePane_KeepsFocus(t *testing.T) {
+	// Reverse navigation retains tree focus as well.
 	diffs := map[string][]diff.DiffLine{
 		"a.go": {
 			{ChangeType: diff.ChangeAdd, Content: "add1", NewNum: 1},
@@ -2564,39 +2562,36 @@ func TestModel_HunkNav_PrevFromTreePane_SwitchesFocusToDiff(t *testing.T) {
 	m.layout.focus = paneTree
 	m.nav.diffCursor = 2 // on second add line
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'['}})
-	model := result.(Model)
-
-	assert.Equal(t, paneDiff, model.layout.focus, "[ from tree pane should switch focus to diff")
+	model := treeSearchKey(t, m, "[")
+	assert.Equal(t, paneTree, model.layout.focus)
 	assert.Equal(t, 0, model.nav.diffCursor, "[ should land on first hunk start (index 0)")
 }
 func TestModel_HunkNav_NextCrossesFileForward(t *testing.T) {
-	// pressing ] at the last hunk of a.go should navigate to b.go and set pendingHunkJump=true
+	// Tree-focused ] at the last hunk of a.go navigates to b.go.
 	diffs := map[string][]diff.DiffLine{
 		"a.go": {{ChangeType: diff.ChangeAdd, Content: "add", NewNum: 1}},
 		"b.go": {{ChangeType: diff.ChangeAdd, Content: "add", NewNum: 1}},
 	}
 	m := loadFileIntoModel(t, []string{"a.go", "b.go"}, diffs)
-	m.cfg.crossFileHunks = true
-	m.layout.focus = paneDiff
+	m.layout.focus = paneTree
 	m.nav.diffCursor = 0 // at the only (last) hunk
 
 	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
 	model := result.(Model)
 
-	require.NotNil(t, model.nav.pendingHunkJump, "pendingHunkJump should be set for cross-file forward jump")
-	assert.True(t, *model.nav.pendingHunkJump, "pendingHunkJump should be true (land on first hunk)")
+	require.NotNil(t, cmd)
+	result, _ = model.Update(cmd())
+	model = result.(Model)
 	assert.Equal(t, "b.go", model.tree.SelectedFile(), "tree should have advanced to b.go")
-	assert.NotNil(t, cmd, "a load command should be returned")
+	assert.Equal(t, "b.go", model.file.name)
 }
 func TestModel_HunkNav_PrevCrossesFileBackward(t *testing.T) {
-	// pressing [ at the first hunk of b.go should navigate to a.go and set pendingHunkJump=false
+	// Tree-focused [ at the first hunk of b.go navigates to a.go.
 	diffs := map[string][]diff.DiffLine{
 		"a.go": {{ChangeType: diff.ChangeAdd, Content: "add", NewNum: 1}},
 		"b.go": {{ChangeType: diff.ChangeAdd, Content: "add", NewNum: 1}},
 	}
 	m := loadFileIntoModel(t, []string{"a.go", "b.go"}, diffs)
-	m.cfg.crossFileHunks = true
 	// select b.go in tree (index 0 = dir entry, index 1 = a.go, index 2 = b.go)
 	m.tree.SelectByPath("b.go")
 	m.file.loadSeq++
@@ -2604,16 +2599,17 @@ func TestModel_HunkNav_PrevCrossesFileBackward(t *testing.T) {
 	result, _ := m.Update(bLoad)
 	m = result.(Model)
 	m.layout.viewport.Height = 20
-	m.layout.focus = paneDiff
+	m.layout.focus = paneTree
 	m.nav.diffCursor = 0 // at the first (and only) hunk
 
 	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'['}})
 	model := result.(Model)
 
-	require.NotNil(t, model.nav.pendingHunkJump, "pendingHunkJump should be set for cross-file backward jump")
-	assert.False(t, *model.nav.pendingHunkJump, "pendingHunkJump should be false (land on last hunk)")
+	require.NotNil(t, cmd)
+	result, _ = model.Update(cmd())
+	model = result.(Model)
 	assert.Equal(t, "a.go", model.tree.SelectedFile(), "tree should have moved back to a.go")
-	assert.NotNil(t, cmd, "a load command should be returned")
+	assert.Equal(t, "a.go", model.file.name)
 }
 func TestModel_HunkNav_NextAtLastFileNoOp(t *testing.T) {
 	// pressing ] at the last hunk of the last file: no-op
@@ -2653,7 +2649,6 @@ func TestModel_HunkNav_SingleFileNoCrossFile(t *testing.T) {
 		"a.go": {{ChangeType: diff.ChangeAdd, Content: "add", NewNum: 1}},
 	}
 	m := loadFileIntoModel(t, []string{"a.go"}, diffs)
-	m.cfg.crossFileHunks = true
 	m.file.singleFile = true
 	m.layout.treeWidth = 0
 	m.layout.focus = paneDiff
@@ -2679,8 +2674,7 @@ func TestModel_HunkNav_CrossFile_LandsOnFirstHunk(t *testing.T) {
 		"b.go": bLines,
 	}
 	m := loadFileIntoModel(t, []string{"a.go", "b.go"}, diffs)
-	m.cfg.crossFileHunks = true
-	m.layout.focus = paneDiff
+	m.layout.focus = paneTree
 	m.nav.diffCursor = 0 // at the only hunk of a.go
 
 	// press ] to trigger cross-file jump
@@ -2709,7 +2703,6 @@ func TestModel_HunkNav_CrossFile_LandsOnLastHunk(t *testing.T) {
 		"b.go": {{ChangeType: diff.ChangeAdd, Content: "add", NewNum: 1}},
 	}
 	m := loadFileIntoModel(t, []string{"a.go", "b.go"}, diffs)
-	m.cfg.crossFileHunks = true
 	// select b.go in tree (index 0 = dir entry, index 1 = a.go, index 2 = b.go)
 	m.tree.SelectByPath("b.go")
 	m.file.loadSeq++
@@ -2717,7 +2710,7 @@ func TestModel_HunkNav_CrossFile_LandsOnLastHunk(t *testing.T) {
 	result, _ := m.Update(loadMsg)
 	m = result.(Model)
 	m.layout.viewport.Height = 20
-	m.layout.focus = paneDiff
+	m.layout.focus = paneTree
 	m.nav.diffCursor = 0 // at first (only) hunk of b.go
 
 	// press [ to trigger cross-file backward jump

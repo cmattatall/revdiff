@@ -124,7 +124,7 @@ Use `--stdin` to review arbitrary piped or redirected text as one synthetic file
 | `Enter` | Switch to diff pane (tree) / start annotation (diff pane) |
 | `n/p` | Next/previous changed file; next/prev header in markdown TOC mode (n = next match when search active) |
 | `P` | Open the file picker |
-| `[` / `]` | Jump to previous/next change hunk in diff |
+| `[` / `]` | Cycle through previous/next hunks in the current file (diff focus) or across the tree (tree focus) |
 | `e` | Open focused file in `$EDITOR` |
 
 The file picker lists paths currently visible in the sidebar, preserving annotated-only and unreviewed-only filters. Printable keys always filter full relative paths; use the arrow keys or mouse wheel to move, and press `Enter` or left-click to jump. `Backspace` edits the filter. The first `Esc` clears a non-empty filter and keeps the picker open; the second closes it. Because printable keys always filter, `P` typed inside the picker adds to the filter rather than closing it; a `jump_file` binding with a modifier (e.g. `map alt+f jump_file`) closes the picker when pressed again.
@@ -134,6 +134,8 @@ Press `L` in the file viewer to show line numbers, or launch with `--line-number
 The command palette also runs every keymap action by name, including unbound actions: `:stage_file`, `:stage_hunk`, `:reload`, `:toggle_line_numbers`, `:help`, or `:quit`. Type part of a name or description to filter suggestions, use `↑`/`↓` to browse, then `Tab` to complete. `Enter` requires a complete action name or line number; `Esc` cancels. Actions use the focused pane and retain their normal availability checks and confirmations. `:open_editor` opens the annotation at the focused diff line in `$EDITOR`. The bordered pane preserves the footer and works with `--no-status-bar`; commands such as `help` and `quit` also work without a selected file.
 
 Matching prefixes show a muted inline completion: typing `:h` displays `:help` with only `elp` dimmed. Arrow-key browsing changes the suggestion; `Tab` accepts it. Suggestions never change the typed command until accepted.
+
+`:h` is also an explicit alias for `:help`, so Enter opens help directly. The command palette works from either pane, including while files are loading.
 
 Vim-style commands are available too: `:set number` / `:set nonumber` show/hide line numbers, and `:set wrap` / `:set nowrap` enable/disable wrapping. Repeating a `set` command keeps the requested state rather than toggling it. `:q` quits normally, and `:w` flushes annotations to the configured output or connected harness (it does not write source files). These names also support completion.
 

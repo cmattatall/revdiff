@@ -501,7 +501,7 @@ func TestModel_CommandHelpFromEitherPaneWhileLoading(t *testing.T) {
 				}
 				require.False(t, m.command.active)
 				require.True(t, m.overlay.Active(), "%s from %v during %s load", alias, focus, loading)
-				require.Contains(t, ansi.Strip(m.View()), "Help")
+				require.Contains(t, ansi.Strip(m.View()), "Navigation")
 				require.Equal(t, focus, m.layout.focus)
 			}
 		}

@@ -47,6 +47,8 @@ func (m Model) commandEntries() []commandEntry {
 
 func (m *Model) startCommand() tea.Cmd {
 	m.clearPendingInputState()
+	m.nav.scanSeq++
+	m.nav.scanKind = treeScanIdle
 	ti := textinput.New()
 	ti.Prompt = ":"
 	ti.Placeholder = "action or line number"
@@ -241,7 +243,8 @@ func (m Model) commandPaneView() string {
 		input.SetSuggestions([]string{entry.name})
 		help = fmt.Sprintf("%s (%d/%d) · Tab complete · ↑↓ browse · %s",
 			entry.name, m.command.selected+1, len(matches), entry.description)
-		if strings.EqualFold(strings.TrimSpace(m.command.input.Value()), entry.name) {
+		query := strings.ToLower(strings.TrimSpace(m.command.input.Value()))
+		if query == entry.name || (query == "h" && entry.name == "help") {
 			help = "Enter run · Esc cancel · " + entry.description
 		}
 	}

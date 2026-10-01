@@ -1,9 +1,6 @@
 package ui
 
 import (
-	"fmt"
-	"maps"
-	"slices"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -16,31 +13,14 @@ import (
 // when exceeded, oldest entries are dropped.
 const searchHistoryMax = 50
 
-type searchScanPhase uint8
-
-const (
-	searchScanIdle searchScanPhase = iota
-	searchScanRunning
-)
-
-type treeSearchMsg struct {
-	seq, fileSeq, filesSeq uint64
-	paths                  []string
-	origin                 string
-	entry                  diff.FileEntry
-	lines                  []diff.DiffLine
-	line                   int // -1 when no match exists
-	err                    error
-}
-
 // startSearch creates a search textinput and enters searching mode.
 func (m *Model) startSearch() tea.Cmd {
 	if !m.filesLoaded || m.file.requestedPath != "" {
 		return nil
 	}
 	m.clearPendingInputState()
-	m.search.scanSeq++
-	m.search.scanPhase = searchScanIdle
+	m.nav.scanSeq++
+	m.nav.scanKind = treeScanIdle
 	ti := textinput.New()
 	ti.Prompt = "/"
 	ti.Placeholder = "search"
@@ -67,7 +47,7 @@ func (m *Model) submitSearch() tea.Cmd {
 	m.appendSearchHistory(query)
 	m.refreshSearchMatches()
 	if m.layout.focus == paneTree && m.file.mdTOC == nil {
-		return m.searchTree(true, true)
+		return m.scanTree(treeScanSearch, true, true)
 	}
 
 	if len(m.search.matches) == 0 {
@@ -99,124 +79,6 @@ func (m *Model) refreshSearchMatches() {
 			m.search.matches = append(m.search.matches, i)
 		}
 	}
-}
-
-// searchTree scans on demand in tree order, without retaining every file's contents.
-// Only the matching file is installed in the UI; renderer IO runs in the command.
-func (m *Model) searchTree(forward, inclusive bool) tea.Cmd {
-	if m.search.scanPhase == searchScanRunning || m.file.requestedPath != "" || !m.filesLoaded {
-		return nil
-	}
-	paths := m.tree.VisibleFiles()
-	if len(paths) == 0 {
-		return nil
-	}
-	entries := make([]diff.FileEntry, len(paths))
-	for i, path := range paths {
-		entries[i] = diff.FileEntry{Path: path, OldPath: m.tree.OldPath(path), Status: m.tree.FileStatus(path)}
-	}
-	origin := slices.Index(paths, m.tree.SelectedFile())
-	if origin < 0 {
-		origin = 0
-	}
-	m.search.scanSeq++
-	m.search.scanPhase = searchScanRunning
-	// Capture a value snapshot before returning: commands must not read a model
-	// that the event loop is mutating, including the tree's maps and entries.
-	snapshot := *m
-	snapshot.modes.collapsed.expandedHunks = maps.Clone(m.modes.collapsed.expandedHunks)
-	selected := m.tree.SelectedFile()
-	return func() tea.Msg {
-		msg := treeSearchMsg{seq: snapshot.search.scanSeq, fileSeq: snapshot.file.loadSeq,
-			filesSeq: snapshot.filesLoadSeq, paths: paths, origin: selected, line: -1}
-		step := 1
-		if !forward {
-			step = -1
-		}
-		for visit := 0; visit <= len(entries); visit++ {
-			entry := entries[(origin+step*visit+len(entries))%len(entries)]
-			probe := snapshot
-			if entry.Path != snapshot.file.name {
-				var err error
-				probe.file.lines, err = snapshot.fetchEffectiveFileDiff(entry, snapshot.currentContextLines(), true)
-				if err != nil {
-					msg.err = err
-					return msg
-				}
-				probe.modes.collapsed.expandedHunks = nil
-			}
-			start, end := 0, len(probe.file.lines)
-			if !forward {
-				start, end = len(probe.file.lines)-1, -1
-			}
-			split := start
-			if entry.Path == snapshot.file.name {
-				split = snapshot.nav.diffCursor
-				if !inclusive {
-					split += step
-				}
-				if forward {
-					split = min(max(split, 0), len(probe.file.lines))
-				} else {
-					split = min(max(split, -1), len(probe.file.lines)-1)
-				}
-			}
-			if visit == 0 {
-				start = split
-			} else if visit == len(entries) {
-				end = split
-			}
-			hunks := probe.findHunks()
-			for i := start; i != end; i += step {
-				line := probe.file.lines[i]
-				if line.ChangeType != diff.ChangeDivider && !probe.isCollapsedHidden(i, hunks) &&
-					strings.Contains(strings.ToLower(line.Content), snapshot.search.term) {
-					msg.entry, msg.lines, msg.line = entry, probe.file.lines, i
-					return msg
-				}
-			}
-		}
-		return msg
-	}
-}
-
-func (m Model) handleTreeSearch(msg treeSearchMsg) (tea.Model, tea.Cmd) {
-	if msg.seq != m.search.scanSeq {
-		return m, nil
-	}
-	m.search.scanPhase = searchScanIdle
-	if msg.fileSeq != m.file.loadSeq || msg.filesSeq != m.filesLoadSeq ||
-		m.layout.focus != paneTree || m.search.active || m.command.active || m.annot.annotating ||
-		m.overlay.Active() || msg.origin != m.tree.SelectedFile() || !slices.Equal(msg.paths, m.tree.VisibleFiles()) {
-		return m, nil
-	}
-	if msg.err != nil {
-		m.output.hint = fmt.Sprintf("Search failed: %v", msg.err)
-		return m, nil
-	}
-	if msg.line < 0 {
-		m.output.hint = "No matches in file tree"
-		return m, nil
-	}
-	m.tree.SelectByPath(msg.entry.Path)
-	m.tree.EnsureVisible(m.treePageSize())
-	var cmd tea.Cmd
-	if msg.entry.Path != m.file.name {
-		m.pendingAnnotJump = nil
-		m.nav.pendingHunkJump = nil
-		m.file.loadSeq++
-		model, loadCmd := m.handleFileLoaded(fileLoadedMsg{file: msg.entry.Path, oldName: msg.entry.OldPath,
-			seq: m.file.loadSeq, lines: msg.lines})
-		m, cmd = model.(Model), loadCmd
-	}
-	m.nav.diffCursor = msg.line
-	m.annot.cursorOnAnnotation = false
-	m.ensureHunkExpanded(msg.line)
-	m.realignSearchCursor()
-	m.syncTOCActiveSection()
-	m.centerViewportOnCursor()
-	m.layout.viewport.SetContent(m.renderDiff())
-	return m, cmd
 }
 
 // nextSearchMatch advances to the next search match with wrap-around.
@@ -340,8 +202,8 @@ func (m *Model) findFirstVisibleMatch(startIdx int) int {
 // clearSearch resets per-query search state (term, matches, cursor, matchSet).
 // session-scoped history fields are intentionally preserved.
 func (m *Model) clearSearch() {
-	m.search.scanSeq++
-	m.search.scanPhase = searchScanIdle
+	m.nav.scanSeq++
+	m.nav.scanKind = treeScanIdle
 	m.search.term = ""
 	m.search.matches = nil
 	m.search.cursor = 0

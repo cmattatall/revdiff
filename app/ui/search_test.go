@@ -1765,7 +1765,7 @@ func treeSearchKey(t *testing.T, m Model, key string) Model {
 	m = model.(Model)
 	if cmd != nil {
 		msg := cmd()
-		require.IsType(t, treeSearchMsg{}, msg)
+		require.IsType(t, treeScanMsg{}, msg)
 		model, _ = m.Update(msg)
 		m = model.(Model)
 	}
@@ -1869,13 +1869,13 @@ func TestModel_TreeSearchFiltersNoMatchesAndErrors(t *testing.T) {
 }
 
 func TestModel_TreeSearchDiscardsSupersededResults(t *testing.T) {
-	for _, change := range []string{"clear", "new query", "reload", "navigation", "focus", "filter"} {
+	for _, change := range []string{"clear", "new query", "command", "cursor", "reload", "navigation", "focus", "filter"} {
 		t.Run(change, func(t *testing.T) {
 			m := treeSearchModel(t)
 			m.search.term = "third"
-			cmd := m.searchTree(true, true)
+			cmd := m.scanTree(treeScanSearch, true, true)
 			require.NotNil(t, cmd)
-			require.Nil(t, m.searchTree(true, false), "only one scan may run at a time")
+			require.Nil(t, m.scanTree(treeScanSearch, true, false), "only one scan may run at a time")
 			msg := cmd()
 			switch change {
 			case "clear":
@@ -1885,6 +1885,11 @@ func TestModel_TreeSearchDiscardsSupersededResults(t *testing.T) {
 				m.startSearch()
 				m.search.input.SetValue("first")
 				m.submitSearch()
+			case "command":
+				m.startCommand()
+				m.closeCommand()
+			case "cursor":
+				m.nav.diffCursor = 2
 			case "reload":
 				m.triggerReload()
 			case "navigation":
@@ -1894,10 +1899,11 @@ func TestModel_TreeSearchDiscardsSupersededResults(t *testing.T) {
 			case "filter":
 				m.tree.ToggleFilter(map[string]bool{"a.go": true})
 			}
+			cursor := m.nav.diffCursor
 			model, _ := m.Update(msg)
 			m = model.(Model)
 			require.Equal(t, "a.go", m.file.name)
-			require.Equal(t, 0, m.nav.diffCursor)
+			require.Equal(t, cursor, m.nav.diffCursor)
 		})
 	}
 }
