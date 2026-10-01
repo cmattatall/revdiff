@@ -398,6 +398,7 @@ func (m Model) loadSelectedIfChanged() (tea.Model, tea.Cmd) {
 // first change when start-at-change is enabled. Named
 // triggerReload (not reload) to avoid shadowing the Model.reload field.
 func (m *Model) triggerReload() tea.Cmd {
+	m.clearSearch()
 	m.live.stageAnchor = nil
 	m.filesLoadSeq++
 	m.file.loadSeq++ // invalidate in-flight fileLoadedMsg from pre-reload selection
@@ -557,7 +558,7 @@ func (m Model) handleFileLoaded(msg fileLoadedMsg) (tea.Model, tea.Cmd) {
 	m.reviewed.cache[msg.file] = fingerprint
 	m.tree.ReconcileReviewedPath(msg.file, fingerprint)
 	m.invalidateRenderCaches()
-	m.clearSearch()
+	m.refreshSearchMatches()
 	m.computeFileStats()
 	m.file.highlighted = m.highlighter.HighlightLines(msg.file, m.file.lines)
 	m.recomputeIntraRanges()

@@ -7,11 +7,13 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/umputun/revdiff/app/diff"
+	"github.com/umputun/revdiff/app/ui/mocks"
 	"github.com/umputun/revdiff/app/ui/style"
 )
 
@@ -184,7 +186,7 @@ func TestModel_SearchStandardTextEditing(t *testing.T) {
 	}
 }
 
-func TestModel_StartSearchOnlyFromDiffPane(t *testing.T) {
+func TestModel_StartSearchFromTreePane(t *testing.T) {
 	lines := []diff.DiffLine{{NewNum: 1, Content: "line1", ChangeType: diff.ChangeContext}}
 	m := testModel([]string{"a.go"}, map[string][]diff.DiffLine{"a.go": lines})
 	result, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
@@ -193,10 +195,11 @@ func TestModel_StartSearchOnlyFromDiffPane(t *testing.T) {
 	model = result.(Model)
 	model.layout.focus = paneTree
 
-	// press / in tree pane - should not start search
+	// Tree search uses the same palette with its scope identified.
 	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
 	model = result.(Model)
-	assert.False(t, model.search.active, "should not search from tree pane")
+	assert.True(t, model.search.active)
+	assert.Contains(t, ansi.Strip(model.commandPaneView()), "Search file tree")
 }
 
 func TestModel_SubmitSearchFindsMatches(t *testing.T) {
@@ -903,28 +906,82 @@ func TestModel_ClearSearchResetsMatchSet(t *testing.T) {
 	assert.Nil(t, m.search.matchSet)
 }
 
-func TestModel_StatusBarShowsSearchInput(t *testing.T) {
-	m := testModel([]string{"a.go"}, nil)
-	m.layout.width = 120
-	m.file.name = "a.go"
-	m.search.active = true
-	m.search.input = textinput.New()
-	m.search.input.SetValue("hello")
-
-	status := m.statusBarText()
-	assert.Contains(t, status, "/hello", "should show search prompt with value")
-	assert.NotContains(t, status, "a.go", "filename should not appear during search input")
-}
-
-func TestModel_StatusBarSearchInputTakesPriority(t *testing.T) {
-	m := testModel([]string{"a.go"}, nil)
-	m.layout.width = 120
-	m.file.name = "a.go"
-	m.search.active = true
-	m.search.input = textinput.New()
-
-	status := m.statusBarText()
-	assert.Contains(t, status, "/", "search input should be shown")
+func TestModel_SearchUsesCommandPane(t *testing.T) {
+	for _, noStatus := range []bool{false, true} {
+		for _, fromCommand := range []bool{false, true} {
+			m := testModel([]string{"a.go"}, nil)
+			m.file.name, m.file.singleFile, m.layout.focus = "a.go", true, paneDiff
+			m.file.lines = []diff.DiffLine{
+				{NewNum: 1, Content: "first", ChangeType: diff.ChangeContext},
+				{NewNum: 2, Content: "needle here", ChangeType: diff.ChangeContext},
+				{NewNum: 3, Content: "gap", ChangeType: diff.ChangeContext},
+				{NewNum: 4, Content: "another needle", ChangeType: diff.ChangeContext},
+			}
+			m.cfg.noStatusBar = noStatus
+			m.review.cfg = &ReviewInfoConfig{VCS: "git", WorkDir: "/work/review"}
+			m.live.sender = &feedbackStub{harness: "amp", display: "Review search T-review"}
+			model, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+			m = model.(Model)
+			originalHeight := m.layout.viewport.Height
+			if fromCommand {
+				m.startCommand()
+				m.command.input.SetValue("search")
+				model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			} else {
+				model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+			}
+			m = model.(Model)
+			require.True(t, m.search.active)
+			require.False(t, m.command.active)
+			require.Equal(t, originalHeight-4, m.layout.viewport.Height, "one palette, not two stacked panes")
+			m.search.history = []string{"first", "needle"}
+			m.search.historyIdx = 2
+			model, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+			m = model.(Model)
+			require.Equal(t, "needle", m.search.input.Value())
+			for _, width := range []int{30, 100} {
+				model, _ = m.Update(tea.WindowSizeMsg{Width: width, Height: 30})
+				m = model.(Model)
+				require.Equal(t, 6, m.search.input.Position())
+				require.Equal(t, width-5, m.search.input.Width)
+				require.Equal(t, 4, lipgloss.Height(m.commandPaneView()))
+				for _, row := range strings.Split(m.commandPaneView(), "\n") {
+					require.LessOrEqual(t, ansi.StringWidth(row), width)
+				}
+			}
+			view := ansi.Strip(m.View())
+			require.Equal(t, 30, lipgloss.Height(view))
+			require.Equal(t, 1, strings.Count(view, "/needle"))
+			require.Contains(t, view, "Search · Enter find")
+			require.NotContains(t, m.statusBarText(), "/needle")
+			if !noStatus {
+				require.Contains(t, view, "Harness (amp): Review search T-review")
+				require.Contains(t, view, "Repository: /work/review")
+				require.Contains(t, m.statusBarText(), "a.go")
+			}
+			model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			m = model.(Model)
+			require.False(t, m.search.active)
+			require.False(t, m.search.input.Focused())
+			require.Equal(t, originalHeight, m.layout.viewport.Height)
+			require.Equal(t, []int{1, 3}, m.search.matches)
+			require.Equal(t, 1, m.nav.diffCursor)
+			model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+			m = model.(Model)
+			require.Equal(t, 3, m.nav.diffCursor)
+			for _, cancel := range []tea.KeyType{tea.KeyEsc, tea.KeyCtrlC} {
+				m.startSearch()
+				model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(":quit")})
+				m = model.(Model)
+				require.Equal(t, ":quit", m.search.input.Value(), "commands stay literal inside search")
+				model, _ = m.Update(tea.KeyMsg{Type: cancel})
+				m = model.(Model)
+				require.False(t, m.search.active)
+				require.Equal(t, "needle", m.search.term, "cancel preserves the previous search")
+				require.Equal(t, originalHeight, m.layout.viewport.Height)
+			}
+		}
+	}
 }
 
 func TestModel_StatusBarSearchMatchPosition(t *testing.T) {
@@ -1026,13 +1083,14 @@ func TestModel_StatusBarSearchPositionBetweenHunkAndIcons(t *testing.T) {
 	assert.Less(t, searchIdx, iconIdx, "search position should appear before mode icons")
 }
 
-func TestModel_ClearSearchOnFileLoad(t *testing.T) {
+func TestModel_RefreshSearchOnFileLoad(t *testing.T) {
 	lines1 := []diff.DiffLine{
 		{NewNum: 1, Content: "hello world", ChangeType: diff.ChangeContext},
 		{NewNum: 2, Content: "hello again", ChangeType: diff.ChangeAdd},
 	}
 	lines2 := []diff.DiffLine{
 		{NewNum: 1, Content: "other content", ChangeType: diff.ChangeContext},
+		{NewNum: 2, Content: "HELLO elsewhere", ChangeType: diff.ChangeAdd},
 	}
 	m := testModel([]string{"a.go", "b.go"}, map[string][]diff.DiffLine{"a.go": lines1, "b.go": lines2})
 	result, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
@@ -1052,8 +1110,8 @@ func TestModel_ClearSearchOnFileLoad(t *testing.T) {
 	result, _ = model.Update(fileLoadedMsg{file: "b.go", seq: model.file.loadSeq, lines: lines2})
 	model = result.(Model)
 
-	assert.Empty(t, model.search.term, "search term should be cleared on file load")
-	assert.Nil(t, model.search.matches, "search matches should be cleared on file load")
+	assert.Equal(t, "hello", model.search.term, "query survives file navigation")
+	assert.Equal(t, []int{1}, model.search.matches, "matches are recomputed for the loaded file")
 	assert.Equal(t, 0, model.search.cursor, "search cursor should be reset on file load")
 	assert.Nil(t, model.search.matchSet, "search match set should be cleared on file load")
 }
@@ -1677,4 +1735,202 @@ func TestModel_SearchHistory_RecalledThenSubmittedAppendsAgain(t *testing.T) {
 	model = result.(Model)
 
 	assert.Equal(t, []string{"alpha", "beta", "alpha"}, model.search.history, "resubmitted older entry moves to most recent")
+}
+
+func treeSearchModel(t *testing.T) Model {
+	t.Helper()
+	files := map[string][]diff.DiffLine{
+		"a.go": {
+			{NewNum: 1, Content: "needle first", ChangeType: diff.ChangeContext},
+			{NewNum: 2, Content: "gap", ChangeType: diff.ChangeContext},
+			{NewNum: 3, Content: "NEEDLE second", ChangeType: diff.ChangeAdd},
+		},
+		"b.go": {{NewNum: 1, Content: "no match", ChangeType: diff.ChangeContext}},
+		"c.go": {
+			{NewNum: 1, Content: "different gap", ChangeType: diff.ChangeContext},
+			{NewNum: 2, Content: "needle third", ChangeType: diff.ChangeAdd},
+		},
+	}
+	m := testModel([]string{"a.go", "b.go", "c.go"}, files)
+	m.tree.Rebuild([]diff.FileEntry{{Path: "a.go"}, {Path: "b.go"}, {Path: "c.go"}})
+	model, _ := m.Update(fileLoadedMsg{file: "a.go", lines: files["a.go"]})
+	m = model.(Model)
+	m.layout.focus = paneTree
+	return m
+}
+
+func treeSearchKey(t *testing.T, m Model, key string) Model {
+	t.Helper()
+	model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+	m = model.(Model)
+	if cmd != nil {
+		msg := cmd()
+		require.IsType(t, treeSearchMsg{}, msg)
+		model, _ = m.Update(msg)
+		m = model.(Model)
+	}
+	return m
+}
+
+func TestModel_SearchScopeFollowsFocus(t *testing.T) {
+	m := treeSearchModel(t)
+	require.True(t, m.tree.SelectByVisibleRow(0)) // root directory, not a file
+	require.NotEqual(t, "a.go", m.tree.SelectedFile())
+	m.startSearch()
+	m.search.input.SetValue("needle")
+	cmd := m.submitSearch()
+	require.NotNil(t, cmd)
+	require.Equal(t, "searching…", m.searchSegment())
+	require.True(t, m.livePaused(), "refresh cannot overwrite a running search")
+	model, _ := m.Update(cmd())
+	m = model.(Model)
+	require.Equal(t, 0, m.nav.diffCursor)
+	require.Equal(t, "a.go", m.tree.SelectedFile(), "select the match even when its file is already loaded")
+
+	for _, step := range []struct {
+		focus     pane
+		key, file string
+		line      int
+	}{
+		{paneTree, "n", "a.go", 2},
+		{paneTree, "n", "c.go", 1}, // skips the file with no matches
+		{paneDiff, "n", "c.go", 1}, // wraps within this file, not the tree
+		{paneDiff, "N", "c.go", 1},
+		{paneTree, "n", "a.go", 0}, // wraps across files
+		{paneTree, "N", "c.go", 1}, // reverse wrap
+		{paneTree, "N", "a.go", 2},
+		{paneDiff, "n", "a.go", 0},
+		{paneDiff, "N", "a.go", 2},
+	} {
+		m.layout.focus = step.focus
+		m = treeSearchKey(t, m, step.key)
+		require.Equal(t, step.file, m.file.name)
+		require.Equal(t, step.line, m.nav.diffCursor)
+		require.Equal(t, step.focus, m.layout.focus, "search must not steal focus from the tree")
+		require.Equal(t, step.file, m.tree.SelectedFile())
+		require.True(t, m.buildSearchMatchSet()[step.line])
+		require.Equal(t, "needle", m.search.term)
+	}
+}
+
+func TestModel_FileSearchCanExpandToTree(t *testing.T) {
+	m := treeSearchModel(t)
+	m.layout.focus = paneDiff
+	m.startSearch()
+	m.search.input.SetValue("third") // absent locally, present in c.go
+	require.Nil(t, m.submitSearch(), "file search does not fetch other files")
+	m = treeSearchKey(t, m, "n")
+	require.Equal(t, "a.go", m.file.name)
+	require.Empty(t, m.search.matches)
+	m.layout.focus = paneTree
+	m = treeSearchKey(t, m, "n")
+	require.Equal(t, "c.go", m.file.name)
+	require.Equal(t, 1, m.nav.diffCursor)
+
+	m.startCommand()
+	m.command.input.SetValue("search")
+	model, _ := m.submitCommand()
+	m = model.(Model)
+	require.True(t, m.search.active, ":search works from the tree too")
+	m.search.input.SetValue("first")
+	cmd := m.submitSearch()
+	require.NotNil(t, cmd)
+	model, _ = m.Update(cmd())
+	m = model.(Model)
+	require.Equal(t, "a.go", m.file.name)
+	require.Equal(t, 0, m.nav.diffCursor)
+}
+
+func TestModel_TreeSearchFiltersNoMatchesAndErrors(t *testing.T) {
+	m := treeSearchModel(t)
+	m.tree.ToggleFilter(map[string]bool{"a.go": true, "b.go": true})
+	m.search.term = "needle"
+	m.refreshSearchMatches()
+	m.nav.diffCursor = 2
+	m = treeSearchKey(t, m, "n")
+	require.Equal(t, "a.go", m.file.name, "filtered-out c.go must not be searched")
+	require.Equal(t, 0, m.nav.diffCursor)
+
+	m.search.term = "absent"
+	m.refreshSearchMatches()
+	for _, key := range []string{"n", "N"} {
+		m = treeSearchKey(t, m, key)
+		require.Equal(t, "No matches in file tree", m.output.hint)
+		require.Equal(t, "a.go", m.file.name)
+		require.Equal(t, 0, m.nav.diffCursor)
+	}
+	m.diffRenderer.(*mocks.RendererMock).FileDiffFunc = func(req diff.FileDiffRequest) ([]diff.DiffLine, error) {
+		return nil, fmt.Errorf("cannot read %s", req.Path)
+	}
+	m = treeSearchKey(t, m, "n")
+	require.Contains(t, m.output.hint, "Search failed:")
+	require.Contains(t, m.output.hint, "cannot read b.go")
+	require.Equal(t, "a.go", m.file.name)
+}
+
+func TestModel_TreeSearchDiscardsSupersededResults(t *testing.T) {
+	for _, change := range []string{"clear", "new query", "reload", "navigation", "focus", "filter"} {
+		t.Run(change, func(t *testing.T) {
+			m := treeSearchModel(t)
+			m.search.term = "third"
+			cmd := m.searchTree(true, true)
+			require.NotNil(t, cmd)
+			require.Nil(t, m.searchTree(true, false), "only one scan may run at a time")
+			msg := cmd()
+			switch change {
+			case "clear":
+				model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+				m = model.(Model)
+			case "new query":
+				m.startSearch()
+				m.search.input.SetValue("first")
+				m.submitSearch()
+			case "reload":
+				m.triggerReload()
+			case "navigation":
+				m.requestFileDiff("b.go")
+			case "focus":
+				m.layout.focus = paneDiff
+			case "filter":
+				m.tree.ToggleFilter(map[string]bool{"a.go": true})
+			}
+			model, _ := m.Update(msg)
+			m = model.(Model)
+			require.Equal(t, "a.go", m.file.name)
+			require.Equal(t, 0, m.nav.diffCursor)
+		})
+	}
+}
+
+func TestModel_TreeSearchUsesEffectiveDiffAndSkipsHiddenLines(t *testing.T) {
+	m := treeSearchModel(t)
+	m.tree.Rebuild([]diff.FileEntry{{Path: "a.go"}, {Path: "renamed.go", OldPath: "old.go", Status: diff.FileAdded}})
+	m.search.term = "target"
+	m.modes.compact, m.compact.applicable, m.modes.compactContext = true, true, 3
+	m.modes.collapsed.enabled = true
+	var requests []diff.FileDiffRequest
+	m.diffRenderer.(*mocks.RendererMock).FileDiffFunc = func(req diff.FileDiffRequest) ([]diff.DiffLine, error) {
+		requests = append(requests, req)
+		if !req.Staged {
+			return nil, nil // staged-only added file fallback
+		}
+		return []diff.DiffLine{
+			{OldNum: 1, Content: "target hidden", ChangeType: diff.ChangeRemove},
+			{NewNum: 1, Content: "replacement", ChangeType: diff.ChangeAdd},
+			{Content: "target divider", ChangeType: diff.ChangeDivider},
+			{NewNum: 8, Content: "target visible", ChangeType: diff.ChangeContext},
+		}, nil
+	}
+	m = treeSearchKey(t, m, "n")
+	require.Equal(t, "renamed.go", m.file.name)
+	require.Equal(t, "old.go", m.file.oldName)
+	require.Equal(t, 3, m.nav.diffCursor)
+	require.Len(t, requests, 2)
+	for _, req := range requests {
+		require.Equal(t, "renamed.go", req.Path)
+		require.Equal(t, "old.go", req.OldPath)
+		require.Equal(t, 3, req.ContextLines)
+	}
+	require.False(t, requests[0].Staged)
+	require.True(t, requests[1].Staged)
 }

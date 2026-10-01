@@ -123,7 +123,6 @@ func (m Model) buildVimMotionHelpSection() overlay.HelpSection {
 			{Keys: "zt", Description: "align viewport top"},
 			{Keys: "zb", Description: "align viewport bottom"},
 			{Keys: "ZZ", Description: "quit"},
-			{Keys: "ZQ", Description: "discard and quit"},
 		},
 	}
 }
@@ -156,16 +155,6 @@ func (m Model) buildTOCHelpSection() overlay.HelpSection {
 	}
 }
 
-// handleDiscardQuit handles the Q key press for discard-and-quit.
-func (m Model) handleDiscardQuit() (tea.Model, tea.Cmd) {
-	if m.store.Count() == 0 || m.cfg.noConfirmDiscard || m.cfg.noStatusBar {
-		m.discarded = true
-		return m, tea.Quit
-	}
-	m.inConfirmDiscard = true
-	return m, nil
-}
-
 // handleFileAnnotateKey starts file-level annotation from diff pane only.
 func (m Model) handleFileAnnotateKey() (tea.Model, tea.Cmd) {
 	if m.layout.focus != paneDiff || m.file.name == "" {
@@ -178,7 +167,7 @@ func (m Model) handleFileAnnotateKey() (tea.Model, tea.Cmd) {
 
 // handleEscKey clears active search results on esc.
 func (m Model) handleEscKey() (tea.Model, tea.Cmd) {
-	if len(m.search.matches) > 0 {
+	if m.search.term != "" || len(m.search.matches) > 0 {
 		m.clearSearch()
 		m.layout.viewport.SetContent(m.renderDiff())
 	}
@@ -213,19 +202,6 @@ func (m Model) handleEnterKey() (tea.Model, tea.Cmd) {
 		}
 		m.layout.viewport.SetContent(m.renderDiff())
 		return m, cmd
-	}
-	return m, nil
-}
-
-// handleConfirmDiscardKey handles keys during discard confirmation prompt.
-func (m Model) handleConfirmDiscardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "y", "Q":
-		m.discarded = true
-		return m, tea.Quit
-	case "n", "esc":
-		m.inConfirmDiscard = false
-		return m, nil
 	}
 	return m, nil
 }
@@ -304,6 +280,10 @@ func (m Model) handleMarkReviewed() (tea.Model, tea.Cmd) {
 // handleFileOrSearchNav handles next/prev item navigation: navigates search matches when a search
 // is active, otherwise navigates files or TOC entries (no-op in single-file mode without TOC).
 func (m Model) handleFileOrSearchNav(forward bool) (tea.Model, tea.Cmd) {
+	if m.search.term != "" && m.layout.focus == paneTree && m.file.mdTOC == nil {
+		cmd := m.searchTree(forward, false)
+		return m, cmd
+	}
 	if len(m.search.matches) > 0 {
 		if forward {
 			m.nextSearchMatch()
@@ -313,6 +293,9 @@ func (m Model) handleFileOrSearchNav(forward bool) (tea.Model, tea.Cmd) {
 		m.syncTOCActiveSection()
 		m.layout.viewport.SetContent(m.renderDiff())
 		return m, nil
+	}
+	if m.search.term != "" && m.layout.focus == paneDiff {
+		return m, nil // an unmatched query must not turn n into file navigation
 	}
 	dir := 1
 	if !forward {

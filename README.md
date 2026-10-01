@@ -788,9 +788,13 @@ Single-line annotation, search, command, file-picker, and theme-picker inputs us
 
 **Search:**
 
+Press `/` or run `:search` to open search in the command palette. With the diff pane focused, search and `n`/`N` stay within the current file. With the file tree focused, they search file contents across the tree in tree order, respecting active tree filters and diff modes. Both directions wrap around. Switching focus changes the scope without replacing the query; the match counter shows the position within the displayed file.
+
+The `/` prompt and search-history help appear above the footer, including with `--no-status-bar`. Tree searches are labeled “Search file tree”. `Enter` finds a match and closes the pane; `Esc` or `Ctrl+C` cancels without replacing the previous search. The status bar keeps its normal file and navigation information while you type.
+
 | Key | Action |
 |-----|--------|
-| `/` | Start search in diff pane |
+| `/` | Search current file (diff focus) or files in the tree (tree focus) |
 | `n` | Next search match (overrides next file when search active) |
 | `N` | Previous file (previous search match when searching) |
 | `↑` / `Ctrl+P` | Recall previous search query (in search prompt) |

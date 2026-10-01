@@ -161,12 +161,17 @@ across files by concern to keep files under ~500 lines:
   visible-order/filter ownership to `FileTreeComponent` and loading to the guarded file loader
 - **`search.go`** — search input handling, match computation, navigation. Search and annotation
   inputs use Bubbles `textinput`; picker filters use the same component so terminal editing
-  behavior is consistent across all single-line text entry.
+  behavior is consistent across all single-line text entry. `/` and `:search` open the search
+  prompt in the shared command pane, leaving the status bar available for file/navigation info.
+  Diff focus searches and cycles locally; tree focus scans effective diffs asynchronously in
+  filtered tree order, loading only the next matching file. Query/file-list/file-load generations
+  reject stale results. File navigation retains the query and recomputes local highlights.
 - **`command.go`** — action palette and `:<line>` source-line lookup, separate from search state;
   filters all canonical keymap actions (including unbound ones), browses/completes suggestions,
   and closes before forwarding exact action names through `dispatchAction`. It
   pauses live refresh and renders a four-row bordered command pane above the footer,
-  with separate input and help/error rows, even with the status bar hidden.
+  with separate input and help/error rows, even with the status bar hidden. Search uses the
+  same pane frame and height accounting while retaining its own matching and query-history state.
 - **`mouse.go`** — mouse event routing: `handleMouse` dispatch, `hitTest` pane classification
   (`hitZone`), wheel/left-click helpers (`clickTree`, `clickDiff`), layout helpers
   (`statusBarHeight`, `diffTopRow`, `treeTopRow`). Diff-pane wheel events defer both the cursor pin
@@ -192,7 +197,7 @@ Each source file has a matching `_test.go`.
   `compactContext`, `lineNumbers`, `wordDiff`, `showBlame`
 - **`navigationState` (`m.nav`)** — cursor position: `diffCursor`, `pendingHunkJump`
 - **`searchState` (`m.search`)** — search lifecycle: `active`, `term`, `matches`, `cursor`, `input`,
-  `matchSet`, `history`, `historyIdx`
+  `matchSet`, `history`, `historyIdx`, plus `scanSeq` and `scanPhase` for asynchronous tree search
 - **`annotationState` (`m.annot`)** — annotation input lifecycle and visual-row cache: `annotating`,
   `fileAnnotating`, `cursorOnAnnotation`, `input`, `rowCache`
 - **`wheelState` (`m.wheel`)** — diff-pane wheel coalescing (issue #179): `gen`, `renderPending`,

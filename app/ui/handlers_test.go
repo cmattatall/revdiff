@@ -972,7 +972,7 @@ func TestBuildHelpSpec_StatusIconsOnToggleRows(t *testing.T) {
 		{"View", "show/hide untracked files", "∅ show/hide untracked files"},
 		{"View", "toggle hunk in collapsed", "  toggle hunk in collapsed"},
 		{"View", "show review info popup", "  show review info popup"},
-		{"Search", "search in diff", "≋ search in diff"},
+		{"Search", "search current file or file tree by focus", "≋ search current file or file tree by focus"},
 		{"Search", "recall previous search query (in search prompt)", "  recall previous search query (in search prompt)"},
 		{"Navigation", "move cursor down", "move cursor down"},
 	}

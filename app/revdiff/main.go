@@ -274,7 +274,6 @@ func run(opts options) (int, error) {
 		NoColors:             opts.NoColors,
 		MouseTracking:        !opts.NoMouse,
 		NoStatusBar:          opts.NoStatusBar,
-		NoConfirmDiscard:     opts.NoConfirmDiscard,
 		NoConfirmReload:      opts.NoConfirmReload,
 		NoTree:               opts.NoTree,
 		Wrap:                 opts.Wrap,
@@ -345,7 +344,6 @@ func run(opts options) (int, error) {
 			opts:        opts,
 			annotations: m.Store().FormatOutput(),
 			files:       m.Store().Files(),
-			discarded:   m.Discarded(),
 			gitRoot:     gitRoot,
 			workDir:     workDir,
 			signaled:    signaled,
@@ -381,19 +379,18 @@ type finalizeReq struct {
 	opts        options
 	annotations string
 	files       []string
-	discarded   bool
 	gitRoot     string
 	workDir     string
 	signaled    bool
 	stdout      io.Writer
 }
 
-// finalize persists the review after p.Run() joins. A discarded review or one
-// with no annotations writes nothing. Otherwise the history safety-net save
+// finalize persists the review after p.Run() joins. A review with no
+// annotations writes nothing. Otherwise the history safety-net save
 // always runs; a signal-driven exit (r.signaled) stops there — history only,
 // never the -o handoff — while a graceful exit also writes the annotation output.
 func finalize(r finalizeReq) (int, error) {
-	if r.discarded || r.annotations == "" {
+	if r.annotations == "" {
 		return 0, nil
 	}
 	saveHistory(histReq{opts: r.opts, annotations: r.annotations, gitRoot: r.gitRoot, workDir: r.workDir, files: r.files})

@@ -548,10 +548,12 @@ color-border = #6272a4
         <p>Single-line annotation, search, command, file-picker, and theme-picker inputs use revdiff's built-in Bubbles text-input bindings, not your shell's keymap: arrows and <code>Ctrl+B</code>/<code>Ctrl+F</code> move by character, <code>Ctrl+A</code>/<code>Ctrl+E</code> move to the start/end, <code>Backspace</code>/<code>Ctrl+H</code> delete backward, <code>Ctrl+W</code> (or <code>Alt+Backspace</code>) deletes the previous word, and <code>Ctrl+U</code>/<code>Ctrl+K</code> delete from the cursor to the start/end. Existing <code>Enter</code>, <code>Esc</code>, search-history, and list-navigation behavior is unchanged. The terminal sends key sequences; revdiff cannot inherit zsh/readline bindings or Command-key shortcuts. Configure Option/Alt to send Meta for Alt bindings.</p>
 
         <h2 id="search">Search</h2>
+        <p>Press <code>/</code> or run <code>:search</code> to open search in the command palette. With the diff pane focused, search and <code>n</code>/<code>N</code> stay within the current file. With the file tree focused, they search file contents across the tree in tree order, respecting active tree filters and diff modes. Both directions wrap around. Switching focus changes the scope without replacing the query; the match counter shows the position within the displayed file.</p>
+        <p>The <code>/</code> prompt and search-history help appear above the footer, including with <code>--no-status-bar</code>. Tree searches are labeled &ldquo;Search file tree&rdquo;. <code>Enter</code> finds a match and closes the pane; <code>Esc</code> or <code>Ctrl+C</code> cancels without replacing the previous search. The status bar keeps its normal file and navigation information while you type.</p>
         <table>
             <thead><tr><th>Key</th><th>Action</th></tr></thead>
             <tbody>
-                <tr><td><code>/</code></td><td>Start search in diff pane</td></tr>
+                <tr><td><code>/</code></td><td>Search current file (diff focus) or files in the tree (tree focus)</td></tr>
                 <tr><td><code>n</code></td><td>Next search match (when search active)</td></tr>
                 <tr><td><code>N</code></td><td>Previous search match</td></tr>
                 <tr><td><code>↑</code> / <code>Ctrl+P</code></td><td>Recall previous search query (in search prompt)</td></tr>

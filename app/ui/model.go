@@ -325,7 +325,6 @@ type modelConfigState struct {
 	noColors           bool               // keep monochrome output when previewing or applying themes
 	mouseTracking      bool               // true when the session enabled mouse tracking
 	noStatusBar        bool               // hide the status bar
-	noConfirmDiscard   bool               // skip confirmation prompt on discard quit
 	noConfirmReload    bool               // skip confirmation prompt on reload (R)
 	crossFileHunks     bool               // allow [ and ] to jump across file boundaries
 	startAtChange      bool               // put the cursor on the first changed line when a file loads
@@ -371,10 +370,12 @@ type navigationState struct {
 
 // searchState holds all search lifecycle state.
 type searchState struct {
-	active     bool            // true when search textinput is active (typing)
-	term       string          // last submitted search query
-	matches    []int           // indices into file.lines that match
-	cursor     int             // current position in matches (0-based)
+	active     bool   // true when search textinput is active (typing)
+	term       string // last submitted search query
+	matches    []int  // indices into file.lines that match
+	cursor     int    // current position in matches (0-based)
+	scanSeq    uint64 // invalidates asynchronous tree searches
+	scanPhase  searchScanPhase
 	input      textinput.Model // dedicated textinput for search
 	matchSet   map[int]bool    // set of file.lines indices that match, computed per render
 	history    []string        // submitted queries, oldest-first; in-memory, session-scoped
@@ -614,9 +615,6 @@ type Model struct {
 	// NewModel initializes this; direct Model{} construction is unsupported.
 	renderCache *diffRenderCache
 
-	discarded        bool // true when user chose to discard annotations and quit
-	inConfirmDiscard bool // true when showing discard confirmation prompt
-
 	pendingAnnotJump *annotation.Annotation // pending jump target after cross-file annotation list jump
 
 	activeThemeName string               // name of currently applied theme (for cursor positioning)
@@ -748,7 +746,6 @@ type ModelConfig struct {
 	MouseTracking    bool     // enable mouse tracking for clicks and wheel events
 	NoStatusBar      bool     // hide the status bar
 	NoTree           bool     // hide the file tree pane
-	NoConfirmDiscard bool     // skip confirmation prompt when discarding annotations
 	NoConfirmReload  bool     // skip confirmation prompt when dropping annotations on reload
 	Wrap             bool     // enable line wrapping
 	WrapIndent       int      // extra indent (cols) for wrap continuation rows; 0 disables
@@ -791,7 +788,7 @@ type ModelConfig struct {
 	// Follows the same pattern as CommitsApplicable.
 	CompactApplicable bool
 	// VimMotion enables the vim-style motion preset (counts, gg, G, zz/zt/zb,
-	// ZZ/ZQ). When true, the vim-motion interceptor in handleKey runs between
+	// ZZ). When true, the vim-motion interceptor in handleKey runs between
 	// the modal-key handler and keymap.Resolve. Copied into modes.vimMotion at
 	// construction; the feature is gated on that field everywhere.
 	VimMotion bool
@@ -917,7 +914,6 @@ func NewModel(cfg ModelConfig) (Model, error) {
 			noColors:           cfg.NoColors,
 			mouseTracking:      cfg.MouseTracking,
 			noStatusBar:        cfg.NoStatusBar,
-			noConfirmDiscard:   cfg.NoConfirmDiscard,
 			noConfirmReload:    cfg.NoConfirmReload,
 			crossFileHunks:     cfg.CrossFileHunks,
 			startAtChange:      cfg.StartAtChange,
@@ -969,11 +965,6 @@ func (m Model) Store() *annotation.Store {
 	return m.store
 }
 
-// Discarded returns true when the user chose to discard annotations and quit.
-func (m Model) Discarded() bool {
-	return m.discarded
-}
-
 // Init initializes the model by loading changed files and the commit log
 // in parallel. loadCommits returns nil when the feature is not applicable
 // (e.g. --stdin, standalone file, working-tree review), so tea.Batch harmlessly
@@ -1013,9 +1004,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.live.operation == liveStaging {
 			return m, nil
 		}
-		if m.inConfirmDiscard {
-			return m.handleConfirmDiscardKey(msg)
-		}
 		return m.handleKey(msg)
 	case tea.MouseMsg:
 		if m.live.operation == liveStaging {
@@ -1032,6 +1020,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleReviewStatsLoaded(msg)
 	case fileLoadedMsg:
 		return m.handleFileLoaded(msg)
+	case treeSearchMsg:
+		return m.handleTreeSearch(msg)
 	case reviewFingerprintLoadedMsg:
 		return m.handleReviewFingerprintLoaded(msg)
 	case blameLoadedMsg:
@@ -1154,13 +1144,17 @@ func (m Model) dispatchAction(action keymap.Action) (tea.Model, tea.Cmd) {
 	switch action {
 	case keymap.ActionDismiss:
 		return m.handleEscKey()
-	case keymap.ActionDiscardQuit:
-		return m.handleDiscardQuit()
 	case keymap.ActionQuit:
 		return m, tea.Quit
 	case keymap.ActionCommand:
 		cmd := m.startCommand()
 		return m, cmd
+	case keymap.ActionSearch:
+		if m.layout.focus == paneDiff || m.file.mdTOC == nil {
+			cmd := m.startSearch()
+			return m, cmd
+		}
+		return m, nil
 	case keymap.ActionTogglePane:
 		m.togglePane()
 		return m, nil
@@ -1556,6 +1550,10 @@ func (m Model) handleResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	if m.command.active {
 		m.command.input.Width = max(1, m.layout.width-5)
 		m.command.input.SetCursor(m.command.input.Position())
+	}
+	if m.search.active {
+		m.search.input.Width = max(1, m.layout.width-5)
+		m.search.input.SetCursor(m.search.input.Position())
 	}
 
 	var diffWidth int

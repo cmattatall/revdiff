@@ -781,9 +781,6 @@ func (m Model) handleDiffAction(action keymap.Action) (tea.Model, tea.Cmd) {
 	case keymap.ActionToggleHunk:
 		m.toggleHunkExpansion()
 		return m, nil
-	case keymap.ActionSearch:
-		cmd := m.startSearch()
-		return m, cmd
 	case keymap.ActionOpenEditor:
 		if m.cursorOnFileAnnotationLine() {
 			m.startFileAnnotation()

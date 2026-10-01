@@ -32,7 +32,6 @@ type commandEntry struct {
 func (m Model) commandEntries() []commandEntry {
 	entries := []commandEntry{
 		{"q", "quit", keymap.ActionQuit},
-		{"q!", "discard and quit (confirms pending annotations)", keymap.ActionDiscardQuit},
 		{"w", "flush annotations to output or harness", keymap.ActionFlushOutput},
 		{"set number", "show line numbers", keymap.ActionToggleLineNums},
 		{"set nonumber", "hide line numbers", keymap.ActionToggleLineNums},
@@ -47,9 +46,6 @@ func (m Model) commandEntries() []commandEntry {
 }
 
 func (m *Model) startCommand() tea.Cmd {
-	if !m.filesLoaded || m.file.requestedPath != "" {
-		return nil
-	}
 	m.clearPendingInputState()
 	ti := textinput.New()
 	ti.Prompt = ":"
@@ -114,6 +110,9 @@ func (m *Model) updateCommandInput(msg tea.Msg) tea.Cmd {
 
 func (m *Model) submitCommand() (tea.Model, tea.Cmd) {
 	value := strings.ToLower(strings.TrimSpace(m.command.input.Value()))
+	if value == "h" {
+		value = "help"
+	}
 	if value == "" {
 		m.closeCommand()
 		return *m, nil
@@ -146,6 +145,10 @@ func (m *Model) submitCommand() (tea.Model, tea.Cmd) {
 		}
 		return *m, nil
 	}
+	if !m.filesLoaded || m.file.requestedPath != "" {
+		m.command.err = "Wait for the selected file to load"
+		return *m, nil
+	}
 	idx := m.sourceLineIndex(n)
 	if idx < 0 {
 		m.command.err = fmt.Sprintf("Line %d is not shown", n)
@@ -166,7 +169,7 @@ func (m Model) commandMatches() []commandEntry {
 	var matches []commandEntry
 	for _, entry := range m.commandEntries() {
 		// Completing an exact name must not replace it with a substring match
-		// (for example, quit must never complete to discard_quit).
+		// (for example, down must not complete to page_down).
 		if entry.name == query {
 			return []commandEntry{entry}
 		}
@@ -209,16 +212,25 @@ func (m Model) sourceLineIndex(n int) int {
 }
 
 func (m Model) commandPaneHeight() int {
-	if m.command.active {
+	if m.command.active || m.search.active {
 		return 4 // input, help/error, and two borders
 	}
 	return 0
 }
 
 func (m Model) commandPaneView() string {
-	width := max(0, m.layout.width-4) // borders and horizontal padding
 	input := m.command.input
+	if m.search.active {
+		input = m.search.input
+	}
 	input.PlaceholderStyle = m.resolver.Style(style.StyleKeyAnnotInputPlaceholder)
+	if m.search.active {
+		scope := "Search"
+		if m.layout.focus == paneTree && m.file.mdTOC == nil {
+			scope = "Search file tree"
+		}
+		return m.inputPaneView(input.View(), scope+" · Enter find · ↑↓ history · Esc cancel")
+	}
 	input.CompletionStyle = input.PlaceholderStyle
 	help := "Enter run/jump · Tab complete · ↑↓ browse · Esc cancel"
 	if matches := m.commandMatches(); len(matches) > 0 {
@@ -236,7 +248,13 @@ func (m Model) commandPaneView() string {
 	if m.command.err != "" {
 		help = m.command.err
 	}
-	inputView := ansi.Truncate(input.View(), width, "")
+	return m.inputPaneView(input.View(), help)
+}
+
+// inputPaneView gives command and search input the same bordered palette pane.
+func (m Model) inputPaneView(input, help string) string {
+	width := max(0, m.layout.width-4) // borders and horizontal padding
+	inputView := ansi.Truncate(input, width, "")
 	help = ansi.Truncate(help, width, "…")
 	return m.resolver.Style(style.StyleKeyDiffPaneActive).
 		Padding(0, 1).Width(max(0, m.layout.width-2)).Render(inputView + "\n" + help)

@@ -144,7 +144,7 @@ func (m Model) liveTick() tea.Cmd {
 func (m Model) livePaused() bool {
 	return !m.filesLoaded || m.file.requestedPath != "" || m.annot.annotating || m.store.Count() > 0 ||
 		m.live.operation != liveIdle || len(m.live.pending) > 0 || m.search.active ||
-		m.command.active || m.overlay.Active() || m.reload.pending || m.inConfirmDiscard
+		m.search.scanPhase == searchScanRunning || m.command.active || m.overlay.Active() || m.reload.pending
 }
 
 func (m Model) pollLive() (tea.Model, tea.Cmd) {

@@ -303,10 +303,6 @@ func TestModel_CommandGhostCompletion(t *testing.T) {
 	require.Contains(t, inputRow(), ":home")
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
 	m = model.(Model)
-	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = model.(Model)
-	require.True(t, m.command.active, "Enter must not implicitly accept ghost text")
-	require.False(t, m.overlay.Active())
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = model.(Model)
 	require.Equal(t, "help", m.command.input.Value())
@@ -372,22 +368,6 @@ func TestModel_CommandVimAliases(t *testing.T) {
 			require.Len(t, sender.content, 1)
 			require.Contains(t, sender.content[0], "keep this note")
 		}
-	}
-}
-
-func TestModel_CommandDiscardQuitRemoved(t *testing.T) {
-	for _, command := range []string{"discard_quit", "q!"} {
-		t.Run(command, func(t *testing.T) {
-			m := testModel(nil, nil)
-			m.store.Add(annotation.Annotation{File: "a.go", Line: 1, Comment: "keep"})
-			m.startCommand()
-			m.command.input.SetValue(command)
-			require.NotContains(t, ansi.Strip(m.commandPaneView()), "· "+command)
-			model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-			m = model.(Model)
-			require.Nil(t, cmd)
-			require.Equal(t, 1, m.store.Count())
-		})
 	}
 }
 
@@ -497,7 +477,35 @@ func TestModel_CommandWithoutFile(t *testing.T) {
 	m.closeCommand()
 	m.filesLoaded = false
 	m.startCommand()
-	require.False(t, m.command.active, "do not open an invisible palette while loading")
+	require.True(t, m.command.active)
+	require.Contains(t, ansi.Strip(m.View()), "action or line number")
+}
+
+func TestModel_CommandHelpFromEitherPaneWhileLoading(t *testing.T) {
+	for _, focus := range []pane{paneTree, paneDiff} {
+		for _, loading := range []string{"none", "file", "tree"} {
+			for _, alias := range []string{"h", "help"} {
+				m := testModel(nil, nil)
+				m.layout.focus = focus
+				m.filesLoaded = loading != "tree"
+				if loading == "file" {
+					m.file.requestedPath = "pending.go"
+				}
+				for _, key := range []tea.KeyMsg{
+					{Type: tea.KeyRunes, Runes: []rune(":")},
+					{Type: tea.KeyRunes, Runes: []rune(alias)},
+					{Type: tea.KeyEnter},
+				} {
+					model, _ := m.Update(key)
+					m = model.(Model)
+				}
+				require.False(t, m.command.active)
+				require.True(t, m.overlay.Active(), "%s from %v during %s load", alias, focus, loading)
+				require.Contains(t, ansi.Strip(m.View()), "Help")
+				require.Equal(t, focus, m.layout.focus)
+			}
+		}
+	}
 }
 
 func TestModel_CommandOpenEditor(t *testing.T) {

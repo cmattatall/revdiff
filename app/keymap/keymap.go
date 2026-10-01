@@ -67,7 +67,6 @@ const (
 	ActionFilterUnreviewed       Action = "filter_unreviewed"
 	ActionFilter                 Action = "filter"
 	ActionQuit                   Action = "quit"
-	ActionDiscardQuit            Action = "discard_quit"
 	ActionHelp                   Action = "help"
 	ActionDismiss                Action = "dismiss"
 	ActionThemeSelect            Action = "theme_select"
@@ -102,7 +101,7 @@ var validActions = map[Action]bool{
 	ActionToggleCollapsed: true, ActionToggleCompact: true, ActionToggleWrap: true, ActionToggleTree: true,
 	ActionToggleLineNums: true, ActionToggleBlame: true, ActionToggleWordDiff: true, ActionToggleHunk: true,
 	ActionMarkReviewed: true, ActionFilterUnreviewed: true, ActionFilter: true, ActionToggleUntracked: true,
-	ActionQuit: true, ActionDiscardQuit: true, ActionHelp: true, ActionDismiss: true, ActionThemeSelect: true,
+	ActionQuit: true, ActionHelp: true, ActionDismiss: true, ActionThemeSelect: true,
 	ActionInfo:             true,
 	ActionReload:           true,
 	ActionOpenEditor:       true,
@@ -235,7 +234,7 @@ func defaultDescriptions() []HelpEntry {
 		{ActionFocusDiff, "focus diff pane", SectionPane},
 
 		// search
-		{ActionSearch, "search in diff", "Search"},
+		{ActionSearch, "search current file or file tree by focus", "Search"},
 
 		// annotations
 		{ActionConfirm, "annotate line / select file", "Annotations"},
@@ -266,7 +265,6 @@ func defaultDescriptions() []HelpEntry {
 
 		// quit
 		{ActionQuit, "quit", "Quit"},
-		{ActionDiscardQuit, "discard and quit", "Quit"},
 		{ActionHelp, "show help", "Quit"},
 		{ActionDismiss, "dismiss / cancel", "Quit"},
 	}
@@ -325,7 +323,6 @@ func defaultBindings() map[string]Action {
 		"u":      ActionToggleUntracked,
 		"f":      ActionFilter,
 		"q":      ActionQuit,
-		"Q":      ActionDiscardQuit,
 		"?":      ActionHelp,
 		"T":      ActionThemeSelect,
 		"i":      ActionInfo,

@@ -23,7 +23,7 @@ func (m Model) View() string {
 	// nil-populated and the diff pane has no file selected. Showing the empty two-pane
 	// layout here would flash a misleading "no changes" state for as long as ChangedFiles
 	// takes to return (can be 100-500ms on large repos).
-	if !m.filesLoaded {
+	if !m.filesLoaded && !m.command.active && !m.overlay.Active() {
 		return "loading files..."
 	}
 
@@ -43,7 +43,9 @@ func (m Model) View() string {
 
 	// diff pane title
 	diffTitle := "no file selected"
-	if m.file.name != "" {
+	if !m.filesLoaded {
+		diffTitle = "loading files..."
+	} else if m.file.name != "" {
 		diffTitle = m.file.name
 		if m.file.oldName != "" && m.file.oldName != m.file.name {
 			diffTitle = m.file.oldName + " → " + m.file.name
@@ -76,7 +78,7 @@ func (m Model) View() string {
 
 	mainView = m.overlay.Compose(mainView, overlay.RenderCtx{Width: m.layout.width, Height: m.layout.height, Resolver: m.resolver})
 
-	if m.command.active {
+	if m.commandPaneHeight() > 0 {
 		mainView = lipgloss.JoinVertical(lipgloss.Left, mainView, m.commandPaneView())
 	}
 	if m.statusBarHeight() == 0 {
@@ -223,14 +225,6 @@ func (m Model) statusBarText() string {
 
 // statusBarContent shows input, transient hints, or file/navigation status.
 func (m Model) statusBarContent() string {
-	if m.search.active {
-		return m.searchBarText()
-	}
-
-	if m.inConfirmDiscard {
-		return fmt.Sprintf("discard %d annotations? [y/n]", m.store.Count())
-	}
-
 	if m.annot.annotating {
 		return "[enter] save  [esc] cancel"
 	}
@@ -384,15 +378,13 @@ func (m Model) joinStatusSections(left, right, sep string) string {
 	return right
 }
 
-// searchBarText returns the status bar content during search input mode.
-func (m Model) searchBarText() string {
-	return "/" + m.search.input.Value()
-}
-
 // searchSegment returns a formatted search position string like "X/Y" for the status line.
 // returns empty string when no search matches exist. shows 0/N when all matches are hidden
 // in collapsed mode (e.g. matches only on removed lines).
 func (m Model) searchSegment() string {
+	if m.search.scanPhase == searchScanRunning {
+		return "searching…"
+	}
 	if len(m.search.matches) == 0 {
 		return ""
 	}

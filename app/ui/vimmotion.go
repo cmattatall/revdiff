@@ -22,7 +22,6 @@ var vimChordTable = map[string]keymap.Action{
 	"zt": keymap.ActionScrollTop,
 	"zb": keymap.ActionScrollBottom,
 	"ZZ": keymap.ActionQuit,
-	"ZQ": keymap.ActionDiscardQuit,
 }
 
 // interceptVimMotion runs the vim-motion preset state machine for a single key
