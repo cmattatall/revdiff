@@ -67,9 +67,9 @@ const (
 )
 
 // statusBarHeight returns the number of rows occupied by the status bar.
-// 0 when the status bar is hidden, otherwise 1.
+// The command prompt remains visible even when the status bar is hidden.
 func (m Model) statusBarHeight() int {
-	if m.cfg.noStatusBar {
+	if m.cfg.noStatusBar && !m.command.active {
 		return 0
 	}
 	return 1
@@ -143,7 +143,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	// discarded. in the keyboard path the prompt is also replaced by a new
 	// hint from handlePendingReload, but mouse events don't transition the
 	// modal, so dropping the hint would leave an invisible modal.
-	if m.inConfirmDiscard || m.reload.pending || m.annot.annotating || m.search.active {
+	if m.inConfirmDiscard || m.reload.pending || m.annot.annotating || m.search.active || m.command.active {
 		return m, nil
 	}
 	if m.overlay.Active() {

@@ -62,7 +62,7 @@ func TestFilePickerFilterAcceptsTypedSpace(t *testing.T) {
 	mgr.HandleKey(tea.KeyMsg{Type: tea.KeySpace}, "")
 	mgr.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("notes")}, "")
 
-	assert.Equal(t, "release notes", mgr.filePick.filter)
+	assert.Equal(t, "release notes", mgr.filePick.filter.Value())
 	assert.Equal(t, []string{"docs/release notes.md"}, mgr.filePick.entries)
 }
 
@@ -91,7 +91,7 @@ func TestFilePickerEnterSelectsAndCloses(t *testing.T) {
 func TestFilePickerEmptyResultsStayOpenOnEnter(t *testing.T) {
 	mgr := NewManager()
 	mgr.OpenFilePicker(filePickerSpec())
-	mgr.filePick.filter = "missing"
+	mgr.filePick.filter.SetValue("missing")
 	mgr.filePick.applyFilter()
 
 	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyEnter}, "")
@@ -108,10 +108,10 @@ func TestFilePickerBackspaceAndEscapeBehavior(t *testing.T) {
 	}
 
 	mgr.HandleKey(tea.KeyMsg{Type: tea.KeyBackspace}, "")
-	assert.Equal(t, "模", mgr.filePick.filter)
+	assert.Equal(t, "模", mgr.filePick.filter.Value())
 	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyEsc}, keymap.ActionDismiss)
 	assert.Equal(t, OutcomeNone, out.Kind, "first Esc clears a non-empty filter")
-	assert.Empty(t, mgr.filePick.filter)
+	assert.Empty(t, mgr.filePick.filter.Value())
 	assert.Len(t, mgr.filePick.entries, 4)
 	assert.True(t, mgr.Active())
 
@@ -137,12 +137,13 @@ func TestFilePickerWordDeletion(t *testing.T) {
 			t.Run(msg.String()+"/"+tt.input, func(t *testing.T) {
 				mgr := NewManager()
 				mgr.OpenFilePicker(FilePickerSpec{Paths: []string{"docs/release draft.md", "docs/release notes.md", "README.md"}})
-				mgr.filePick.filter = tt.input
+				mgr.filePick.filter.SetValue(tt.input)
+				mgr.filePick.filter.CursorEnd()
 				mgr.filePick.cursor, mgr.filePick.offset = 1, 1
 				out := mgr.HandleKey(msg, keymap.ActionJumpFile)
 				assert.Equal(t, OutcomeNone, out.Kind, "editing takes priority over configured actions")
 				assert.True(t, mgr.Active())
-				assert.Equal(t, tt.want, mgr.filePick.filter)
+				assert.Equal(t, tt.want, mgr.filePick.filter.Value())
 				assert.Zero(t, mgr.filePick.cursor)
 				assert.Zero(t, mgr.filePick.offset)
 				switch tt.want {
@@ -163,9 +164,9 @@ func TestFilePickerClearFilterAndControlBackspace(t *testing.T) {
 	mgr.OpenFilePicker(filePickerSpec())
 	mgr.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("模具")}, "")
 	mgr.HandleKey(tea.KeyMsg{Type: tea.KeyCtrlH}, "")
-	assert.Equal(t, "模", mgr.filePick.filter, "Ctrl+H removes one Unicode rune")
+	assert.Equal(t, "模", mgr.filePick.filter.Value(), "Ctrl+H removes one Unicode rune")
 	mgr.HandleKey(tea.KeyMsg{Type: tea.KeyCtrlU}, keymap.ActionHalfPageUp)
-	assert.Empty(t, mgr.filePick.filter)
+	assert.Empty(t, mgr.filePick.filter.Value())
 	assert.Equal(t, mgr.filePick.all, mgr.filePick.entries)
 	assert.True(t, mgr.Active(), "Ctrl+U clears without closing")
 
@@ -173,7 +174,7 @@ func TestFilePickerClearFilterAndControlBackspace(t *testing.T) {
 	for _, msg := range []tea.KeyMsg{{Type: tea.KeyCtrlW}, {Type: tea.KeyCtrlU}, {Type: tea.KeyBackspace, Alt: true}, {Type: tea.KeyCtrlH}} {
 		out := mgr.HandleKey(msg, keymap.ActionUp)
 		assert.Equal(t, OutcomeNone, out.Kind)
-		assert.Empty(t, mgr.filePick.filter)
+		assert.Empty(t, mgr.filePick.filter.Value())
 		assert.Equal(t, 2, mgr.filePick.cursor, "editing an empty filter must not move the selection")
 	}
 }
@@ -278,7 +279,7 @@ func TestFilePickerLongFilterStaysOnOneRowAndPreservesClickMapping(t *testing.T)
 	mgr.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(longFilter)}, "")
 	rendered := mgr.filePick.render(ctx, mgr)
 
-	assert.Equal(t, longFilter, mgr.filePick.filter, "display truncation must not change matching input")
+	assert.Equal(t, longFilter, mgr.filePick.filter.Value(), "display truncation must not change matching input")
 	assert.Equal(t, emptyHeight, lipgloss.Height(rendered), "filter row must not soft-wrap")
 	out := mgr.filePick.handleMouse(tea.MouseMsg{
 		X: 2, Y: 4, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress,
@@ -338,7 +339,8 @@ func TestFilePickerDisplaySanitizesUnsafePaths(t *testing.T) {
 
 			assert.Equal(t, "  "+tt.want, entry)
 			assert.Equal(t, 1, lipgloss.Height(entry), "each path must stay on one visual row")
-			picker.filter = tt.filter
+			picker.filter.open()
+			picker.filter.SetValue(tt.filter)
 			picker.applyFilter()
 			require.Equal(t, []string{tt.raw}, picker.entries, "filtering must retain the raw path")
 			choice := picker.chooseCurrent()

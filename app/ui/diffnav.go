@@ -947,10 +947,7 @@ func (m Model) treePageSize() int {
 
 // paneHeight returns the content height for panes (total minus borders and status bar).
 func (m Model) paneHeight() int {
-	h := m.layout.height - 2 // borders
-	if !m.cfg.noStatusBar {
-		h-- // status bar
-	}
+	h := m.layout.height - 2 - m.statusBarHeight()
 	return max(1, h)
 }
 

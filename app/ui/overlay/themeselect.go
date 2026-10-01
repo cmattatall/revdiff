@@ -174,6 +174,9 @@ func (t *themeSelectOverlay) maxVisible() int {
 }
 
 func (t *themeSelectOverlay) handleKey(msg tea.KeyMsg, action keymap.Action) Outcome {
+	if action == keymap.ActionThemeSelect {
+		return Outcome{Kind: OutcomeThemeCanceled}
+	}
 	before := t.filter.Value()
 	if handled, cmd := t.filter.handleKey(msg); handled {
 		out := Outcome{Kind: OutcomeNone, Cmd: cmd}
@@ -183,9 +186,6 @@ func (t *themeSelectOverlay) handleKey(msg tea.KeyMsg, action keymap.Action) Out
 			out.Cmd = cmd
 		}
 		return out
-	}
-	if action == keymap.ActionThemeSelect {
-		return Outcome{Kind: OutcomeThemeCanceled}
 	}
 
 	switch msg.Type {

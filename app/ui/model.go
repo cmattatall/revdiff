@@ -108,6 +108,7 @@ type overlayManager interface {
 	UpdateInfo(spec overlay.InfoSpec)
 	Close()
 	HandleKey(msg tea.KeyMsg, action keymap.Action) overlay.Outcome
+	HandleInput(msg tea.Msg) overlay.Outcome
 	HandleMouse(msg tea.MouseMsg) overlay.Outcome
 	Compose(base string, ctx overlay.RenderCtx) string
 }
@@ -585,6 +586,7 @@ type Model struct {
 	highlighter SyntaxHighlighter // syntax highlighter
 	file        loadedFileState   // current file's loaded state (lines, highlights, blame, etc.)
 	search      searchState       // search lifecycle state
+	command     commandState      // source-line command prompt
 	annot       annotationState   // annotation input lifecycle state
 	commits     commitsState      // eagerly loaded commit log for the info popup
 	review      reviewInfoState   // invocation summary + whole-review aggregate stats for the review-info overlay
@@ -1033,6 +1035,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleWheelDebounce(msg)
 	}
 
+	if m.overlay.Active() {
+		out := m.overlay.HandleInput(msg)
+		if out.Kind == overlay.OutcomeThemePreview {
+			m.previewThemeByName(out.ThemeChoice.Name)
+		}
+		return m, out.Cmd
+	}
+
 	// forward other messages to textinput when annotating (e.g. paste completion).
 	// re-render only when the input text actually changed: renderDiff is O(diff lines)
 	// and repainting for a message that left the value untouched is pure waste.
@@ -1050,6 +1060,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.search.active {
 		var cmd tea.Cmd
 		m.search.input, cmd = m.search.input.Update(msg)
+		return m, cmd
+	}
+	if m.command.active {
+		var cmd tea.Cmd
+		m.command.input, cmd = m.command.input.Update(msg)
 		return m, cmd
 	}
 
@@ -1134,6 +1149,9 @@ func (m Model) dispatchAction(action keymap.Action) (tea.Model, tea.Cmd) {
 		return m.handleDiscardQuit()
 	case keymap.ActionQuit:
 		return m, tea.Quit
+	case keymap.ActionCommand:
+		cmd := m.startCommand()
+		return m, cmd
 	case keymap.ActionTogglePane:
 		m.togglePane()
 		return m, nil
@@ -1303,6 +1321,11 @@ func (m Model) handleReload() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleModalKey(msg tea.KeyMsg) (bool, tea.Model, tea.Cmd) {
+	if m.command.active {
+		model, cmd := m.handleCommandKey(msg)
+		return true, model, cmd
+	}
+
 	// annotation input mode takes priority
 	if m.annot.annotating {
 		model, cmd := m.handleAnnotateKey(msg)
@@ -1334,7 +1357,7 @@ func (m Model) handleModalKey(msg tea.KeyMsg) (bool, tea.Model, tea.Cmd) {
 			return true, model, cmd
 		case overlay.OutcomeClosed, overlay.OutcomeNone:
 		}
-		return true, m, nil
+		return true, m, out.Cmd
 	}
 
 	return false, m, nil

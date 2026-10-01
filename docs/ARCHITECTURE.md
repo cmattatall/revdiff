@@ -162,6 +162,8 @@ across files by concern to keep files under ~500 lines:
 - **`search.go`** — search input handling, match computation, navigation. Search and annotation
   inputs use Bubbles `textinput`; picker filters use the same component so terminal editing
   behavior is consistent across all single-line text entry.
+- **`command.go`** — `:<line>` input and source-line lookup, separate from search state;
+  pauses live refresh and reserves a prompt row even with the status bar hidden.
 - **`mouse.go`** — mouse event routing: `handleMouse` dispatch, `hitTest` pane classification
   (`hitZone`), wheel/left-click helpers (`clickTree`, `clickDiff`), layout helpers
   (`statusBarHeight`, `diffTopRow`, `treeTopRow`). Diff-pane wheel events defer both the cursor pin

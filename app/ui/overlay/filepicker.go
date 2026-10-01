@@ -150,6 +150,11 @@ func (f *filePickerOverlay) maxVisible() int {
 }
 
 func (f *filePickerOverlay) handleKey(msg tea.KeyMsg, action keymap.Action) Outcome {
+	// An explicitly bound Alt shortcut toggles the picker; ordinary printable
+	// keys still filter, and deletion keys keep their text-editing behavior.
+	if msg.Type == tea.KeyRunes && msg.Alt && action == keymap.ActionJumpFile {
+		return Outcome{Kind: OutcomeClosed}
+	}
 	before := f.filter.Value()
 	if handled, cmd := f.filter.handleKey(msg); handled {
 		if f.filter.Value() != before {

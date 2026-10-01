@@ -41,6 +41,7 @@ const (
 	ActionNextItem               Action = "next_item"
 	ActionPrevItem               Action = "prev_item"
 	ActionJumpFile               Action = "jump_file"
+	ActionCommand                Action = "command"
 	ActionNextHunk               Action = "next_hunk"
 	ActionPrevHunk               Action = "prev_hunk"
 	ActionTogglePane             Action = "toggle_pane"
@@ -91,6 +92,7 @@ var validActions = map[Action]bool{
 	ActionScrollDiffPageDown: true, ActionScrollDiffPageUp: true,
 	ActionScrollDiffHalfPageDown: true, ActionScrollDiffHalfPageUp: true,
 	ActionNextItem: true, ActionPrevItem: true, ActionJumpFile: true,
+	ActionCommand:  true,
 	ActionNextHunk: true, ActionPrevHunk: true,
 	ActionTogglePane: true, ActionFocusTree: true, ActionFocusDiff: true,
 	ActionSearch:  true,
@@ -202,6 +204,7 @@ func defaultDescriptions() []HelpEntry {
 		{ActionHalfPageUp, "half page up", "Navigation"},
 		{ActionHome, "go to top", "Navigation"},
 		{ActionEnd, "go to bottom", "Navigation"},
+		{ActionCommand, "command prompt (:line to jump)", "Navigation"},
 		{ActionScrollLeft, "scroll left", "Navigation"},
 		{ActionScrollRight, "scroll right / focus diff", "Navigation"},
 		{ActionScrollCenter, "center viewport on cursor", "Navigation"},
@@ -287,6 +290,7 @@ func defaultBindings() map[string]Action {
 		"N":      ActionPrevItem,
 		"p":      ActionPrevItem,
 		"P":      ActionJumpFile,
+		":":      ActionCommand,
 		"]":      ActionNextHunk,
 		"[":      ActionPrevHunk,
 		"e":      ActionOpenFileInEditor,

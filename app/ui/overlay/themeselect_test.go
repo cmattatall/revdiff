@@ -50,7 +50,7 @@ func TestThemeSelectOverlay_RenderTitle(t *testing.T) {
 func TestThemeSelectOverlay_RenderFilteredTitle(t *testing.T) {
 	mgr := NewManager()
 	mgr.OpenThemeSelect(themeSpec())
-	mgr.themeSel.filter = "cat"
+	mgr.themeSel.filter.SetValue("cat")
 	mgr.themeSel.applyFilter()
 	result := mgr.themeSel.render(themeRenderCtx(), mgr)
 	assert.Contains(t, result, "themes (1/4)")
@@ -73,7 +73,7 @@ func TestThemeSelectOverlay_RenderFilterPlaceholder(t *testing.T) {
 func TestThemeSelectOverlay_RenderFilterInput(t *testing.T) {
 	mgr := NewManager()
 	mgr.OpenThemeSelect(themeSpec())
-	mgr.themeSel.filter = "drac"
+	mgr.themeSel.filter.SetValue("drac")
 	mgr.themeSel.applyFilter()
 	result := mgr.themeSel.render(themeRenderCtx(), mgr)
 	assert.Contains(t, result, "drac")
@@ -83,7 +83,7 @@ func TestThemeSelectOverlay_RenderFilterInput(t *testing.T) {
 func TestThemeSelectOverlay_RenderNoMatches(t *testing.T) {
 	mgr := NewManager()
 	mgr.OpenThemeSelect(themeSpec())
-	mgr.themeSel.filter = "nonexistent"
+	mgr.themeSel.filter.SetValue("nonexistent")
 	mgr.themeSel.applyFilter()
 	result := mgr.themeSel.render(themeRenderCtx(), mgr)
 	assert.Contains(t, result, "no matches")
@@ -203,7 +203,7 @@ func TestThemeSelectOverlay_HandleKey_EnterConfirm(t *testing.T) {
 func TestThemeSelectOverlay_HandleKey_EnterEmptyList(t *testing.T) {
 	mgr := NewManager()
 	mgr.OpenThemeSelect(ThemeSelectSpec{Items: themeItems()})
-	mgr.themeSel.filter = "nonexistent"
+	mgr.themeSel.filter.SetValue("nonexistent")
 	mgr.themeSel.applyFilter()
 
 	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyEnter}, "")
@@ -223,27 +223,27 @@ func TestThemeSelectOverlay_HandleKey_EscCancelNoFilter(t *testing.T) {
 func TestThemeSelectOverlay_HandleKey_EscClearsFilterFirst(t *testing.T) {
 	mgr := NewManager()
 	mgr.OpenThemeSelect(themeSpec())
-	mgr.themeSel.filter = "drac"
+	mgr.themeSel.filter.SetValue("drac")
 	mgr.themeSel.applyFilter()
 	mgr.themeSel.lastPreviewedName = ""
 
 	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyEsc}, "")
 	assert.NotEqual(t, OutcomeThemeCanceled, out.Kind, "first esc should clear filter, not cancel")
 	assert.True(t, mgr.Active(), "overlay should stay open after clearing filter")
-	assert.Empty(t, mgr.themeSel.filter)
+	assert.Empty(t, mgr.themeSel.filter.Value())
 	assert.Len(t, mgr.themeSel.entries, 4, "entries should be unfiltered")
 }
 
 func TestThemeSelectOverlay_HandleKey_EscTwoPress(t *testing.T) {
 	mgr := NewManager()
 	mgr.OpenThemeSelect(themeSpec())
-	mgr.themeSel.filter = "x"
+	mgr.themeSel.filter.SetValue("x")
 	mgr.themeSel.applyFilter()
 
 	// first esc clears filter
 	mgr.HandleKey(tea.KeyMsg{Type: tea.KeyEsc}, "")
 	assert.True(t, mgr.Active())
-	assert.Empty(t, mgr.themeSel.filter)
+	assert.Empty(t, mgr.themeSel.filter.Value())
 
 	// second esc cancels
 	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyEsc}, "")
@@ -257,7 +257,7 @@ func TestThemeSelectOverlay_HandleKey_FilterInput(t *testing.T) {
 
 	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}}, "")
 	assert.True(t, mgr.Active())
-	assert.Equal(t, "d", mgr.themeSel.filter)
+	assert.Equal(t, "d", mgr.themeSel.filter.Value())
 	assert.Len(t, mgr.themeSel.entries, 2) // dracula + revdiff (contains 'd')
 	assert.Equal(t, OutcomeThemePreview, out.Kind)
 }
@@ -265,12 +265,13 @@ func TestThemeSelectOverlay_HandleKey_FilterInput(t *testing.T) {
 func TestThemeSelectOverlay_HandleKey_Backspace(t *testing.T) {
 	mgr := NewManager()
 	mgr.OpenThemeSelect(themeSpec())
-	mgr.themeSel.filter = "dra"
+	mgr.themeSel.filter.SetValue("dra")
+	mgr.themeSel.filter.CursorEnd()
 	mgr.themeSel.applyFilter()
 	mgr.themeSel.lastPreviewedName = ""
 
 	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyBackspace}, "")
-	assert.Equal(t, "dr", mgr.themeSel.filter)
+	assert.Equal(t, "dr", mgr.themeSel.filter.Value())
 	assert.Equal(t, OutcomeThemePreview, out.Kind)
 }
 
@@ -280,7 +281,7 @@ func TestThemeSelectOverlay_HandleKey_BackspaceEmpty(t *testing.T) {
 
 	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyBackspace}, "")
 	assert.Equal(t, OutcomeNone, out.Kind)
-	assert.Empty(t, mgr.themeSel.filter)
+	assert.Empty(t, mgr.themeSel.filter.Value())
 }
 
 func TestThemeSelectOverlay_HandleKey_ActionThemeSelectCancels(t *testing.T) {
@@ -491,7 +492,7 @@ func TestThemeSelectOverlay_HandleLeftClick(t *testing.T) {
 		mgr := NewManager()
 		mgr.OpenThemeSelect(themeSpec())
 		_ = mgr.themeSel.render(themeRenderCtx(), mgr)
-		mgr.themeSel.filter = "no-match-xyz"
+		mgr.themeSel.filter.SetValue("no-match-xyz")
 		mgr.themeSel.applyFilter()
 		require.Empty(t, mgr.themeSel.entries)
 
@@ -626,13 +627,13 @@ func TestThemeSelectOverlay_OpenResetsState(t *testing.T) {
 	mgr.OpenThemeSelect(themeSpec())
 	mgr.themeSel.cursor = 3
 	mgr.themeSel.offset = 2
-	mgr.themeSel.filter = "abc"
+	mgr.themeSel.filter.SetValue("abc")
 	mgr.themeSel.lastPreviewedName = "dracula"
 
 	mgr.OpenThemeSelect(themeSpec())
 	assert.Equal(t, 0, mgr.themeSel.cursor, "cursor should reset on reopen")
 	assert.Equal(t, 0, mgr.themeSel.offset, "offset should reset on reopen")
-	assert.Empty(t, mgr.themeSel.filter, "filter should reset on reopen")
+	assert.Empty(t, mgr.themeSel.filter.Value(), "filter should reset on reopen")
 	assert.Empty(t, mgr.themeSel.lastPreviewedName, "lastPreviewedName should reset on reopen")
 }
 
@@ -640,7 +641,7 @@ func TestThemeSelectOverlay_ApplyFilter(t *testing.T) {
 	mgr := NewManager()
 	mgr.OpenThemeSelect(themeSpec())
 
-	mgr.themeSel.filter = "cat"
+	mgr.themeSel.filter.SetValue("cat")
 	mgr.themeSel.applyFilter()
 	require.Len(t, mgr.themeSel.entries, 1)
 	assert.Equal(t, "catppuccin-mocha", mgr.themeSel.entries[0].Name)
@@ -651,7 +652,7 @@ func TestThemeSelectOverlay_ApplyFilterCaseInsensitive(t *testing.T) {
 	mgr := NewManager()
 	mgr.OpenThemeSelect(themeSpec())
 
-	mgr.themeSel.filter = "DRAC"
+	mgr.themeSel.filter.SetValue("DRAC")
 	mgr.themeSel.applyFilter()
 	require.Len(t, mgr.themeSel.entries, 1)
 	assert.Equal(t, "dracula", mgr.themeSel.entries[0].Name)
@@ -660,10 +661,10 @@ func TestThemeSelectOverlay_ApplyFilterCaseInsensitive(t *testing.T) {
 func TestThemeSelectOverlay_ApplyFilterEmpty(t *testing.T) {
 	mgr := NewManager()
 	mgr.OpenThemeSelect(themeSpec())
-	mgr.themeSel.filter = "x"
+	mgr.themeSel.filter.SetValue("x")
 	mgr.themeSel.applyFilter()
 
-	mgr.themeSel.filter = ""
+	mgr.themeSel.filter.Reset()
 	mgr.themeSel.applyFilter()
 	assert.Len(t, mgr.themeSel.entries, 4, "empty filter should show all items")
 }

@@ -249,3 +249,29 @@ func TestModel_JumpFileMouseSelectionLoadsFile(t *testing.T) {
 	assert.Equal(t, paneDiff, m.layout.focus)
 	assert.NotNil(t, cmd)
 }
+
+type asyncPicker struct {
+	*overlay.Manager
+	received tea.Msg
+}
+
+func (p *asyncPicker) HandleKey(tea.KeyMsg, keymap.Action) overlay.Outcome {
+	return overlay.Outcome{Cmd: func() tea.Msg { return "clipboard result" }}
+}
+
+func (p *asyncPicker) HandleInput(msg tea.Msg) overlay.Outcome {
+	p.received = msg
+	return overlay.Outcome{}
+}
+
+func TestModel_PickerForwardsAsyncInput(t *testing.T) {
+	m := filePickerModel([]string{"a.go"})
+	m.openFilePicker()
+	picker := &asyncPicker{Manager: m.overlay.(*overlay.Manager)}
+	m.overlay = picker
+	model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlV})
+	require.NotNil(t, cmd, "picker input commands must reach the Bubble Tea runtime")
+	m = model.(Model)
+	m.Update(cmd())
+	assert.Equal(t, "clipboard result", picker.received)
+}

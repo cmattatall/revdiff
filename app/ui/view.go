@@ -75,7 +75,7 @@ func (m Model) View() string {
 
 	mainView = m.overlay.Compose(mainView, overlay.RenderCtx{Width: m.layout.width, Height: m.layout.height, Resolver: m.resolver})
 
-	if m.cfg.noStatusBar {
+	if m.statusBarHeight() == 0 {
 		return mainView
 	}
 
@@ -165,6 +165,9 @@ func (m Model) transientHint() string {
 // shows search input (when typing), or filename, diff stats, hunk position,
 // search match position, mode indicators, and right-aligned annotation count + help hint.
 func (m Model) statusBarText() string {
+	if m.command.active {
+		return m.commandBarText()
+	}
 	if m.search.active {
 		return m.searchBarText()
 	}

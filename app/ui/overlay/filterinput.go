@@ -34,6 +34,13 @@ func (f *filterInput) open() {
 // handleKey reserves editing keys and printable input before list keybindings.
 // Up/Down and Enter/Esc remain the responsibility of the enclosing popup.
 func (f *filterInput) handleKey(msg tea.KeyMsg) (bool, tea.Cmd) {
+	// Terminals can encode Backspace as either DEL or Ctrl+H.
+	if msg.Alt && msg.Type == tea.KeyCtrlH {
+		msg.Type = tea.KeyBackspace
+	}
+	if msg.Type == tea.KeySpace && !msg.Alt {
+		msg.Runes = []rune{' '}
+	}
 	k := f.KeyMap
 	if (msg.Type == tea.KeyRunes || msg.Type == tea.KeySpace) && !msg.Alt || key.Matches(msg,
 		k.CharacterForward, k.CharacterBackward, k.WordForward, k.WordBackward,
