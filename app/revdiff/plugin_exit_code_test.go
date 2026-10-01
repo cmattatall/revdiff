@@ -1733,9 +1733,7 @@ async function testNeedsAskWithoutMainStops(): Promise<void> {
 			"echo 'main_branch: '",
 			"echo 'is_main: false'",
 			"echo 'has_uncommitted: false'",
-			"echo 'has_staged_only: false'",
 			"echo 'suggested_ref: '",
-			"echo 'use_staged: false'",
 			"echo 'needs_ask: true'",
 			"",
 		].join("\n"),
@@ -1763,15 +1761,15 @@ async function testStagedSmartDetection(): Promise<void> {
 		runGit(mainRepo, ["add", "file.txt"]);
 		let launch = await detectSmartLaunch(fakeCtx(), mainRepo);
 		testAssert(Boolean(launch), "expected staged launch on main");
-		assertArray(launch!.args, ["--staged"], "main staged-only should launch --staged");
-		testAssert(launch!.label === "staged changes", "main staged-only label should be staged changes");
+		assertArray(launch!.args, [], "main staged-only should launch the default working-tree view");
+		testAssert(launch!.label === "uncommitted changes", "main staged-only label should be uncommitted changes");
 
 		runGit(featureRepo, ["checkout", "-b", "feature"]);
 		testWriteFileSync(path.join(featureRepo, "file.txt"), "feature staged\n");
 		runGit(featureRepo, ["add", "file.txt"]);
 		launch = await detectSmartLaunch(fakeCtx("uncommitted"), featureRepo);
 		testAssert(Boolean(launch), "expected dirty feature uncommitted launch");
-		assertArray(launch!.args, ["--staged"], "dirty feature uncommitted choice should launch --staged");
+		assertArray(launch!.args, [], "dirty feature uncommitted choice should launch the default working-tree view");
 
 		launch = await detectSmartLaunch(fakeCtx("branch"), featureRepo);
 		testAssert(Boolean(launch), "expected dirty feature branch launch");

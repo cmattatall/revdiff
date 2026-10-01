@@ -13,6 +13,7 @@ import (
 
 	"github.com/umputun/revdiff/app/annotation"
 	"github.com/umputun/revdiff/app/diff"
+	"github.com/umputun/revdiff/app/keymap"
 	"github.com/umputun/revdiff/app/ui/mocks"
 	"github.com/umputun/revdiff/app/ui/overlay"
 	"github.com/umputun/revdiff/app/ui/sidepane"
@@ -909,6 +910,33 @@ func TestDisplayKeyName(t *testing.T) {
 	for _, tt := range tests {
 		assert.Equal(t, tt.want, m.displayKeyName(tt.input), "displayKeyName(%q)", tt.input)
 	}
+}
+
+func TestBuildHelpSpec_PaletteCommands(t *testing.T) {
+	m := testModel([]string{"a.go"}, nil)
+	m.keymap.Unbind("O")
+	m.keymap.Bind("ctrl+f", keymap.ActionFlushOutput)
+	m.keymap.Unbind("q")
+	m.live.harnesses = map[string]func() (FeedbackSender, error){
+		"example": func() (FeedbackSender, error) { panic("help must not connect") },
+	}
+	entries := map[string]overlay.HelpEntry{}
+	for _, section := range m.buildHelpSpec().Sections {
+		for _, entry := range section.Entries {
+			if entry.Command != "" {
+				entries[entry.Command] = entry
+			}
+		}
+	}
+	for _, command := range m.commandEntries() {
+		assert.Contains(t, entries, ":"+command.name, "every executable command belongs in help")
+	}
+	assert.Equal(t, "Ctrl+F", entries[":flush_output"].Keys)
+	assert.Contains(t, entries[":flush_output"].Description, "harness / output / hook")
+	assert.Empty(t, entries[":quit"].Keys, "unbinding quit must not hide its palette command")
+	assert.Contains(t, entries, ":set number")
+	assert.Contains(t, entries, ":harness send")
+	assert.Contains(t, entries, ":harness connect example")
 }
 
 func TestBuildHelpSpec_SearchPromptHistoryEntries(t *testing.T) {

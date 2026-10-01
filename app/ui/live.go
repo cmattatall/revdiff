@@ -283,6 +283,10 @@ func (m Model) handleStage(action keymap.Action) (tea.Model, tea.Cmd) {
 		m.output.hint = "Staging requires an unstaged Git working-tree review"
 		return m, nil
 	}
+	if m.cfg.workingTree && m.selectedTreeStaged() {
+		m.output.hint = "Staging is available from Changes"
+		return m, nil
+	}
 	// Explain the actual blocker instead of treating every refresh pause as an
 	// annotation problem. Staging reloads the diff, so pending notes stay guarded.
 	switch {

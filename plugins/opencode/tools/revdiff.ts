@@ -9,15 +9,12 @@ const EXIT_CODE_ANNOTATIONS = 10;
 
 const buildArgs = ({
   ref,
-  staged,
   only,
 }: {
   ref?: string;
-  staged?: boolean;
   only?: string[];
 }): string[] => [
   ...(ref ? [ref] : []),
-  ...(staged ? ["--staged"] : []),
   ...(only?.map((f) => `--only=${f}`) ?? []),
 ];
 
@@ -33,10 +30,6 @@ export default tool({
       .describe(
         "Git ref to diff against (e.g. HEAD, main, a commit SHA). Omit to diff working tree.",
       ),
-    staged: tool.schema
-      .boolean()
-      .optional()
-      .describe("Diff staged changes instead of working tree."),
     only: tool.schema
       .array(tool.schema.string())
       .optional()

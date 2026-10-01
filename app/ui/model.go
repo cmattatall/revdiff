@@ -308,6 +308,8 @@ type loadedFileState struct {
 	singleColLineNum bool                   // true for full-context files: one line-number column
 	loadSeq          uint64                 // monotonic counter to identify the latest load request
 	requestedPath    string                 // path of the outstanding request, empty after it completes
+	staged           bool                   // loaded working-tree side (distinct when a path is partially staged)
+	requestedStaged  bool                   // side of the outstanding request
 	canceledLoadSeq  uint64                 // same-sequence request canceled by returning to the displayed file
 	canceledLoadPath string                 // path rejected for canceledLoadSeq
 	mdTOC            TOCComponent           // markdown table-of-contents (nil when not applicable)
@@ -319,6 +321,7 @@ type loadedFileState struct {
 type modelConfigState struct {
 	ref                string             // git ref for diff
 	staged             bool               // show staged changes
+	workingTree        bool               // split Git working-tree review
 	only               []string           // filter to show only matching files
 	workDir            string             // working directory for resolving absolute --only paths
 	sourceEditorPolicy SourceEditorPolicy // source-file editor availability and target behavior
@@ -624,6 +627,7 @@ type Model struct {
 type fileLoadedMsg struct {
 	file    string
 	oldName string // rename origin of the file, empty for non-renames
+	staged  bool   // index side in a split working-tree review
 	seq     uint64
 	lines   []diff.DiffLine
 	err     error
@@ -633,6 +637,7 @@ type fileLoadedMsg struct {
 // effective diff because it was not already present in the current cache.
 type reviewFingerprintLoadedMsg struct {
 	path        string
+	staged      bool
 	seq         uint64
 	filesSeq    uint64 // file-list generation in which the mark request was started
 	fingerprint string
@@ -738,8 +743,11 @@ type ModelConfig struct {
 	CommitLog commitLogSource
 
 	// --- Configuration values ---
-	Ref              string
-	Staged           bool
+	Ref    string
+	Staged bool
+	// WorkingTree enables the Git working-tree contract: staged and changes
+	// are loaded independently and untracked files are always included.
+	WorkingTree      bool
 	TreeWidthRatio   int
 	TabWidth         int      // number of spaces per tab character
 	NoColors         bool     // disable all colors including syntax highlighting
@@ -884,6 +892,9 @@ func NewModel(cfg ModelConfig) (Model, error) {
 	// the filter bit survives Rebuild, so switching it on here is what makes the first
 	// file list arrive filtered; the tree itself is still empty at this point.
 	tree := cfg.NewFileTree(nil) // empty tree for nil-safety before first filesLoadedMsg
+	if cfg.WorkingTree {
+		tree = newWorkingTree(cfg.NewFileTree)
+	}
 	if cfg.FilterUnreviewed {
 		tree.ToggleUnreviewedFilter()
 	}
@@ -907,6 +918,7 @@ func NewModel(cfg ModelConfig) (Model, error) {
 		cfg: modelConfigState{
 			ref:                cfg.Ref,
 			staged:             cfg.Staged,
+			workingTree:        cfg.WorkingTree,
 			only:               cfg.Only,
 			workDir:            cfg.WorkDir,
 			sourceEditorPolicy: cfg.SourceEditor,
@@ -1473,6 +1485,9 @@ func (m *Model) toggleWordDiff() {
 
 // toggleUntracked toggles visibility of untracked files in the tree.
 func (m *Model) toggleUntracked() tea.Cmd {
+	if m.cfg.workingTree {
+		return nil // Changes always includes untracked files.
+	}
 	m.modes.showUntracked = !m.modes.showUntracked
 	m.filesLoadSeq++
 	return m.loadFiles()

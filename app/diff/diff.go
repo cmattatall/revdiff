@@ -102,6 +102,7 @@ type FileEntry struct {
 	Path    string     // file path relative to repo root
 	OldPath string     // rename origin, empty for non-renames
 	Status  FileStatus // file change status, empty for non-git renderers
+	Staged  bool       // entry is the index side of a split working-tree review
 }
 
 // FileEntryPaths extracts just the paths from a slice of FileEntry.

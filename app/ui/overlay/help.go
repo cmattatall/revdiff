@@ -52,7 +52,7 @@ func (h *helpOverlay) render(ctx RenderCtx, _ *Manager) string {
 	h.height = ctx.Height
 
 	innerWidth := max(ctx.Width-helpWidthMargin-helpPopupBorderPad, 1)
-	content := h.layout(h.buildBlocks(ctx.Resolver), innerWidth)
+	content := h.layout(h.buildBlocks(ctx.Resolver, innerWidth), innerWidth)
 
 	// the hint costs a body row, so it is only affordable when there are at
 	// least two: on a terminal down to the box's 5-row floor the bindings
@@ -89,27 +89,39 @@ func (h *helpOverlay) render(ctx RenderCtx, _ *Manager) string {
 	return boxStyle.Render(strings.Join(visible, "\n"))
 }
 
-// buildBlocks turns each spec section into a block of rendered lines: a colored
-// header followed by one line per binding, keys padded to the section's widest
-// key string so descriptions line up.
-func (h *helpOverlay) buildBlocks(resolver Resolver) []sectionBlock {
+// buildBlocks aligns shortcuts, palette commands, and descriptions per section.
+// Descriptions move below their binding when all three columns cannot fit.
+func (h *helpOverlay) buildBlocks(resolver Resolver, width int) []sectionBlock {
 	reset, headerColor, keyColor := h.colors(resolver)
+	commandColor := string(resolver.Color(style.ColorKeyMutedFg))
 
 	blocks := make([]sectionBlock, 0, len(h.spec.Sections))
 	for _, sec := range h.spec.Sections {
 		var block sectionBlock
 		block.lines = append(block.lines, headerColor+sec.Title+reset)
 
-		maxW := 0
+		maxW, commandW := 0, 0
 		for _, e := range sec.Entries {
 			if w := runewidth.StringWidth(e.Keys); w > maxW {
 				maxW = w
 			}
+			commandW = max(commandW, runewidth.StringWidth(e.Command))
 		}
 		for _, e := range sec.Entries {
 			pad := max(maxW-runewidth.StringWidth(e.Keys), 0)
-			block.lines = append(block.lines, fmt.Sprintf("  %s%s%s%s  %s",
-				keyColor, e.Keys, reset, strings.Repeat(" ", pad), e.Description))
+			binding := fmt.Sprintf("  %s%s%s%s", keyColor, e.Keys, reset, strings.Repeat(" ", pad))
+			if commandW > 0 {
+				binding += "  " + commandColor + e.Command + reset + strings.Repeat(" ", commandW-runewidth.StringWidth(e.Command))
+			}
+			row := binding + "  " + e.Description
+			if commandW > 0 && lipgloss.Width(row) > width {
+				block.lines = append(block.lines, binding)
+				for _, line := range strings.Split(ansi.Wrap(e.Description, max(width-4, 1), ""), "\n") {
+					block.lines = append(block.lines, "    "+line)
+				}
+				continue
+			}
+			block.lines = append(block.lines, row)
 		}
 		blocks = append(blocks, block)
 	}

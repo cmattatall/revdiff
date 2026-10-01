@@ -9,8 +9,8 @@ revdiff [OPTIONS] [base] [against]
 ```bash
 revdiff              # review uncommitted changes
 revdiff main         # review changes against a branch
-revdiff --staged     # review staged changes
-revdiff --untracked  # show untracked files in the tree
+revdiff      # review staged changes
+revdiff  # show untracked files in the tree
 revdiff HEAD~1 HEAD  # review last commit
 revdiff main feature # diff between two refs
 revdiff main..feature  # same as above, git dot-dot syntax
@@ -42,7 +42,7 @@ When reviewing a single markdown file in context-only mode (e.g., `revdiff --onl
 Use `--all-files` (`-A`) to browse all tracked files, not just diffs. Turns revdiff into a general-purpose code annotation tool. All files shown in context-only mode with full annotation and syntax highlighting support.
 
 - Requires a git or jj repository (uses `git ls-files` / `jj file list` for file discovery; Mercurial is not supported)
-- Mutually exclusive with refs, `--staged`, and `--only`
+- Mutually exclusive with refs and `--only`
 - Combine with `--include` (`-I`) to narrow to specific paths and `--exclude` (`-X`) to filter out unwanted paths
 
 ```bash
@@ -89,7 +89,7 @@ revdiff HEAD~3 --description-file=/tmp/review-notes.md
 
 Use `--compare-old=<path>` together with `--compare-new=<path>` to diff two arbitrary files on disk using `git diff --no-index`. No VCS repo needed — works anywhere `git` is installed.
 
-- `--compare-old` and `--compare-new` must be used together; both are mutually exclusive with refs, `--staged`, `--only`, `--all-files`, `--stdin`, `--include`, `--exclude`, and `--annotations`
+- `--compare-old` and `--compare-new` must be used together; both are mutually exclusive with refs, `--only`, `--all-files`, `--stdin`, `--include`, `--exclude`, and `--annotations`
 - All standard features work: word-diff, compact mode, syntax highlighting, scrollbar, and inline annotations
 
 ```bash
@@ -103,7 +103,7 @@ Use `--stdin` to review arbitrary piped or redirected text as one synthetic file
 
 - `--stdin` is explicit and requires piped or redirected input
 - `--stdin-name` sets the synthetic filename used in annotations and syntax highlighting
-- `--stdin` conflicts with refs, `--staged`, `--only`, `--all-files`, `--include`, and `--exclude`
+- `--stdin` conflicts with refs, `--only`, `--all-files`, `--include`, and `--exclude`
 
 ## Key Bindings
 
@@ -173,13 +173,13 @@ The `/` prompt and search-history help appear above the footer, including with `
 | `Alt+E` (during annotation input) | Open `$EDITOR` for multi-line annotation (`open_editor` — rebindable) |
 | `Esc` | Cancel annotation input |
 
-`S` stages the entire selected file from the tree or diff pane, like `git add`, including edits since the last render. It supports new/deleted files, renames, binaries, symlinks, and mode changes, but not directories or submodules. Both staging shortcuts require an unstaged Git working-tree review and no pending annotations; neither changes the working file.
+`S` stages the entire selected file from the tree or diff pane, like `git add`, including edits since the last render. It supports new/deleted files, renames, binaries, symlinks, and mode changes, but not directories or submodules. Both staging shortcuts require a Git working-tree review and no pending annotations; neither changes the working file.
 
 While the annotation input is active, press `Alt+E` (or whatever key is bound to `open_editor`) to hand off the current text to an external editor for multi-line comments. `Ctrl+E` now retains its standard end-of-line behavior; users who prefer the old shortcut can add `map ctrl+e open_editor`. Editor resolution: `$EDITOR` → `$VISUAL` → `vi`. Values with arguments work (e.g. `EDITOR="code --wait"`). On editor save and quit, the full file contents (including newlines) become the annotation. Quitting the editor with an empty file cancels the annotation and preserves any previously stored note on that line. Multi-line annotations are rendered line-by-line in the diff view, shown flattened in the annotation list popup (`@`), and emitted with embedded newlines in the structured output.
 
-Press `e` in the diff pane to open the focused file in `$EDITOR` (`open_file_in_editor` — rebindable) when revdiff has a stable source path. Editor resolution is the same `$EDITOR` → `$VISUAL` → `vi` chain. Known editors receive either `$EDITOR +N path` or `$EDITOR --goto path:N` as appropriate; unknown editors receive only the file path. File lines are resolved on a best-effort basis. For working tree changes, a clean editor exit reloads the displayed file. For `--staged` or refs, a clean editor exit returns to revdiff without reloading the displayed diff. In compare mode, `e` opens the `--compare-new` side. Working tree files with line annotations cannot be opened for editing because edits can orphan those annotations. Diffs read with `--stdin` do not support opening files. Unsupported rows or files and editor errors show a status hint instead of launching an editor or changing the diff.
+Press `e` in the diff pane to open the focused file in `$EDITOR` (`open_file_in_editor` — rebindable) when revdiff has a stable source path. Editor resolution is the same `$EDITOR` → `$VISUAL` → `vi` chain. Known editors receive either `$EDITOR +N path` or `$EDITOR --goto path:N` as appropriate; unknown editors receive only the file path. File lines are resolved on a best-effort basis. For working tree changes, a clean editor exit reloads the displayed file. For `` or refs, a clean editor exit returns to revdiff without reloading the displayed diff. In compare mode, `e` opens the `--compare-new` side. Working tree files with line annotations cannot be opened for editing because edits can orphan those annotations. Diffs read with `--stdin` do not support opening files. Unsupported rows or files and editor errors show a status hint instead of launching an editor or changing the diff.
 
-For Amp live review, run **revdiff: connect** in Amp and launch `revdiff --amp CONNECTION_FILE --untracked` in the other terminal pane. Both must use the same host and Git checkout. `O` sends annotations to the selected thread and clears only acknowledged, unchanged comments. Automatic refresh pauses during drafts and while unsent comments remain. Failed sends keep the pending snapshot; `O` retries it. `s` (`stage_hunk`) stages the contiguous change under the cursor; it rejects stale views and unsupported file types. Quit does not send feedback. This requires this fork's binary, not an upstream release, and cannot be combined with refs, staged/all-files/stdin/compare modes, output, or post-flush commands.
+For Amp live review, run **revdiff: connect** in Amp and launch `revdiff --amp CONNECTION_FILE` in the other terminal pane. Both must use the same host and Git checkout. `O` sends annotations to the selected thread and clears only acknowledged, unchanged comments. Automatic refresh pauses during drafts and while unsent comments remain. Failed sends keep the pending snapshot; `O` retries it. `s` (`stage_hunk`) stages the contiguous change under the cursor; it rejects stale views and unsupported file types. Quit does not send feedback. This requires this fork's binary, not an upstream release, and cannot be combined with refs, staged/all-files/stdin/compare modes, output, or post-flush commands.
 
 Outside Amp mode, press `O` to export the current annotations without exiting (`flush_output`, rebindable). Configure `--output`, `--post-flush-command`, or both. With `--output`, each flush atomically overwrites the file with the full current annotation set. With `--post-flush-command`, the same snapshot is sent to the command on stdin. If neither is configured, or if there are no annotations, revdiff shows a status hint and does nothing.
 

@@ -73,7 +73,7 @@ test('connect posts a persistent command to its thread, reuses connections, and 
   assert.deepEqual(f.notifications, [], 'the launch command must not be a transient popup')
   const [announcement, options] = f.messages.get('T-a')![0]
   assert.equal(announcement.type, 'user-message')
-  assert.match(announcement.content, /```sh\n'revdiff' --amp '[^']+' --untracked\n```/)
+  assert.match(announcement.content, /```sh\n'revdiff' --amp '[^']+'\n```/)
   assert.match(announcement.content, /not a request for the agent to run commands/)
   assert.match(announcement.content, /\.\/\.bin\/revdiff/)
   assert.equal(options, undefined, 'setup is not steering feedback')

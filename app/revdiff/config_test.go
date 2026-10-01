@@ -24,7 +24,6 @@ func TestParseArgs_Defaults(t *testing.T) {
 	assert.Equal(t, 4, opts.TabWidth)
 	assert.Equal(t, "catppuccin-macchiato", opts.ChromaStyle)
 	assert.Equal(t, "💬", opts.AnnotationMarker)
-	assert.False(t, opts.Staged)
 	assert.False(t, opts.NoColors)
 	assert.False(t, opts.NoStatusBar)
 	assert.False(t, opts.NoConfirmReload)
@@ -421,65 +420,6 @@ func TestParseArgs_Blame(t *testing.T) {
 	})
 }
 
-func TestParseArgs_Untracked(t *testing.T) {
-	t.Run("default off", func(t *testing.T) {
-		opts, err := parseArgs(noConfigArgs(t))
-		require.NoError(t, err)
-		assert.False(t, opts.Untracked)
-	})
-
-	t.Run("flag", func(t *testing.T) {
-		opts, err := parseArgs(append(noConfigArgs(t), "--untracked"))
-		require.NoError(t, err)
-		assert.True(t, opts.Untracked)
-	})
-
-	t.Run("env", func(t *testing.T) {
-		t.Setenv("REVDIFF_UNTRACKED", "true")
-		opts, err := parseArgs(noConfigArgs(t))
-		require.NoError(t, err)
-		assert.True(t, opts.Untracked)
-	})
-
-	t.Run("config file", func(t *testing.T) {
-		cfgDir := t.TempDir()
-		cfgPath := filepath.Join(cfgDir, "config")
-		err := os.WriteFile(cfgPath, []byte("[Application Options]\nuntracked = true\n"), 0o600)
-		require.NoError(t, err)
-		opts, err := parseArgs([]string{"--config", cfgPath})
-		require.NoError(t, err)
-		assert.True(t, opts.Untracked)
-	})
-}
-
-func TestOptions_StartupUntracked(t *testing.T) {
-	mk := func(untracked, staged bool, base, against string) options {
-		var o options
-		o.Untracked = untracked
-		o.Staged = staged
-		o.Refs.Base = base
-		o.Refs.Against = against
-		return o
-	}
-	cases := []struct {
-		name string
-		opts options
-		want bool
-	}{
-		{"flag off", mk(false, false, "", ""), false},
-		{"flag on, no ref", mk(true, false, "", ""), true},
-		{"flag on with --staged (no positional ref)", mk(true, true, "", ""), true},
-		{"flag on, single ref", mk(true, false, "main", ""), true},
-		{"flag on, two refs (a b form)", mk(true, false, "main", "feature"), false},
-		{"flag on, dot-dot ref (a..b form)", mk(true, false, "main..feature", ""), false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.want, tc.opts.startupUntracked())
-		})
-	}
-}
-
 func TestParseArgs_WordDiff(t *testing.T) {
 	t.Run("default off", func(t *testing.T) {
 		opts, err := parseArgs(noConfigArgs(t))
@@ -676,9 +616,8 @@ func TestParseArgs_PostFlushCommand(t *testing.T) {
 }
 
 func TestParseArgs_Flags(t *testing.T) {
-	opts, err := parseArgs([]string{"--staged", "--tree-width=5", "--tab-width=8", "--no-colors", "--chroma-style=dracula", "HEAD~3"})
+	opts, err := parseArgs([]string{"--tree-width=5", "--tab-width=8", "--no-colors", "--chroma-style=dracula", "HEAD~3"})
 	require.NoError(t, err)
-	assert.True(t, opts.Staged)
 	assert.Equal(t, 5, opts.TreeWidth)
 	assert.Equal(t, 8, opts.TabWidth)
 	assert.True(t, opts.NoColors)
@@ -717,32 +656,6 @@ func TestParseArgs_NoRef(t *testing.T) {
 	assert.Empty(t, opts.Refs.Base)
 	assert.Empty(t, opts.Refs.Against)
 	assert.Empty(t, opts.ref())
-}
-
-func TestParseArgs_StagedWithTwoRefs(t *testing.T) {
-	_, err := parseArgs(append(noConfigArgs(t), "--staged", "main", "feature"))
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "--staged cannot be used with two-ref diff")
-}
-
-func TestParseArgs_StagedWithDotDotRef(t *testing.T) {
-	_, err := parseArgs(append(noConfigArgs(t), "--staged", "main..feature"))
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "--staged cannot be used with two-ref diff")
-}
-
-func TestParseArgs_StagedWithTripleDotRef(t *testing.T) {
-	_, err := parseArgs(append(noConfigArgs(t), "--staged", "main...feature"))
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "--staged cannot be used with two-ref diff")
-}
-
-func TestParseArgs_StagedWithSingleRef(t *testing.T) {
-	opts, err := parseArgs(append(noConfigArgs(t), "--staged", "HEAD~3"))
-	require.NoError(t, err)
-	assert.True(t, opts.Staged)
-	assert.Equal(t, "HEAD~3", opts.Refs.Base)
-	assert.Empty(t, opts.Refs.Against)
 }
 
 func TestParseArgs_ColorDefaults(t *testing.T) {
@@ -1026,12 +939,6 @@ func TestParseArgs_AllFilesConflictsWithTwoRefs(t *testing.T) {
 	assert.Contains(t, err.Error(), "--all-files cannot be used with refs")
 }
 
-func TestParseArgs_AllFilesConflictsWithStaged(t *testing.T) {
-	_, err := parseArgs(append(noConfigArgs(t), "--all-files", "--staged"))
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "--all-files cannot be used with --staged")
-}
-
 func TestParseArgs_AllFilesConflictsWithOnly(t *testing.T) {
 	_, err := parseArgs(append(noConfigArgs(t), "--all-files", "--only", "file.go"))
 	require.Error(t, err)
@@ -1064,7 +971,6 @@ func TestParseArgs_StdinConflicts(t *testing.T) {
 		want string
 	}{
 		{name: "refs", args: []string{"--stdin", "HEAD~1"}, want: "--stdin cannot be used with refs"},
-		{name: "staged", args: []string{"--stdin", "--staged"}, want: "--stdin cannot be used with --staged"},
 		{name: "only", args: []string{"--stdin", "--only", "main.go"}, want: "--stdin cannot be used with --only"},
 		{name: "all files", args: []string{"--stdin", "--all-files"}, want: "--stdin cannot be used with --all-files"},
 		{name: "exclude", args: []string{"--stdin", "--exclude", "vendor"}, want: "--stdin cannot be used with --exclude"},
@@ -1177,12 +1083,10 @@ func TestParseArgs_InstallThemeFlag(t *testing.T) {
 }
 
 func TestParseArgsAmp(t *testing.T) {
-	for _, mode := range []string{"--untracked", "--staged"} {
-		opts, err := parseArgs(append(noConfigArgs(t), "--amp", "connection.json", mode))
-		require.NoError(t, err)
-		require.Equal(t, "connection.json", opts.Amp)
-		require.True(t, opts.ampApplicable())
-	}
+	opts, err := parseArgs(append(noConfigArgs(t), "--amp", "connection.json"))
+	require.NoError(t, err)
+	require.Equal(t, "connection.json", opts.Amp)
+	require.True(t, opts.ampApplicable())
 	for _, args := range [][]string{
 		{"HEAD"}, {"main", "topic"}, {"--all-files"}, {"--stdin"},
 		{"--compare-old=a", "--compare-new=b"}, {"--output=out.md"}, {"--post-flush-command=cat"},
@@ -1196,8 +1100,7 @@ func TestParseArgsAmp(t *testing.T) {
 
 func TestOptionsAmpApplicable(t *testing.T) {
 	require.True(t, (options{}).ampApplicable())
-	require.True(t, (options{Staged: true}).ampApplicable())
-	require.True(t, (options{Untracked: true, Only: []string{"README.md"}}).ampApplicable())
+	require.True(t, (options{Only: []string{"README.md"}}).ampApplicable())
 	for _, opts := range []options{
 		{AllFiles: true}, {Stdin: true}, {CompareOld: "old"}, {CompareNew: "new"},
 		{Output: "out.md"}, {PostFlushCommand: "cat"},

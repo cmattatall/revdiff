@@ -17,8 +17,6 @@ type options struct {
 		Against string `positional-arg-name:"against" description:"second git ref for two-ref diff (e.g. revdiff main feature)"`
 	} `positional-args:"yes"`
 
-	Staged                bool     `long:"staged" ini-name:"staged" env:"REVDIFF_STAGED" description:"show staged changes"`
-	Untracked             bool     `long:"untracked" ini-name:"untracked" env:"REVDIFF_UNTRACKED" description:"show untracked files in the tree"`
 	TreeWidth             int      `long:"tree-width" ini-name:"tree-width" env:"REVDIFF_TREE_WIDTH" default:"2" description:"file tree panel width in units (1-10, default 2 of 10)"`
 	TabWidth              int      `long:"tab-width" ini-name:"tab-width" env:"REVDIFF_TAB_WIDTH" default:"4" description:"number of spaces per tab character"`
 	NoColors              bool     `long:"no-colors" ini-name:"no-colors" env:"REVDIFF_NO_COLORS" description:"disable all colors including syntax highlighting"`
@@ -109,20 +107,7 @@ func (o options) ref() string {
 	return o.Refs.Base
 }
 
-// startupUntracked reports whether --untracked should activate.
-// disabled in two-ref mode (both `a b` and `a..b` forms) because untracked
-// files are working-tree state, not part of a historical diff between refs.
-func (o options) startupUntracked() bool {
-	if !o.Untracked {
-		return false
-	}
-	if o.Refs.Against != "" || strings.Contains(o.Refs.Base, "..") {
-		return false
-	}
-	return true
-}
-
-// ampApplicable allows feedback from staged and unstaged working-tree reviews.
+// ampApplicable allows feedback from Git working-tree reviews.
 func (o options) ampApplicable() bool {
 	return o.ref() == "" && !o.AllFiles && !o.Stdin &&
 		o.CompareOld == "" && o.CompareNew == "" && o.Output == "" && o.PostFlushCommand == ""
@@ -147,16 +132,9 @@ func parseArgs(args []string) (options, error) {
 		return options{}, fmt.Errorf("parse args: %w", err)
 	}
 
-	if opts.Staged && (opts.Refs.Against != "" || strings.Contains(opts.Refs.Base, "..")) {
-		return options{}, errors.New("--staged cannot be used with two-ref diff")
-	}
-
 	if opts.AllFiles {
 		if opts.Refs.Base != "" || opts.Refs.Against != "" {
 			return options{}, errors.New("--all-files cannot be used with refs")
-		}
-		if opts.Staged {
-			return options{}, errors.New("--all-files cannot be used with --staged")
 		}
 		if len(opts.Only) > 0 {
 			return options{}, errors.New("--all-files cannot be used with --only")

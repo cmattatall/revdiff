@@ -42,10 +42,17 @@ func (m *Model) scanTree(kind treeScanKind, forward, inclusive bool) tea.Cmd {
 		return nil
 	}
 	entries := make([]diff.FileEntry, len(paths))
-	for i, path := range paths {
-		entries[i] = diff.FileEntry{Path: path, OldPath: m.tree.OldPath(path), Status: m.tree.FileStatus(path)}
+	if provider, ok := m.tree.(interface{ VisibleEntries() []diff.FileEntry }); ok {
+		entries = provider.VisibleEntries()
+	} else {
+		for i, path := range paths {
+			entries[i] = diff.FileEntry{Path: path, OldPath: m.tree.OldPath(path), Status: m.tree.FileStatus(path)}
+		}
 	}
 	origin := max(0, slices.Index(paths, m.tree.SelectedFile()))
+	if indexed, ok := m.tree.(interface{ SelectedVisibleIndex() int }); ok {
+		origin = indexed.SelectedVisibleIndex()
+	}
 	m.nav.scanSeq++
 	m.nav.scanKind = kind
 	// Commands use a snapshot, never the tree's mutable maps or entries.
@@ -139,14 +146,18 @@ func (m Model) handleTreeScan(msg treeScanMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	m.tree.SelectByPath(msg.entry.Path)
+	if selector, ok := m.tree.(interface{ SelectEntry(diff.FileEntry) bool }); ok {
+		selector.SelectEntry(msg.entry)
+	} else {
+		m.tree.SelectByPath(msg.entry.Path)
+	}
 	m.tree.EnsureVisible(m.treePageSize())
 	var cmd tea.Cmd
-	if msg.entry.Path != m.file.name {
+	if msg.entry.Path != m.file.name || (m.cfg.workingTree && msg.entry.Staged != m.file.staged) {
 		m.pendingAnnotJump = nil
 		m.nav.pendingHunkJump = nil
 		m.file.loadSeq++
-		model, loadCmd := m.handleFileLoaded(fileLoadedMsg{file: msg.entry.Path, oldName: msg.entry.OldPath,
+		model, loadCmd := m.handleFileLoaded(fileLoadedMsg{file: msg.entry.Path, oldName: msg.entry.OldPath, staged: msg.entry.Staged,
 			seq: m.file.loadSeq, lines: msg.lines})
 		m, cmd = model.(Model), loadCmd
 	}

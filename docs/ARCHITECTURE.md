@@ -634,7 +634,6 @@ Several mutually exclusive input sources, validated at parse time:
 | Mode | Flag | Renderer | Notes |
 |------|------|----------|-------|
 | VCS diff (default) | `[base] [against]` | `Git` or `Hg` | Detects VCS, runs diff |
-| Staged changes | `--staged` | `Git` or `Hg` | Cannot combine with refs |
 | All tracked files | `--all-files` / `-A` | `DirectoryReader` | Git only, not with refs/staged/only |
 | Single file(s) | `--only` / `-F` | `FileReader` | Not with include |
 | Stdin (raw text) | `--stdin` | `StdinReader` | Sniff fails or returns `ErrNotUnifiedDiff` |

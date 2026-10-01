@@ -146,7 +146,7 @@ func (p *preloader) load(records []annotation.Annotation) error {
 // upstream of the toggle, so it has to accept either viewing mode for the
 // round-trip to be lossless.
 //
-// When running with no ref and no --staged, staged-only FileAdded entries
+// When running with no ref, staged-only FileAdded entries
 // are folded in if the unstaged set is empty (matches the UI's empty-diff
 // fallback). Files renamed since the annotations file was generated are
 // keyed under their old path and will orphan-drop here — a known limitation

@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"os"
 
 	"github.com/umputun/revdiff/app/diff"
@@ -37,9 +36,6 @@ func setupVCSRenderer(opts options) (vcsSetup, error) {
 		}
 		return vcsSetup{renderer: r, vcsType: diff.VCSGit, gitRoot: vcsRoot, workDir: workDir, blamer: g, untrackedFn: g.UntrackedFiles, untrackedRenamesFn: g.UntrackedRenames, commitLogger: g}, nil
 	case diff.VCSHg:
-		if opts.Staged {
-			fmt.Fprintln(os.Stderr, "warning: --staged ignored in mercurial repository (no staging area)")
-		}
 		h := diff.NewHg(vcsRoot)
 		r, workDir, err := makeHgRenderer(h, opts, vcsRoot)
 		if err != nil {
@@ -47,9 +43,6 @@ func setupVCSRenderer(opts options) (vcsSetup, error) {
 		}
 		return vcsSetup{renderer: r, vcsType: diff.VCSHg, workDir: workDir, blamer: h, untrackedFn: h.UntrackedFiles, commitLogger: h}, nil
 	case diff.VCSJJ:
-		if opts.Staged {
-			fmt.Fprintln(os.Stderr, "warning: --staged ignored in jujutsu repository (no staging area)")
-		}
 		jj := diff.NewJj(vcsRoot)
 		r, workDir, err := makeJjRenderer(jj, opts, vcsRoot)
 		if err != nil {

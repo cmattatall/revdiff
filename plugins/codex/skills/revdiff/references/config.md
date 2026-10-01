@@ -18,8 +18,6 @@ Then uncomment and edit the values you want to change.
 
 | Option | Env var | Description | Default |
 |--------|---------|-------------|---------|
-| `--staged` | `REVDIFF_STAGED` | Show staged changes | `false` |
-| `--untracked` | `REVDIFF_UNTRACKED` | Show untracked files in the tree | `false` |
 | `--tree-width` | `REVDIFF_TREE_WIDTH` | File tree panel width in units (1-10) | `2` |
 | `--tab-width` | `REVDIFF_TAB_WIDTH` | Spaces per tab character | `4` |
 | `--no-colors` | `REVDIFF_NO_COLORS` | Disable all colors including syntax highlighting | `false` |
@@ -167,9 +165,9 @@ The `scroll_diff_page_*` and `scroll_diff_half_page_*` actions are the page-size
 
 Fixed modal keys (Enter and Esc in annotation/search input) are not remappable. Keymap-resolved actions like `open_editor` work during annotation input and can be rebound. Chord bindings do not fire during text input — use single-key `ctrl+*` bindings for actions that need to work during annotation input.
 
-The `stage_hunk` action (default `s`) stages the change under the cursor in an unstaged Git working-tree review. It supports modified tracked regular text files and rejects stale displayed changes.
+The `stage_hunk` action (default `s`) stages the change under the cursor in a Git working-tree review. It supports modified tracked regular text files and rejects stale displayed changes.
 
-The `stage_file` action (default `S`, Shift+S) stages the entire selected file from the tree or diff pane in an unstaged Git working-tree review. It stages current contents like `git add`, including edits since the last render. Both staging actions require no pending annotations.
+The `stage_file` action (default `S`, Shift+S) stages the entire selected file from the tree or diff pane in a Git working-tree review. It stages current contents like `git add`, including edits since the last render. Both staging actions require no pending annotations.
 
 The `flush_output` action (default `O`) sends feedback to the bound thread when `--amp` is configured; live refresh pauses until pending comments are sent or removed. Otherwise, `--output` writes the full snapshot to a file and `--post-flush-command` sends it to a command on stdin. They work independently or together. An empty annotation store produces only a status hint.
 

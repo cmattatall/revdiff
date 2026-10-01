@@ -29,7 +29,7 @@ async function showConnection(thread: PluginThread, descriptor: string): Promise
       'If multiple Amp sessions match, select this thread with:',
       '',
       '```sh',
-      `${shellQuote('revdiff')} --amp ${shellQuote(descriptor)} --untracked`,
+      `${shellQuote('revdiff')} --amp ${shellQuote(descriptor)}`,
       '```',
       '',
       'If using this fork directly, replace the initial revdiff executable with ./.bin/revdiff.',

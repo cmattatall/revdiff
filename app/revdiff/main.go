@@ -190,7 +190,7 @@ func run(opts options) (int, error) {
 	}
 
 	if opts.Annotations != "" {
-		if perr := preloadAnnotations(opts.Annotations, store, renderer, opts.ref(), opts.Staged, untrackedFn, untrackedRenamesFn, workDir, os.Stderr); perr != nil {
+		if perr := preloadAnnotations(opts.Annotations, store, renderer, opts.ref(), false, untrackedFn, untrackedRenamesFn, workDir, os.Stderr); perr != nil {
 			return 0, perr
 		}
 	}
@@ -247,7 +247,8 @@ func run(opts options) (int, error) {
 		}
 	}
 	var stager ui.Stager
-	if vcsType == diff.VCSGit && opts.ref() == "" && !opts.Staged && !opts.AllFiles {
+	workingTree := vcsType == diff.VCSGit && opts.ref() == "" && !opts.AllFiles && !opts.Stdin && opts.compareAbsOld == ""
+	if workingTree {
 		stager = diff.NewGit(gitRoot)
 	}
 
@@ -288,7 +289,7 @@ func run(opts options) (int, error) {
 		StartAtChange:        opts.StartAtChange,
 		LineNumbers:          opts.LineNumbers,
 		ShowBlame:            opts.Blame,
-		ShowUntracked:        opts.startupUntracked(),
+		ShowUntracked:        opts.ref() == "" && !opts.AllFiles && !opts.Stdin && opts.compareAbsOld == "",
 		WordDiff:             opts.WordDiff,
 		FilterUnreviewed:     opts.FilterUnreviewed,
 		VimMotion:            opts.VimMotion,
@@ -299,7 +300,7 @@ func run(opts options) (int, error) {
 		}),
 		TabWidth:         opts.TabWidth,
 		Ref:              opts.ref(),
-		Staged:           opts.Staged,
+		WorkingTree:      workingTree,
 		TreeWidthRatio:   opts.TreeWidth,
 		Only:             opts.Only,
 		WorkDir:          workDir,
@@ -447,7 +448,7 @@ func sourceEditorPolicy(opts options, workDir string) ui.SourceEditorPolicy {
 			ExactPath: opts.compareAbsNew,
 		}
 	case workDir != "":
-		worktreeReview := !opts.Staged && opts.ref() == ""
+		worktreeReview := opts.ref() == "" && !opts.AllFiles
 		return ui.SourceEditorPolicy{
 			Available: true,
 			Root:      workDir,
@@ -474,7 +475,7 @@ func resolveKeysPath(opts options) string {
 
 // commitsApplicable returns true when the unified info popup can include a
 // commit-log section: a VCS-backed log source must be present and the mode
-// must be ref-based (no stdin, staged, all-files, or empty ref). Computed
+// must be ref-based (no stdin, all-files, or empty ref). Computed
 // once in the composition root so the Model does not re-derive from CLI
 // flags. --only is fine when combined with a ref in a real repo; the empty
 // ref check excludes the standalone --only / FileReader case where the
@@ -483,7 +484,7 @@ func commitsApplicable(opts options, cl diff.CommitLogger) bool {
 	if cl == nil {
 		return false
 	}
-	if opts.Stdin || opts.Staged || opts.AllFiles {
+	if opts.Stdin || opts.AllFiles {
 		return false
 	}
 	return opts.ref() != ""

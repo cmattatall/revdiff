@@ -140,8 +140,8 @@
         <div class="code-block"><code>/revdiff                         <span class="code-comment">-- detect uncommitted, staged, or branch changes, then open revdiff</span>
 /revdiff HEAD~1 HEAD             <span class="code-comment">-- review last commit</span>
 /revdiff main                    <span class="code-comment">-- review against main</span>
-/revdiff --staged                <span class="code-comment">-- review staged changes</span>
-/revdiff --untracked             <span class="code-comment">-- include untracked files in working-tree review</span>
+/revdiff                 <span class="code-comment">-- review staged changes</span>
+/revdiff             <span class="code-comment">-- include untracked files in working-tree review</span>
 /revdiff --all-files             <span class="code-comment">-- browse all tracked files</span>
 /revdiff --all-files --exclude vendor
 /revdiff --only README.md        <span class="code-comment">-- review a single file in context-only mode</span>
@@ -168,7 +168,7 @@
             <li>Set <code>REVDIFF_BIN=/absolute/path/to/revdiff</code> if pi can’t find the binary</li>
             <li>Direct terminal handoff is the only Pi launch mode</li>
             <li>Exit code <code>10</code> means annotations were captured, not failure</li>
-            <li>Use <code>--untracked</code> when agent-created files should be reviewed before they are staged</li>
+            <li>The default working-tree view includes agent-created untracked files</li>
             <li>Use <code>--description</code> or <code>--description-file</code> after analysis/refactor work so the info popup carries review context</li>
             <li>Use <code>--annotations=&lt;tempfile&gt;</code> to preload in-session review notes</li>
             <li>Successful <code>revdiff_review</code> results include captured annotation text; history is only for explicit latest-history requests or missing-output fallback</li>
@@ -188,7 +188,7 @@
             <li><code>revdiff main..feature</code> &mdash; same as above, git dot-dot syntax</li>
             <li><code>revdiff main...feature</code> &mdash; changes since feature diverged from main</li>
         </ul>
-        <p>In git modes (<code>--staged</code>, single-ref, two-ref) renamed files are detected automatically: the diff-pane header shows the rename origin as <code>old &rarr; new</code> and the diff renders only the real line changes instead of a full delete-and-add. With <code>--untracked</code>, a plain working-tree <code>mv old new</code> (where the new file is still untracked) is paired as a rename too. Rename detection is git-only; <code>hg</code> and <code>jj</code> show renames as separate delete/add entries.</p>
+        <p>In Git working-tree, single-ref, and two-ref modes renamed files are detected automatically: the diff-pane header shows the rename origin as <code>old &rarr; new</code> and the diff renders only the real line changes instead of a full delete-and-add. In the default view, a plain working-tree <code>mv old new</code> (where the new file is still untracked) is paired as a rename too. Rename detection is git-only; <code>hg</code> and <code>jj</code> show renames as separate delete/add entries.</p>
 
         <h2 id="examples">Examples</h2>
         <div class="code-block"><code><span class="code-comment"># review uncommitted changes</span>
@@ -198,7 +198,7 @@ revdiff
 revdiff main
 
 <span class="code-comment"># review staged changes</span>
-revdiff --staged
+revdiff 
 
 <span class="code-comment"># review last commit</span>
 revdiff HEAD~1 HEAD
@@ -250,7 +250,7 @@ revdiff --annotations=review.md HEAD~1</code></div>
 
         <h2 id="all-files">All-files mode</h2>
         <p>Use <code>--all-files</code> (or <code>-A</code>) to browse all tracked files, not just files with changes. This turns revdiff into a general-purpose code annotation tool. All files are shown in context-only mode with full annotation and syntax highlighting support.</p>
-        <p><code>--all-files</code> requires a git or jj repository (uses <code>git ls-files</code> or <code>jj file list</code>; Mercurial is not supported) and is mutually exclusive with refs, <code>--staged</code>, and <code>--only</code>. Combine with <code>--include</code> (or <code>-I</code>) to narrow to specific paths and <code>--exclude</code> (or <code>-X</code>) to filter out unwanted paths.</p>
+        <p><code>--all-files</code> requires a git or jj repository (uses <code>git ls-files</code> or <code>jj file list</code>; Mercurial is not supported) and is mutually exclusive with refs and <code>--only</code>. Combine with <code>--include</code> (or <code>-I</code>) to narrow to specific paths and <code>--exclude</code> (or <code>-X</code>) to filter out unwanted paths.</p>
         <p><code>--include</code> and <code>--exclude</code> both use prefix matching. They are composable: include narrows first, then exclude removes from the included set. Both work in <code>--all-files</code> and normal diff modes.</p>
         <div class="code-block"><code>revdiff --all-files --include src
 revdiff --all-files --include src --exclude src/vendor
@@ -268,11 +268,11 @@ revdiff --all-files --exclude vendor --exclude mocks</code></div>
         <p>Use <code>--compare-old=&lt;path&gt;</code> together with <code>--compare-new=&lt;path&gt;</code> to diff two arbitrary files on disk using <code>git diff --no-index</code>. No VCS repository is required &mdash; this works anywhere <code>git</code> is installed.</p>
         <div class="code-block"><code>revdiff --compare-old=/tmp/plan-old.md --compare-new=docs/plans/plan.md
 revdiff --compare-old=a.txt --compare-new=b.txt</code></div>
-        <p><code>--compare-old</code> and <code>--compare-new</code> must be used together and are mutually exclusive with refs, <code>--staged</code>, <code>--only</code>, <code>--all-files</code>, <code>--stdin</code>, <code>--include</code>, <code>--exclude</code>, and <code>--annotations</code>. All standard features work: word-diff, compact mode, syntax highlighting, scrollbar, and inline annotations.</p>
+        <p><code>--compare-old</code> and <code>--compare-new</code> must be used together and are mutually exclusive with refs, <code>--only</code>, <code>--all-files</code>, <code>--stdin</code>, <code>--include</code>, <code>--exclude</code>, and <code>--annotations</code>. All standard features work: word-diff, compact mode, syntax highlighting, scrollbar, and inline annotations.</p>
 
         <h2 id="scratch-buffer">Scratch-buffer review</h2>
         <p>Use <code>--stdin</code> to review arbitrary piped or redirected text. revdiff sniffs the input for a git unified-diff signature: when a line beginning with <code>diff --git a/</code> is found near the start, the input is parsed as a real multi-file diff with one tree entry per file, <code>+</code>/<code>-</code> markers, hunk navigation, word-diff, compact mode, and per-file annotations. Otherwise the input is shown as a single context-only buffer: all lines are treated as context, supporting annotations, file-level notes, search, wrap, collapsed mode, and structured output. Any per-section parse failure falls the whole input back to raw-text mode so a malformed patch never silently drops files. Input is capped at 64 MiB.</p>
-        <p><code>--stdin</code> is explicit, requires piped or redirected input, and is mutually exclusive with refs, <code>--staged</code>, <code>--only</code>, <code>--all-files</code>, <code>--include</code>, <code>--exclude</code>, and <code>--annotations</code>.</p>
+        <p><code>--stdin</code> is explicit, requires piped or redirected input, and is mutually exclusive with refs, <code>--only</code>, <code>--all-files</code>, <code>--include</code>, <code>--exclude</code>, and <code>--annotations</code>.</p>
         <p>Use <code>--stdin-name</code> to control the synthetic filename for the context-only case (it is ignored in multi-file diff mode, where the tree shows the real paths). The name gives annotation output a stable key and enables extension-based highlighting or markdown TOC activation.</p>
         <div class="code-block"><code>echo "plain text" | revdiff --stdin
 printf '# Plan\n\nBody\n' | revdiff --stdin --stdin-name plan.md
@@ -398,8 +398,6 @@ revdiff --dump-config > ~/.config/revdiff/config</code></div>
         <table>
             <thead><tr><th>Option</th><th>Description</th><th>Default</th></tr></thead>
             <tbody>
-                <tr><td><code>--staged</code></td><td>Show staged changes</td><td><code>false</code></td></tr>
-                <tr><td><code>--untracked</code></td><td>Show untracked files in the tree</td><td><code>false</code></td></tr>
                 <tr><td><code>--tree-width</code></td><td>File tree width in units (1-10)</td><td><code>2</code></td></tr>
                 <tr><td><code>--tab-width</code></td><td>Spaces per tab character</td><td><code>4</code></td></tr>
                 <tr><td><code>--no-colors</code></td><td>Disable all colors</td><td><code>false</code></td></tr>
@@ -581,7 +579,7 @@ color-border = #6272a4
             </tbody>
         </table>
         <p>While the annotation input is active, press <code>Alt+E</code> (or whatever key is bound to <code>open_editor</code>) to hand off the current text to an external editor for multi-line comments. <code>Ctrl+E</code> now retains its standard end-of-line behavior; users who prefer the old shortcut can add <code>map ctrl+e open_editor</code>. Editor resolution: <code>$EDITOR</code> &rarr; <code>$VISUAL</code> &rarr; <code>vi</code>. Values with arguments work (e.g. <code>EDITOR="code --wait"</code>). On editor save and quit, the full file contents (including newlines) become the annotation. Quitting the editor with an empty file cancels the annotation and preserves any previously stored note on that line. Multi-line annotations are rendered line-by-line in the diff view, shown flattened in the annotation list popup (<code>@</code>), and emitted with embedded newlines in the structured output.</p>
-        <p>Press <code>e</code> in the diff pane to open the focused file in <code>$EDITOR</code> (<code>open_file_in_editor</code> &mdash; rebindable) when revdiff has a stable source path. Editor resolution is the same <code>$EDITOR</code> &rarr; <code>$VISUAL</code> &rarr; <code>vi</code> chain. Known editors receive either <code>$EDITOR +N path</code> or <code>$EDITOR --goto path:N</code> as appropriate; unknown editors receive only the file path. File lines are resolved on a best-effort basis. For working tree changes, a clean editor exit reloads the displayed file. For <code>--staged</code> or refs, a clean editor exit returns to revdiff without reloading the displayed diff. In compare mode, <code>e</code> opens the <code>--compare-new</code> side. Working tree files with line annotations cannot be opened for editing because edits can orphan those annotations. Diffs read with <code>--stdin</code> do not support opening files. Unsupported rows or files and editor errors show a status hint instead of launching an editor or changing the diff.</p>
+        <p>Press <code>e</code> in the diff pane to open the focused file in <code>$EDITOR</code> (<code>open_file_in_editor</code> &mdash; rebindable) when revdiff has a stable source path. Editor resolution is the same <code>$EDITOR</code> &rarr; <code>$VISUAL</code> &rarr; <code>vi</code> chain. Known editors receive either <code>$EDITOR +N path</code> or <code>$EDITOR --goto path:N</code> as appropriate; unknown editors receive only the file path. File lines are resolved on a best-effort basis. For working tree changes, a clean editor exit reloads the displayed file. For refs, a clean editor exit returns to revdiff without reloading the displayed diff. In compare mode, <code>e</code> opens the <code>--compare-new</code> side. Working tree files with line annotations cannot be opened for editing because edits can orphan those annotations. Diffs read with <code>--stdin</code> do not support opening files. Unsupported rows or files and editor errors show a status hint instead of launching an editor or changing the diff.</p>
         <p>Press <code>O</code> to export the current annotations without exiting (<code>flush_output</code>, rebindable). Configure <code>--output</code>, <code>--post-flush-command</code>, or both. With <code>--output</code>, each flush atomically overwrites the file with the full current annotation set (a snapshot, not an append log). With <code>--post-flush-command</code>, the same snapshot is sent to the command on stdin. If neither is configured, or if there are no annotations, revdiff shows a status hint and does nothing.</p>
         <p>The output file supports a keep-open review loop with an AI agent: annotate, flush with <code>O</code>, let the agent read the file and edit code, then reload with <code>R</code> and continue in the same session.</p>
         <p>For a local clipboard-only workflow on macOS, set <code>post-flush-command = pbcopy</code> in <code>~/.config/revdiff/config</code>. Each <code>O</code> copies the full current annotation set without requiring <code>--output</code>. On Linux, use <code>xclip -selection clipboard</code> for X11 or <code>wl-copy</code> for Wayland.</p>
@@ -716,15 +714,15 @@ map alt+t&gt;n theme_select</code></div>
         <p>Run <code>./plugins/amp/install.sh</code> from this fork's repository root (requires Go). It builds and installs <code>revdiff</code> into <code>~/.local/bin</code> and the plugin into <code>~/.config/amp/plugins/revdiff.ts</code>. It detects bash or zsh from <code>$SHELL</code> and adds <code>~/.local/bin</code> to your shell startup files; <code>--shell bash|zsh</code> is an optional override and <code>--no-path</code> skips that edit. Open a new terminal or run <code>export PATH="$HOME/.local/bin:$PATH"</code>, then reload Amp plugins. Rerunning the script updates the installed binary and plugin automatically, replacing any local customizations. Upstream releases do not include this integration.</p>
         <ol>
             <li>Open an Amp thread in your Git checkout. The plugin registers the session automatically, without posting a setup message. After reloading the plugin in an existing thread, registration happens when you next send a prompt or choose <strong>revdiff: connect</strong>.</li>
-            <li>Run <code>revdiff</code> or <code>revdiff --staged</code> in another terminal pane in the <strong>same directory</strong>. It automatically connects when exactly one live Amp session matches. Use <code>revdiff --untracked</code> to include new files. Type <code>:harness connect amp</code> to retry discovery manually without sending annotations. If multiple sessions match, disconnect the extras or use <strong>Ctrl+O → revdiff: connect</strong> in the intended Amp thread to get an explicit <code>--amp</code> command.</li>
+            <li>Run <code>revdiff</code> or <code>revdiff </code> in another terminal pane in the <strong>same directory</strong>. It automatically connects when exactly one live Amp session matches. Use <code>revdiff</code> to include new files. Type <code>:harness connect amp</code> to retry discovery manually without sending annotations. If multiple sessions match, disconnect the extras or use <strong>Ctrl+O → revdiff: connect</strong> in the intended Amp thread to get an explicit <code>--amp</code> command.</li>
             <li>Annotate with <code>Enter</code> or <code>a</code> (line), or <code>A</code> (file). Press <code>O</code> (Shift+O) or run <code>:harness send</code> to send feedback without exiting. Amp receives it as a steering message, including while working.</li>
-            <li>Press <code>s</code> on an added/removed line to stage that contiguous change. Hunk staging supports only modified tracked regular text files in an unstaged Git working-tree review; new/deleted files, renames, binary files, and mode changes are not supported. Hunk staging updates the index, never the working file, and rejects stale displayed changes.</li>
-            <li>Press <code>S</code> (Shift+S) to stage the entire selected file from the tree or diff pane (<code>stage_file</code>, rebindable). This stages the current working-tree version, including edits since the last render, like <code>git add</code>. It also supports new/deleted files, renames, binaries, symlinks, and mode changes; directories and submodules are excluded. Both staging shortcuts require an unstaged Git working-tree review and no pending annotations. Neither changes the working file.</li>
+            <li>Press <code>s</code> on an added/removed line to stage that contiguous change. Hunk staging supports only modified tracked regular text files in a Git working-tree review; new/deleted files, renames, binary files, and mode changes are not supported. Hunk staging updates the index, never the working file, and rejects stale displayed changes.</li>
+            <li>Press <code>S</code> (Shift+S) to stage the entire selected file from the tree or diff pane (<code>stage_file</code>, rebindable). This stages the current working-tree version, including edits since the last render, like <code>git add</code>. It also supports new/deleted files, renames, binaries, symlinks, and mode changes; directories and submodules are excluded. Both staging shortcuts require a Git working-tree review and no pending annotations. Neither changes the working file.</li>
         </ol>
         <p>The bottom panel shows <strong>Harness: waiting</strong> until a session is found, then <strong>Harness (amp): &lt;title&gt; &lt;thread ID&gt;</strong>. The identity itself indicates the connection; there is no separate &ldquo;connected&rdquo; label. Each harness supplies its own name and display text. Revdiff checks once per second while waiting, even if you are writing annotations; <code>O</code> also retries discovery. Connecting never sends comments automatically. <strong>sending</strong> and <strong>unconfirmed</strong> appear beside the identity during an active send or after an unacknowledged delivery; <strong>Harness: unavailable</strong> indicates a discovery error. This row remains visible during input and status messages, unless the status bar is disabled.</p>
         <p>The panel also shows the <strong>repository root</strong> above the status/input row. Titles are captured when the plugin registers a connection; untitled threads show the ID alone. Narrow terminals shorten the title before the ID and preserve the end of long repository paths. The root remains visible without an Amp connection. <code>--no-status-bar</code> hides the panel too.</p>
         <p>The file list and selected diff refresh about once per second, preserving the cursor. Refresh pauses during drafts, while unsent annotations remain, and during modal interactions. Successful sends clear only delivered, unchanged comments. Failed sends retain the snapshot; <code>O</code> retries it. Edited or new comments remain for the next send. Quit does not send: unsent comments follow normal output/history behavior.</p>
-        <p>Both processes must use the same host/filesystem and user account. Automatic connection is limited to staged and unstaged Git working-tree reviews; refs, <code>--all-files</code>, stdin/compare modes, <code>--output</code>, and <code>--post-flush-command</code> skip discovery and cannot be combined with explicit <code>--amp</code>. Without a matching session, annotations stay local and quit uses normal output/history behavior. Connections use authenticated loopback HTTP and private files under <code>~/.cache/revdiff/amp</code>; stale connections are ignored. <strong>revdiff: disconnect</strong> disables that thread's automatic connection until manual reconnect or plugin reload. Once bound, revdiff never switches connections: after reconnecting or restarting the plugin, relaunch a previously connected revdiff instance. Check the thread before resending uncertain feedback because deduplication does not survive restart.</p>
+        <p>Both processes must use the same host/filesystem and user account. Automatic connection is limited to Git working-tree reviews; refs, <code>--all-files</code>, stdin/compare modes, <code>--output</code>, and <code>--post-flush-command</code> skip discovery and cannot be combined with explicit <code>--amp</code>. Without a matching session, annotations stay local and quit uses normal output/history behavior. Connections use authenticated loopback HTTP and private files under <code>~/.cache/revdiff/amp</code>; stale connections are ignored. <strong>revdiff: disconnect</strong> disables that thread's automatic connection until manual reconnect or plugin reload. Once bound, revdiff never switches connections: after reconnecting or restarting the plugin, relaunch a previously connected revdiff instance. Check the thread before resending uncertain feedback because deduplication does not survive restart.</p>
 
         <!-- claude code plugin -->
         <h2 id="plugin-install">Claude Code plugin</h2>
@@ -765,7 +763,7 @@ map alt+t&gt;n theme_select</code></div>
 /revdiff HEAD~1 HEAD      <span class="code-comment">-- review last commit</span>
 /revdiff main             <span class="code-comment">-- review current branch against main</span>
 /revdiff HEAD~3 HEAD      <span class="code-comment">-- review last 3 commits</span>
-/revdiff --staged         <span class="code-comment">-- review staged changes only</span>
+/revdiff          <span class="code-comment">-- review staged changes only</span>
 /revdiff all files        <span class="code-comment">-- browse all tracked files</span></code></div>
         <h3>Natural language</h3>
         <div class="code-block"><code>"review diff"                       <span class="code-comment">-- same as /revdiff, smart detection</span>
@@ -861,7 +859,7 @@ cd plugins/opencode && bash setup.sh</code></div>
         </ul>
         <div class="code-block"><code>/revdiff              <span class="code-comment"># auto-detect ref</span>
 /revdiff HEAD~3 HEAD  <span class="code-comment"># review last 3 commits</span>
-/revdiff --staged     <span class="code-comment"># review staged changes</span></code></div>
+/revdiff      <span class="code-comment"># review staged changes</span></code></div>
 
         <!-- output -->
         <h2 id="output-format">Output format</h2>

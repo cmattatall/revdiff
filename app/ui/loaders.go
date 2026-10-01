@@ -32,7 +32,7 @@ func (m Model) loadFiles() tea.Cmd {
 		// include staged-only files (new files added to index but not yet committed)
 		// only when there are no unstaged entries; otherwise unstaged review should stay focused
 		// on actual unstaged changes.
-		if m.cfg.ref == "" && !m.cfg.staged && len(entries) == 0 {
+		if !m.cfg.workingTree && m.cfg.ref == "" && !m.cfg.staged && len(entries) == 0 {
 			stagedEntries, stagedErr := m.diffRenderer.ChangedFiles("", true)
 			if stagedErr != nil {
 				warnings = append(warnings, fmt.Sprintf("staged files: %v", stagedErr))
@@ -49,7 +49,7 @@ func (m Model) loadFiles() tea.Cmd {
 			}
 		}
 		// append untracked files when toggle is on (skip files already in entries to avoid dupes)
-		if m.modes.showUntracked && m.loadUntracked != nil {
+		if (m.cfg.workingTree || m.modes.showUntracked) && m.loadUntracked != nil {
 			ut, utErr := m.loadUntracked()
 			if utErr != nil {
 				warnings = append(warnings, fmt.Sprintf("untracked files: %v", utErr))
@@ -59,6 +59,18 @@ func (m Model) loadFiles() tea.Cmd {
 					warnings = append(warnings, rWarn)
 				}
 				entries = m.mergeUntrackedEntries(entries, ut, renames)
+			}
+		}
+		// Merge untracked paths into Changes before adding the independent index
+		// entries: a staged deletion may coexist with an untracked replacement.
+		if m.cfg.workingTree {
+			stagedEntries, stagedErr := m.diffRenderer.ChangedFiles("", true)
+			if stagedErr != nil {
+				return filesLoadedMsg{seq: seq, err: stagedErr}
+			}
+			for _, entry := range stagedEntries {
+				entry.Staged = true
+				entries = append(entries, entry)
 			}
 		}
 		fingerprints, fingerprintWarnings := m.loadReviewedFingerprints(entries, reviewed)
@@ -87,7 +99,7 @@ func (m Model) loadReviewedFingerprints(entries []diff.FileEntry, reviewed map[s
 
 	jobs := make([]diff.FileEntry, 0, len(reviewed))
 	for _, entry := range entries {
-		if _, ok := reviewed[entry.Path]; ok {
+		if _, ok := reviewed[reviewKey(entry.Path, entry.Staged)]; ok {
 			jobs = append(jobs, entry)
 		}
 	}
@@ -113,7 +125,7 @@ func (m Model) loadReviewedFingerprints(entries []diff.FileEntry, reviewed map[s
 		go func() {
 			for entry := range jobCh {
 				lines, err := m.fetchEffectiveFileDiff(entry, 0, true)
-				result := fingerprintResult{path: entry.Path, err: err}
+				result := fingerprintResult{path: reviewKey(entry.Path, entry.Staged), err: err}
 				if err == nil {
 					result.fingerprint = diff.FileFingerprint(entry, lines)
 					result.stable = diff.ReviewFingerprintStable(lines)
@@ -220,16 +232,26 @@ func (m Model) loadFileDiff(file string) tea.Cmd {
 	seq := m.file.loadSeq
 	contextLines := m.currentContextLines()
 	entry := diff.FileEntry{Path: file, OldPath: m.tree.OldPath(file), Status: m.tree.FileStatus(file)}
+	staged := m.selectedTreeStaged()
+	entry.Staged = staged
 	return func() tea.Msg {
 		lines, err := m.fetchEffectiveFileDiff(entry, contextLines, false)
-		return fileLoadedMsg{file: file, oldName: entry.OldPath, seq: seq, lines: lines, err: err}
+		return fileLoadedMsg{file: file, oldName: entry.OldPath, staged: staged, seq: seq, lines: lines, err: err}
 	}
+}
+
+func (m Model) selectedTreeStaged() bool {
+	if wt, ok := m.tree.(interface{ SelectedStaged() bool }); ok {
+		return wt.SelectedStaged()
+	}
+	return m.cfg.staged
 }
 
 // requestFileDiff records the selected target, advances the load sequence, and
 // returns a command for that exact request.
 func (m *Model) requestFileDiff(file string) tea.Cmd {
 	m.file.requestedPath = file
+	m.file.requestedStaged = m.selectedTreeStaged()
 	m.file.loadSeq++
 	return m.loadFileDiff(file)
 }
@@ -242,7 +264,7 @@ func (m Model) fetchEffectiveFileDiff(entry diff.FileEntry, contextLines int, st
 		Ref:          m.cfg.ref,
 		Path:         entry.Path,
 		OldPath:      entry.OldPath,
-		Staged:       m.cfg.staged,
+		Staged:       m.cfg.staged || (m.cfg.workingTree && entry.Staged),
 		ContextLines: contextLines,
 	}
 	lines, err := m.diffRenderer.FileDiff(req)
@@ -253,7 +275,7 @@ func (m Model) fetchEffectiveFileDiff(entry diff.FileEntry, contextLines int, st
 		return lines, nil
 	}
 
-	if !m.cfg.staged && entry.Status == diff.FileAdded {
+	if !m.cfg.workingTree && !m.cfg.staged && entry.Status == diff.FileAdded {
 		req.Staged = true
 		cachedLines, cachedErr := m.diffRenderer.FileDiff(req)
 		if cachedErr != nil {
@@ -283,7 +305,7 @@ func (m Model) loadReviewFingerprint(entry diff.FileEntry, seq uint64) tea.Cmd {
 	filesSeq := m.filesLoadSeq
 	return func() tea.Msg {
 		lines, err := m.fetchEffectiveFileDiff(entry, 0, true)
-		msg := reviewFingerprintLoadedMsg{path: entry.Path, seq: seq, filesSeq: filesSeq, err: err}
+		msg := reviewFingerprintLoadedMsg{path: entry.Path, staged: entry.Staged, seq: seq, filesSeq: filesSeq, err: err}
 		if err == nil {
 			msg.fingerprint = diff.FileFingerprint(entry, lines)
 		}
@@ -365,6 +387,9 @@ func (m Model) loadBlame(file string) tea.Cmd {
 	seq := m.file.loadSeq
 	ref := m.cfg.ref
 	staged := m.cfg.staged
+	if m.cfg.workingTree {
+		staged = m.file.staged
+	}
 	return func() tea.Msg {
 		data, err := m.blamer.FileBlame(ref, file, staged)
 		return blameLoadedMsg{file: file, seq: seq, data: data, err: err}
@@ -375,11 +400,12 @@ func (m Model) loadBlame(file string) tea.Cmd {
 func (m Model) loadSelectedIfChanged() (tea.Model, tea.Cmd) {
 	m.tree.EnsureVisible(m.treePageSize())
 	if f := m.tree.SelectedFile(); f != "" {
-		if f != m.file.name {
+		staged := m.selectedTreeStaged()
+		if f != m.file.name || (m.cfg.workingTree && staged != m.file.staged) {
 			cmd := m.requestFileDiff(f)
 			return m, cmd
 		}
-		if m.file.requestedPath != "" && m.file.requestedPath != f {
+		if m.file.requestedPath != "" && (m.file.requestedPath != f || m.file.requestedStaged != staged) {
 			m.file.canceledLoadSeq = m.file.loadSeq
 			m.file.canceledLoadPath = m.file.requestedPath
 			m.file.requestedPath = ""
@@ -454,7 +480,7 @@ func (m Model) handleFilesLoaded(msg filesLoadedMsg) (tea.Model, tea.Cmd) {
 	// reintroduce an invisible reviewed entry.
 	present := make(map[string]struct{}, len(entries))
 	for _, entry := range entries {
-		present[entry.Path] = struct{}{}
+		present[reviewKey(entry.Path, entry.Staged)] = struct{}{}
 	}
 	for path := range m.reviewed.pending {
 		if _, ok := present[path]; !ok {
@@ -477,10 +503,10 @@ func (m Model) handleFilesLoaded(msg filesLoadedMsg) (tea.Model, tea.Cmd) {
 	if m.tree.UnreviewedFilterActive() {
 		m.tree.RefreshUnreviewedFilter()
 	}
-	if m.file.name != "" {
+	if m.file.name != "" && !m.cfg.workingTree {
 		m.tree.SelectByPath(m.file.name)
 	}
-	m.file.singleFile = m.tree.TotalFiles() == 1
+	m.file.singleFile = !m.cfg.workingTree && m.tree.TotalFiles() == 1
 	if len(entries) == 0 {
 		m.file.name = ""
 		m.file.oldName = ""
@@ -502,7 +528,7 @@ func (m Model) handleFilesLoaded(msg filesLoadedMsg) (tea.Model, tea.Cmd) {
 	if f := m.tree.SelectedFile(); f != "" {
 		seq := m.file.loadSeq
 		cmd := m.requestFileDiff(f)
-		if stageAnchor != nil && stageAnchor.file == f && stageAnchor.seq == seq {
+		if stageAnchor != nil && stageAnchor.file == f && stageAnchor.seq == seq && !m.selectedTreeStaged() {
 			stageAnchor.seq = m.file.loadSeq
 			m.live.stageAnchor = stageAnchor
 		}
@@ -546,16 +572,18 @@ func (m Model) handleFileLoaded(msg fileLoadedMsg) (tea.Model, tea.Cmd) {
 	stageAnchor := m.live.stageAnchor
 	m.live.stageAnchor = nil
 	m.file.requestedPath = ""
+	m.file.requestedStaged = false
 	if msg.err != nil {
 		m.layout.viewport.SetContent(fmt.Sprintf("error loading diff: %v", msg.err))
 		return m, nil
 	}
 	m.file.name = msg.file
 	m.file.oldName = msg.oldName
+	m.file.staged = msg.staged
 	m.file.lines = msg.lines
 	entry := diff.FileEntry{Path: msg.file, OldPath: m.tree.OldPath(msg.file), Status: m.tree.FileStatus(msg.file)}
 	fingerprint := diff.FileFingerprint(entry, m.file.lines)
-	m.reviewed.cache[msg.file] = fingerprint
+	m.reviewed.cache[reviewKey(msg.file, m.cfg.workingTree && msg.staged)] = fingerprint
 	m.tree.ReconcileReviewedPath(msg.file, fingerprint)
 	m.invalidateRenderCaches()
 	m.refreshSearchMatches()
@@ -644,11 +672,12 @@ func (m Model) handleFileLoaded(msg fileLoadedMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleReviewFingerprintLoaded(msg reviewFingerprintLoadedMsg) (tea.Model, tea.Cmd) {
-	seq, pending := m.reviewed.pending[msg.path]
+	key := reviewKey(msg.path, msg.staged)
+	seq, pending := m.reviewed.pending[key]
 	if !pending || seq != msg.seq {
 		return m, nil
 	}
-	delete(m.reviewed.pending, msg.path)
+	delete(m.reviewed.pending, key)
 	if msg.filesSeq != m.filesLoadSeq {
 		return m, nil
 	}
@@ -656,8 +685,12 @@ func (m Model) handleReviewFingerprintLoaded(msg reviewFingerprintLoadedMsg) (te
 		log.Printf("[WARN] fingerprint reviewed file %s: %v", msg.path, msg.err)
 		return m, nil
 	}
-	m.reviewed.cache[msg.path] = msg.fingerprint
-	m.tree.SetReviewed(msg.path, msg.fingerprint)
+	m.reviewed.cache[key] = msg.fingerprint
+	if tree, ok := m.tree.(*workingTree); ok {
+		tree.side(msg.staged).SetReviewed(msg.path, msg.fingerprint)
+	} else {
+		m.tree.SetReviewed(msg.path, msg.fingerprint)
+	}
 	return m.loadSelectedIfChanged()
 }
 

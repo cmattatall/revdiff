@@ -36,7 +36,6 @@ type reviewInfoInputs struct {
 // ModelConfig and bypass this constructor entirely (nil = subsystem off).
 func reviewInfoFromOptions(opts options, in reviewInfoInputs) *ui.ReviewInfoConfig {
 	ref := opts.ref()
-	effectiveStaged := opts.Staged && in.vcsType == diff.VCSGit
 	vcs := string(in.vcsType)
 	if opts.Stdin {
 		vcs = "stdin"
@@ -55,7 +54,7 @@ func reviewInfoFromOptions(opts options, in reviewInfoInputs) *ui.ReviewInfoConf
 		StdinName:      stdinDisplayName,
 		Stdin:          opts.Stdin,
 		Compare:        opts.compareAbsOld != "",
-		Staged:         effectiveStaged,
+		Staged:         false,
 		AllFiles:       opts.AllFiles,
 		Only:           append([]string(nil), opts.Only...),
 		Include:        append([]string(nil), opts.Include...),

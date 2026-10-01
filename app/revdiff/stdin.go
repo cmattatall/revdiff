@@ -37,9 +37,6 @@ func validateStdinFlags(opts options) error {
 	if opts.Refs.Base != "" || opts.Refs.Against != "" {
 		return errors.New("--stdin cannot be used with refs")
 	}
-	if opts.Staged {
-		return errors.New("--stdin cannot be used with --staged")
-	}
 	if len(opts.Only) > 0 {
 		return errors.New("--stdin cannot be used with --only")
 	}

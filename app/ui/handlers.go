@@ -64,8 +64,12 @@ func (m Model) buildHelpSpec() overlay.HelpSpec {
 		pad := m.helpIconPad(sec)
 		var entries []overlay.HelpEntry
 		for _, e := range sec.Entries {
+			if m.cfg.workingTree && e.Action == keymap.ActionToggleUntracked {
+				continue
+			}
 			entries = append(entries, overlay.HelpEntry{
 				Keys:        m.formatKeysForHelp(e.Action),
+				Command:     ":" + string(e.Action),
 				Description: m.helpDescriptionWithIcon(e, pad),
 			})
 		}
@@ -84,6 +88,17 @@ func (m Model) buildHelpSpec() overlay.HelpSpec {
 	if m.modes.vimMotion {
 		result = append(result, m.buildVimMotionHelpSection())
 	}
+	// Include aliases, harness connectors, and actions with no key binding.
+	palette := overlay.HelpSection{Title: "Command palette"}
+	for _, entry := range m.commandEntries() {
+		if entry.name == string(entry.action) && len(m.keymap.KeysFor(entry.action)) > 0 {
+			continue
+		}
+		palette.Entries = append(palette.Entries, overlay.HelpEntry{
+			Command: ":" + entry.name, Description: entry.description,
+		})
+	}
+	result = append(result, palette)
 	return overlay.HelpSpec{Sections: result}
 }
 
@@ -249,31 +264,39 @@ func (m Model) handleMarkReviewed() (tea.Model, tea.Cmd) {
 	if file == "" {
 		return m, nil
 	}
-	if m.tree.IsReviewed(file) {
-		m.tree.Unreview(file)
-		delete(m.reviewed.pending, file)
+	staged := m.cfg.workingTree && m.selectedTreeStaged()
+	tree := m.tree
+	if wt, ok := m.tree.(*workingTree); ok {
+		if m.layout.focus == paneDiff {
+			staged = m.file.staged
+		}
+		tree = wt.side(staged)
+	}
+	key := reviewKey(file, staged)
+	if tree.IsReviewed(file) {
+		tree.Unreview(file)
+		delete(m.reviewed.pending, key)
 		return m.loadSelectedIfChanged()
 	}
-	if _, pending := m.reviewed.pending[file]; pending {
-		delete(m.reviewed.pending, file)
+	if _, pending := m.reviewed.pending[key]; pending {
+		delete(m.reviewed.pending, key)
 		return m, nil
 	}
-	if file == m.file.name {
-		entry := diff.FileEntry{Path: file, OldPath: m.tree.OldPath(file), Status: m.tree.FileStatus(file)}
+	entry := diff.FileEntry{Path: file, OldPath: tree.OldPath(file), Status: tree.FileStatus(file), Staged: staged}
+	if file == m.file.name && (!m.cfg.workingTree || staged == m.file.staged) {
 		fingerprint := diff.FileFingerprint(entry, m.file.lines)
-		m.reviewed.cache[file] = fingerprint
-		m.tree.SetReviewed(file, fingerprint)
+		m.reviewed.cache[key] = fingerprint
+		tree.SetReviewed(file, fingerprint)
 		return m.loadSelectedIfChanged()
 	}
-	if fingerprint := m.reviewed.cache[file]; fingerprint != "" {
-		m.tree.SetReviewed(file, fingerprint)
+	if fingerprint := m.reviewed.cache[key]; fingerprint != "" {
+		tree.SetReviewed(file, fingerprint)
 		return m.loadSelectedIfChanged()
 	}
 
 	m.reviewed.loadSeq++
 	seq := m.reviewed.loadSeq
-	m.reviewed.pending[file] = seq
-	entry := diff.FileEntry{Path: file, OldPath: m.tree.OldPath(file), Status: m.tree.FileStatus(file)}
+	m.reviewed.pending[key] = seq
 	return m, m.loadReviewFingerprint(entry, seq)
 }
 

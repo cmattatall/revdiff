@@ -104,7 +104,6 @@ func TestParseArgs_CompareConflicts(t *testing.T) {
 	}{
 		{name: "refs base", args: append(append([]string{}, common...), "HEAD~1"), want: "--compare-old/--compare-new cannot be used with refs"},
 		{name: "refs two", args: append(append([]string{}, common...), "main", "feature"), want: "--compare-old/--compare-new cannot be used with refs"},
-		{name: "staged", args: append(append([]string{}, common...), "--staged"), want: "--compare-old/--compare-new cannot be used with --staged"},
 		{name: "only", args: append(append([]string{}, common...), "--only", "main.go"), want: "--compare-old/--compare-new cannot be used with --only"},
 		{name: "all-files", args: append(append([]string{}, common...), "--all-files"), want: "--compare-old/--compare-new cannot be used with --all-files"},
 		{name: "stdin", args: append(append([]string{}, common...), "--stdin"), want: "--compare-old/--compare-new cannot be used with --stdin"},

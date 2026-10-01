@@ -101,14 +101,6 @@ func (m Model) sessionPanelLines() []string {
 	if m.live.sender != nil || m.live.discover != nil {
 		lines = append(lines, m.feedbackStatusText(width))
 	}
-	if cfg := m.review.cfg; cfg != nil && cfg.WorkDir != "" {
-		label := "Directory: "
-		if !cfg.Compare && (cfg.VCS == "git" || cfg.VCS == "hg" || cfg.VCS == "jj") {
-			label = "Repository: "
-		}
-		root := style.SanitizeFilenameForDisplay(cfg.WorkDir)
-		lines = append(lines, ansi.Truncate(label+style.TruncateLeftToWidth(root, width-len(label)), width, ""))
-	}
 	return lines
 }
 

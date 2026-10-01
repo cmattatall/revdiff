@@ -82,9 +82,10 @@ type HelpSection struct {
 	Entries []HelpEntry
 }
 
-// HelpEntry is a single key-description pair in a help section.
+// HelpEntry describes a shortcut and its equivalent command-palette text.
 type HelpEntry struct {
 	Keys        string
+	Command     string // empty for contextual input without a palette equivalent
 	Description string
 }
 

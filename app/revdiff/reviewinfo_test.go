@@ -33,12 +33,12 @@ func TestReviewInfoFromOptions(t *testing.T) {
 	})
 
 	t.Run("staged is ignored for VCSes without staging area", func(t *testing.T) {
-		info := reviewInfoFromOptions(options{Staged: true}, reviewInfoInputs{workDir: "/repo", vcsType: diff.VCSHg})
+		info := reviewInfoFromOptions(options{}, reviewInfoInputs{workDir: "/repo", vcsType: diff.VCSHg})
 		assert.False(t, info.Staged)
 	})
 
 	t.Run("staged is preserved for git", func(t *testing.T) {
-		info := reviewInfoFromOptions(options{Staged: true}, reviewInfoInputs{workDir: "/repo", vcsType: diff.VCSGit})
+		info := reviewInfoFromOptions(options{}, reviewInfoInputs{workDir: "/repo", vcsType: diff.VCSGit})
 		assert.True(t, info.Staged)
 	})
 

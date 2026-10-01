@@ -36,7 +36,7 @@ func saveHistory(r histReq) {
 		Annotations:    r.annotations,
 		Path:           histPath,
 		Ref:            r.opts.ref(),
-		Staged:         r.opts.Staged,
+		Staged:         false,
 		GitRoot:        r.gitRoot,
 		AnnotatedFiles: r.files,
 		SubDir:         histSubDir,

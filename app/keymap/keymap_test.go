@@ -403,7 +403,7 @@ func TestActionFlushOutput_HelpEntry(t *testing.T) {
 	var found bool
 	for _, e := range entries {
 		if e.Action == ActionFlushOutput {
-			assert.Equal(t, "flush annotations to output file", e.Description)
+			assert.Equal(t, "send annotations to harness / output / hook", e.Description)
 			assert.Equal(t, "Annotations", e.Section)
 			found = true
 			break

@@ -8,7 +8,7 @@ description: Pi-only interactive diff and file review with revdiff. Use when the
 This skill is specific to the **pi** harness.
 Use the revdiff pi extension for interactive review sessions.
 
-Amp's separate split-terminal workflow uses `revdiff --amp CONNECTION_FILE --untracked` after the user invokes **revdiff: connect** in Amp. Do not pass `--amp` through Pi's review tool: it sends feedback to the bound Amp thread, not Pi. It requires this fork's binary and the Amp plugin on the same host.
+Amp's separate split-terminal workflow uses `revdiff --amp CONNECTION_FILE` after the user invokes **revdiff: connect** in Amp. Do not pass `--amp` through Pi's review tool: it sends feedback to the bound Amp thread, not Pi. It requires this fork's binary and the Amp plugin on the same host.
 
 ## Agent usage
 
@@ -32,8 +32,7 @@ Tool examples:
 
 - No args: smart detection, same default target as `/revdiff`
 - `args: "main"`: review the current branch against `main`
-- `args: "--staged"`: review staged changes
-- `args: "--untracked"`: review untracked files with working-tree changes
+- `args: ""`: review staged changes
 - `args: "--only README.md"`: review one standalone file
 - `args: "--all-files --exclude vendor"`: review all tracked files except vendor
 - `args: "--no-tree"`: review with the file tree pane hidden
@@ -63,7 +62,6 @@ When annotations arrive from `/revdiff` or `revdiff_review`:
 5. Before editing repository files, list the planned file/code changes.
 6. Apply code-change directives.
 7. Rerun the original `revdiff_review` target only after repository files changed or when the user chooses to continue reviewing; preserve the original `cwd` parameter when one was used.
-8. Add `--untracked` on reruns when agent-created files should be included.
 
 ## User commands
 
@@ -77,8 +75,8 @@ When annotations arrive from `/revdiff` or `revdiff_review`:
 /revdiff HEAD~1
 /revdiff HEAD~1 HEAD
 /revdiff main
-/revdiff --staged
-/revdiff --untracked
+/revdiff 
+/revdiff
 /revdiff --all-files --include src
 /revdiff --all-files --exclude vendor
 /revdiff --only README.md
@@ -105,14 +103,13 @@ git format-patch -1 --stdout | revdiff --stdin
 Behavior:
 
 - With no arguments, the extension uses smart detection:
-  - on main/master with staged-only changes → review staged changes with `--staged`
+  - on main/master with staged-only changes → review staged changes with ``
   - on main/master with uncommitted changes → review uncommitted changes
   - on main/master with a clean tree → review `HEAD~1`
   - on a clean feature branch → review against the detected main branch
-  - on a dirty feature branch → asks whether to review uncommitted changes or the branch diff; staged-only uncommitted review uses `--staged`
+  - on a dirty feature branch → asks whether to review uncommitted changes or the branch diff; staged-only uncommitted review uses ``
 - After revdiff exits with annotations, `revdiff_review` returns them in the tool result; the agent processes that result directly.
 - If revdiff exits without captured annotations, report that no annotations were captured and stop.
-- When recent agent work created new untracked files, include `--untracked` so those files appear in the review tree.
 - Include `--filter-unreviewed` only when the user asks for the tree limited to files not marked reviewed; `F` toggles the same filter during the review.
 - When launching after analysis or refactor work, include `--description` or `--description-file` so the info popup explains the review context.
 

@@ -14,9 +14,7 @@
 #   main_branch: detected main/master branch name
 #   is_main: true/false (whether current branch is main/master)
 #   has_uncommitted: true/false
-#   has_staged_only: true/false (changes are staged but nothing unstaged; git-only)
-#   suggested_ref: the ref to use (empty = uncommitted, HEAD~1, main branch name, or --all-files for no-commits git repos)
-#   use_staged: true/false (pass --staged to revdiff; git-only)
+#   suggested_ref: the ref to use (empty = working tree, HEAD~1, or main branch name)
 #   needs_ask: true/false (whether the skill should ask the user)
 
 set -euo pipefail
@@ -26,7 +24,6 @@ branch="unknown"
 main_branch=""
 is_main="false"
 has_uncommitted="false"
-has_staged_only="false"
 has_commits="true"
 
 detect_git() {
@@ -49,17 +46,6 @@ detect_git() {
 
     if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
         has_uncommitted="true"
-    fi
-
-    # distinguish staged-only vs unstaged changes
-    local has_unstaged="false"
-    if ! git diff --quiet 2>/dev/null; then
-        has_unstaged="true"
-    fi
-    if [ "$has_uncommitted" = "true" ] && [ "$has_unstaged" = "false" ]; then
-        if ! git diff --cached --quiet 2>/dev/null; then
-            has_staged_only="true"
-        fi
     fi
 
     # detect no-commits state (fresh repo after git init)
@@ -134,22 +120,18 @@ detect_jj() {
 }
 
 apply_decision_logic() {
-    # no-commits short-circuit fires first: on git, fall back to --all-files
-    # (browses staged files); on hg, ask the user since --all-files is not
-    # supported for hg. jj always has @ so this branch is unreachable for jj.
+    # no-commits short-circuit fires first. Git's default working-tree view
+    # includes staged, unstaged, and untracked files; hg still needs a target.
     # short-circuit deliberately precedes is_main/has_uncommitted so a fresh
     # hg repo with `?` untracked files doesn't misroute into the main+uncommitted arm.
     if [ "$has_commits" = "false" ]; then
         if [ "$vcs" = "git" ]; then
-            suggested_ref="--all-files"
+            suggested_ref=""
         else
             needs_ask="true"
         fi
     elif [ "$is_main" = "true" ]; then
         if [ "$has_uncommitted" = "true" ]; then
-            if [ "$has_staged_only" = "true" ]; then
-                use_staged="true" # staged-only changes on main
-            fi
             suggested_ref="" # uncommitted changes on main
         else
             suggested_ref="HEAD~1" # last commit on main
@@ -157,9 +139,6 @@ apply_decision_logic() {
     else
         if [ "$has_uncommitted" = "true" ]; then
             needs_ask="true" # ambiguous: uncommitted on feature branch
-            if [ "$has_staged_only" = "true" ]; then
-                use_staged="true"
-            fi
         else
             suggested_ref="$main_branch" # clean feature branch → diff against main
         fi
@@ -180,7 +159,6 @@ fi
 
 suggested_ref=""
 needs_ask="false"
-use_staged="false"
 
 case "$vcs" in
 git) detect_git ;;
@@ -195,7 +173,5 @@ echo "branch: $branch"
 echo "main_branch: $main_branch"
 echo "is_main: $is_main"
 echo "has_uncommitted: $has_uncommitted"
-echo "has_staged_only: $has_staged_only"
 echo "suggested_ref: $suggested_ref"
-echo "use_staged: $use_staged"
 echo "needs_ask: $needs_ask"

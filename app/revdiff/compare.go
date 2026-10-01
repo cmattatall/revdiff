@@ -25,7 +25,6 @@ func validateCompareFlag(opts options) (oldPath, newPath string, err error) {
 		flag string
 	}{
 		{opts.Refs.Base != "" || opts.Refs.Against != "", "refs"},
-		{opts.Staged, "--staged"},
 		{len(opts.Only) > 0, "--only"},
 		{opts.AllFiles, "--all-files"},
 		{opts.Stdin, "--stdin"},

@@ -248,7 +248,6 @@ func TestCommitsApplicable(t *testing.T) {
 	}{
 		{name: "nil commit logger", opts: refOpts, cl: nil, want: false},
 		{name: "stdin mode", opts: options{Stdin: true}, cl: g, want: false},
-		{name: "staged mode", opts: options{Staged: true}, cl: g, want: false},
 		{name: "all-files mode", opts: options{AllFiles: true}, cl: g, want: false},
 		{name: "empty ref", opts: options{}, cl: g, want: false},
 		{name: "ref + logger applicable", opts: refOpts, cl: g, want: true},
@@ -311,7 +310,6 @@ func TestReloadApplicable(t *testing.T) {
 	}{
 		{name: "stdin mode", opts: options{Stdin: true}, want: false},
 		{name: "normal mode", opts: options{}, want: true},
-		{name: "staged mode", opts: options{Staged: true}, want: true},
 		{name: "all-files mode", opts: options{AllFiles: true}, want: true},
 	}
 	for _, tc := range tests {
@@ -353,7 +351,7 @@ func TestSourceEditorPolicy_ModeBehavior(t *testing.T) {
 		},
 		{
 			name: "staged opens without reload",
-			opts: options{Staged: true},
+			opts: options{},
 			root: workDir,
 			want: ui.SourceEditorPolicy{Available: true, Root: workDir},
 		},

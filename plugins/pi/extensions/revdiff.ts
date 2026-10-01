@@ -41,7 +41,6 @@ interface SmartDetectResult {
 	mainBranch: string;
 	isMain: boolean;
 	hasUncommitted: boolean;
-	useStaged: boolean;
 	suggestedRef: string;
 	needsAsk: boolean;
 }
@@ -70,7 +69,7 @@ export default function revdiffExtension(pi: ExtensionAPI): void {
 			args: Type.Optional(
 				Type.String({
 					description:
-						"Optional revdiff arguments as a shell-like string, for example 'main', '--staged', '--only README.md', or '--all-files --exclude vendor'. Omit for smart detection.",
+						"Optional revdiff arguments as a shell-like string, for example 'main', '--only README.md', or '--all-files --exclude vendor'. Omit for smart detection.",
 				}),
 			),
 			cwd: Type.Optional(
@@ -212,9 +211,6 @@ async function detectSmartLaunch(ctx: ExtensionContext, cwd: string): Promise<La
 }
 
 function uncommittedLaunchSpec(detected: SmartDetectResult): LaunchSpec {
-	if (detected.useStaged) {
-		return { args: ["--staged"], label: "staged changes" };
-	}
 	return { args: [], label: "uncommitted changes" };
 }
 
@@ -360,9 +356,6 @@ function parseAnnotations(output: string): AnnotationItem[] {
 function describeArgs(args: string[]): string {
 	if (args.length === 0) {
 		return "uncommitted changes";
-	}
-	if (args.includes("--staged")) {
-		return "staged changes";
 	}
 	if (args.includes("--all-files") || args.includes("-A")) {
 		const excludes = collectFlagValues(args, "--exclude", "-X");
@@ -568,7 +561,6 @@ function runDetectRefScript(cwd: string): SmartDetectResult | undefined {
 		mainBranch: fields.get("main_branch") ?? "",
 		isMain: fields.get("is_main") === "true",
 		hasUncommitted: fields.get("has_uncommitted") === "true",
-		useStaged: fields.get("use_staged") === "true",
 		suggestedRef: fields.get("suggested_ref") ?? "",
 		needsAsk: fields.get("needs_ask") === "true",
 	};
@@ -582,9 +574,6 @@ function detectSmartRefFallback(cwd: string): SmartDetectResult | undefined {
 	// detect no-commits state (fresh repo after git init)
 	const hasCommits = gitOk(["rev-parse", "HEAD"], cwd);
 	const hasUncommitted = gitStdout(["status", "--porcelain"], cwd).trim().length > 0;
-	const hasUnstaged = !gitOk(["diff", "--quiet"], cwd);
-	const hasStaged = !gitOk(["diff", "--cached", "--quiet"], cwd);
-	const useStaged = hasUncommitted && hasStaged && !hasUnstaged;
 
 	if (!hasCommits) {
 		return {
@@ -592,8 +581,7 @@ function detectSmartRefFallback(cwd: string): SmartDetectResult | undefined {
 			mainBranch: "",
 			isMain: false,
 			hasUncommitted,
-			useStaged: false,
-			suggestedRef: "--all-files",
+			suggestedRef: "",
 			needsAsk: false,
 		};
 	}
@@ -612,7 +600,7 @@ function detectSmartRefFallback(cwd: string): SmartDetectResult | undefined {
 		suggestedRef = mainBranch;
 	}
 
-	return { branch, mainBranch, isMain, hasUncommitted, useStaged, suggestedRef, needsAsk };
+	return { branch, mainBranch, isMain, hasUncommitted, suggestedRef, needsAsk };
 }
 
 function detectMainBranch(cwd: string): string {

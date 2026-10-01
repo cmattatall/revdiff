@@ -7,7 +7,7 @@ description: Review diffs, files, and documents with inline annotations in a TUI
 
 Review diffs with inline annotations using revdiff TUI in a terminal overlay. Works in git, hg, and jj repos (auto-detected).
 
-For Amp split-terminal live review, have the user run Amp's **revdiff: connect** command and launch `revdiff --amp CONNECTION_FILE --untracked` directly in the sibling terminal. Do not pass `--amp` to an overlay launcher or invent a connection file. It requires this fork's binary, a local Amp plugin connection, and a Git working-tree review without refs. `O` sends feedback; `s` stages tracked text changes. The user owns the index; do not stage, unstage, reset, or commit on their behalf without authorization.
+For Amp split-terminal live review, have the user run Amp's **revdiff: connect** command and launch `revdiff --amp CONNECTION_FILE` directly in the sibling terminal. Do not pass `--amp` to an overlay launcher or invent a connection file. It requires this fork's binary, a local Amp plugin connection, and a Git working-tree review without refs. `O` sends feedback; `s` stages tracked text changes. The user owns the index; do not stage, unstage, reset, or commit on their behalf without authorization.
 
 ## Script Path Resolution
 
@@ -73,7 +73,7 @@ git format-patch -1 --stdout | $SCRIPT_DIR/launch-revdiff.sh --stdin
 cat /tmp/feature.patch | $SCRIPT_DIR/launch-revdiff.sh --stdin
 ```
 
-`--stdin` is mutually exclusive with refs, `--staged`, `--only`, `--all-files`, `--include`, `--exclude`, and `--annotations`, so do not combine with the Step 1 ref detection — go directly to Step 3 once the launcher returns. Annotations come back keyed by the real file paths from the diff (not by `--stdin-name`).
+`--stdin` is mutually exclusive with refs, `--only`, `--all-files`, `--include`, `--exclude`, and `--annotations`, so do not combine with the Step 1 ref detection — go directly to Step 3 once the launcher returns. Annotations come back keyed by the real file paths from the diff (not by `--stdin-name`).
 
 ## How It Works
 
@@ -113,10 +113,8 @@ $SCRIPT_DIR/detect-ref.sh
 The script outputs structured fields:
 - `branch`, `main_branch`, `is_main`, `has_uncommitted`, `has_staged_only`
 - `suggested_ref` — the ref to pass to revdiff (empty = uncommitted changes)
-- `use_staged` — if `true`, pass `--staged` to the launcher (staged-only changes detected)
 - `needs_ask` — if `true`, ask the user before proceeding
 
-**When `use_staged: true`**, pass `--staged` to the launcher. This means all changes are in the index (staged) with nothing unstaged — without `--staged`, revdiff would show an empty diff.
 
 **When `needs_ask: true`** (on a feature branch with uncommitted changes), present the user with options as a numbered list and wait for their response:
 
@@ -125,7 +123,7 @@ The script outputs structured fields:
 
 **When `needs_ask: false`**, use `suggested_ref` directly:
 - On main + uncommitted → no ref (uncommitted changes)
-- On main + staged only → no ref + `--staged` (staged changes)
+- On main + staged only → no ref (the default view includes staged changes)
 - On main + clean → `HEAD~1` (last commit)
 - On feature branch + clean → main branch name (full branch diff)
 
@@ -133,7 +131,7 @@ The script outputs structured fields:
 
 When you are launching revdiff for the user (e.g., right after a refactor or analysis), pass `--description="..."` so the info popup (`i` key) explains what the change is and what to look at — markdown is supported. For longer prose, write the markdown to a temp file and pass `--description-file=/tmp/revdiff-desc-XXXXXX.md`. The two flags are mutually exclusive; both are optional. Skip when there's no useful context to add.
 
-**When the recent change likely created new untracked files** (new packages, new test files, new docs, new scripts that haven't been `git add`-ed yet), pass `--untracked` so those files appear in the tree. Use this in working-tree mode (no ref, no `--staged`); skip it for ref-to-ref reviews where untracked files are not part of the historical diff.
+The default Git working-tree view includes staged, unstaged, and untracked files. Ref-based reviews remain historical diffs.
 
 Pass `--start-at-change` only when the user explicitly asks for that cursor preference; never infer it automatically.
 
@@ -142,7 +140,7 @@ Pass `--filter-unreviewed` only when the user asks for the tree limited to files
 Run the launcher script:
 
 ```bash
-$SCRIPT_DIR/launch-revdiff.sh [base] [against] [--staged] [--untracked] [--filter-unreviewed] [--only=file1] [--all-files] [--exclude=prefix] [--description=text|--description-file=path]
+$SCRIPT_DIR/launch-revdiff.sh [base] [against] [--filter-unreviewed] [--only=file1] [--all-files] [--exclude=prefix] [--description=text|--description-file=path]
 ```
 
 **IMPORTANT — long-running command**: The launcher blocks until the user finishes reviewing in the TUI overlay, which can exceed the default bash tool timeout. Set the bash timeout parameter to the **maximum your harness allows** (e.g. 1800000 or higher). Do NOT use `run_in_background` for this — background-task handling is unreliable for interactive TUI launchers. If the review outlasts the timeout cap, the fallback in Step 3 handles it.
