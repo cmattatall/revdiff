@@ -153,7 +153,8 @@ The file picker lists paths currently visible in the sidebar, preserving annotat
 | `@` | Toggle annotation list popup (navigate and jump to any annotation) |
 | `}` / `{` | Jump to next/previous annotation (always crosses file boundaries; silent no-op at the first/last annotation) |
 | `d` | Delete annotation under cursor |
-| `O` | Export annotations without exiting (requires `--output` and/or `--post-flush-command`) |
+| `O` | Send feedback with `--amp`, or export via `--output` / `--post-flush-command` |
+| `s` | Stage change under cursor (modified tracked text, Git working tree) |
 | `Ctrl+E` (during annotation input) | Open `$EDITOR` for multi-line annotation (`open_editor` — rebindable) |
 | `Esc` | Cancel annotation input |
 
@@ -161,7 +162,9 @@ While the annotation input is active, press `Ctrl+E` (or whatever key is bound t
 
 Press `e` in the diff pane to open the focused file in `$EDITOR` (`open_file_in_editor` — rebindable) when revdiff has a stable source path. Editor resolution is the same `$EDITOR` → `$VISUAL` → `vi` chain. Known editors receive either `$EDITOR +N path` or `$EDITOR --goto path:N` as appropriate; unknown editors receive only the file path. File lines are resolved on a best-effort basis. For working tree changes, a clean editor exit reloads the displayed file. For `--staged` or refs, a clean editor exit returns to revdiff without reloading the displayed diff. In compare mode, `e` opens the `--compare-new` side. Working tree files with line annotations cannot be opened for editing because edits can orphan those annotations. Diffs read with `--stdin` do not support opening files. Unsupported rows or files and editor errors show a status hint instead of launching an editor or changing the diff.
 
-Press `O` to export the current annotations without exiting (`flush_output`, rebindable). Configure `--output`, `--post-flush-command`, or both. With `--output`, each flush atomically overwrites the file with the full current annotation set. With `--post-flush-command`, the same snapshot is sent to the command on stdin. If neither is configured, or if there are no annotations, revdiff shows a status hint and does nothing.
+For Amp live review, run **revdiff: connect** in Amp and launch `revdiff --amp CONNECTION_FILE --untracked` in the other terminal pane. Both must use the same host and Git checkout. `O` sends annotations to the selected thread and clears only acknowledged, unchanged comments. Automatic refresh pauses during drafts and while unsent comments remain. Failed sends keep the pending snapshot; `O` retries it. `s` (`stage_hunk`) stages the contiguous change under the cursor; it rejects stale views and unsupported file types. Quit does not send feedback. This requires this fork's binary, not an upstream release, and cannot be combined with refs, staged/all-files/stdin/compare modes, output, or post-flush commands.
+
+Outside Amp mode, press `O` to export the current annotations without exiting (`flush_output`, rebindable). Configure `--output`, `--post-flush-command`, or both. With `--output`, each flush atomically overwrites the file with the full current annotation set. With `--post-flush-command`, the same snapshot is sent to the command on stdin. If neither is configured, or if there are no annotations, revdiff shows a status hint and does nothing.
 
 For clipboard-only flushes on macOS, set `post-flush-command = pbcopy` in `~/.config/revdiff/config`; no `--output` flag is required. On Linux, use `xclip -selection clipboard` for X11 or `wl-copy` for Wayland. For remote terminal clipboards, configure an OSC 52 helper as the post-flush command.
 

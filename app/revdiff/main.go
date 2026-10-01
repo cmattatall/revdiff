@@ -18,6 +18,7 @@ import (
 	"github.com/umputun/revdiff/app/diff"
 	"github.com/umputun/revdiff/app/fsutil"
 	"github.com/umputun/revdiff/app/handoff"
+	"github.com/umputun/revdiff/app/harnesses/amp"
 	"github.com/umputun/revdiff/app/highlight"
 	"github.com/umputun/revdiff/app/keymap"
 	"github.com/umputun/revdiff/app/theme"
@@ -216,6 +217,21 @@ func run(opts options) (int, error) {
 		postFlushHook = hook
 	}
 
+	var feedback ui.FeedbackSender
+	if opts.Amp != "" {
+		if vcsType != diff.VCSGit {
+			return 0, errors.New("--amp requires a Git working tree")
+		}
+		feedback, err = amp.New(opts.Amp, workDir)
+		if err != nil {
+			return 0, err
+		}
+	}
+	var stager ui.HunkStager
+	if vcsType == diff.VCSGit && opts.ref() == "" && !opts.Staged && !opts.AllFiles {
+		stager = diff.NewGit(gitRoot)
+	}
+
 	model, err := ui.NewModel(ui.ModelConfig{
 		Renderer:             renderer,
 		Store:                store,
@@ -231,6 +247,8 @@ func run(opts options) (int, error) {
 		LoadUntrackedRenames: untrackedRenamesFn,
 		Keymap:               km,
 		PostFlushHook:        postFlushHook,
+		Feedback:             feedback,
+		Stager:               stager,
 		CommitLog:            commitLogger,
 		CommitsApplicable:    commitsApplicable(opts, commitLogger),
 		ReloadApplicable:     reloadApplicable(opts),

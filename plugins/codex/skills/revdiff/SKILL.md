@@ -7,6 +7,8 @@ description: Review diffs, files, and documents with inline annotations in a TUI
 
 Review diffs with inline annotations using revdiff TUI in a terminal overlay. Works in git, hg, and jj repos (auto-detected).
 
+For Amp split-terminal live review, have the user run Amp's **revdiff: connect** command and launch `revdiff --amp CONNECTION_FILE --untracked` directly in the sibling terminal. Do not pass `--amp` to an overlay launcher or invent a connection file. It requires this fork's binary, a local Amp plugin connection, and a Git working-tree review without refs. `O` sends feedback; `s` stages tracked text changes. The user owns the index; do not stage, unstage, reset, or commit on their behalf without authorization.
+
 ## Script Path Resolution
 
 Resolve `<plugin-root>` from this skill's absolute path in the available-skills catalogue. It is the directory containing this plugin's `.codex-plugin/plugin.json`. Then set:

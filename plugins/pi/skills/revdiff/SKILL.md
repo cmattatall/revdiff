@@ -8,6 +8,8 @@ description: Pi-only interactive diff and file review with revdiff. Use when the
 This skill is specific to the **pi** harness.
 Use the revdiff pi extension for interactive review sessions.
 
+Amp's separate split-terminal workflow uses `revdiff --amp CONNECTION_FILE --untracked` after the user invokes **revdiff: connect** in Amp. Do not pass `--amp` through Pi's review tool: it sends feedback to the bound Amp thread, not Pi. It requires this fork's binary and the Amp plugin on the same host.
+
 ## Agent usage
 
 Call the `revdiff_review` tool only when the user explicitly asks for revdiff, an interactive annotation pass, or captured revdiff annotations. Do **not** call it for ordinary autonomous requests like "review the code", "review my changes", or "review the diff"; handle those by inspecting the code directly. Do **not** tell the user to run `/revdiff`; slash commands are user-invoked only.

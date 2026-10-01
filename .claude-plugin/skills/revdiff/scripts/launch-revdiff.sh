@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # launch revdiff in a terminal overlay (agterm/tmux/zellij/herdr/kitty/wezterm/cmux/ghostty/iterm2) and capture annotations.
 # usage: launch-revdiff.sh [ref] [--staged] [--untracked] [--filter-unreviewed] [--only=file1 ...]
+# Amp live review uses revdiff --amp CONNECTION_FILE directly, not this overlay.
 # output: annotation text from revdiff stdout (empty if no annotations)
 # exit: 0 clean, 10 annotations captured, other nonzero failure
 

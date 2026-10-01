@@ -576,6 +576,7 @@ type Model struct {
 	postFlushHook PostFlushHook  // optional command run after an in-session output flush
 
 	// grouped state
+	live   liveState        // Amp feedback, automatic refresh, and index staging
 	cfg    modelConfigState // immutable session config
 	layout layoutState      // viewport and layout
 	modes  modeState        // user-togglable view modes
@@ -725,6 +726,8 @@ type ModelConfig struct {
 	Keymap               *keymap.Keymap // custom key bindings (nil uses defaults)
 	Editor               ExternalEditor // external-editor driver (nil uses app/editor.Editor{})
 	PostFlushHook        PostFlushHook  // optional command run after an in-session output flush
+	Feedback             FeedbackSender // optional Amp connection; enables live refresh
+	Stager               HunkStager     // optional unstaged Git hunk staging
 	// CommitLog enumerates commits in the current ref range for the info popup's
 	// commit-log section. When nil, NewModel attempts to derive the source by
 	// type-asserting the Renderer against diff.CommitLogger; if the assertion
@@ -948,6 +951,7 @@ func NewModel(cfg ModelConfig) (Model, error) {
 		},
 		reviewed:             reviewedState{cache: make(map[string]string), pending: make(map[string]uint64)},
 		reload:               reloadState{applicable: cfg.ReloadApplicable},
+		live:                 liveState{sender: cfg.Feedback, stager: cfg.Stager},
 		compact:              compactState{applicable: cfg.CompactApplicable},
 		annot:                annotationState{rowCache: make(map[annotCacheKey][]string)},
 		renderCache:          &diffRenderCache{},
@@ -972,18 +976,38 @@ func (m Model) Discarded() bool {
 // (e.g. --stdin, standalone file, working-tree review), so tea.Batch harmlessly
 // drops it in those cases.
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.loadFiles(), m.loadCommits())
+	return tea.Batch(m.loadFiles(), m.loadCommits(), m.liveTick())
 }
 
 // Update handles messages and updates the model state.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case liveTickMsg:
+		return m.pollLive()
+	case liveLoadedMsg:
+		return m.handleLiveLoaded(msg)
+	case feedbackSentMsg:
+		return m.handleFeedbackSent(msg)
+	case hunkStagedMsg:
+		m.live.staging = false
+		if msg.err != nil {
+			m.output.hint = "Stage failed: " + msg.err.Error()
+			return m, nil
+		}
+		m.output.hint = "Hunk staged"
+		return m, m.triggerReload()
 	case tea.KeyMsg:
+		if m.live.staging {
+			return m, nil
+		}
 		if m.inConfirmDiscard {
 			return m.handleConfirmDiscardKey(msg)
 		}
 		return m.handleKey(msg)
 	case tea.MouseMsg:
+		if m.live.staging {
+			return m, nil
+		}
 		return m.handleMouse(msg)
 	case tea.WindowSizeMsg:
 		return m.handleResize(msg)
@@ -1136,6 +1160,8 @@ func (m Model) dispatchAction(action keymap.Action) (tea.Model, tea.Cmd) {
 		return m.handleAnnotNav(action == keymap.ActionNextAnnotation)
 	case keymap.ActionReload:
 		return m.handleReload()
+	case keymap.ActionStageHunk:
+		return m.handleStageHunk()
 	case keymap.ActionFlushOutput:
 		return m.handleFlushOutput()
 	default: // remaining actions (navigation, search, etc.) handled by pane-specific handlers below
@@ -1255,6 +1281,10 @@ func (m Model) handleChordSecond(keyStr string) (tea.Model, tea.Cmd) {
 // exist, enters pending-confirmation state (waiting for y/other key in
 // handlePendingReload).
 func (m Model) handleReload() (tea.Model, tea.Cmd) {
+	if m.live.sending || m.live.staging || len(m.live.pending) > 0 {
+		m.output.hint = "Finish the pending Amp send or stage first"
+		return m, nil
+	}
 	if !m.reload.applicable {
 		m.reload.hint = "Reload not available in stdin mode"
 		return m, nil

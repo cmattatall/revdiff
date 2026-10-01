@@ -1228,3 +1228,18 @@ func TestParseArgs_InstallThemeFlag(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"dracula", "nord"}, opts.InstallTheme)
 }
+
+func TestParseArgsAmp(t *testing.T) {
+	opts, err := parseArgs(append(noConfigArgs(t), "--amp", "connection.json", "--untracked"))
+	require.NoError(t, err)
+	require.Equal(t, "connection.json", opts.Amp)
+	for _, args := range [][]string{
+		{"HEAD"}, {"main", "topic"}, {"--staged"}, {"--all-files"}, {"--stdin"},
+		{"--compare-old=a", "--compare-new=b"}, {"--output=out.md"}, {"--post-flush-command=cat"},
+	} {
+		t.Run(args[0], func(t *testing.T) {
+			_, err := parseArgs(append(append(noConfigArgs(t), "--amp=connection.json"), args...))
+			require.Error(t, err)
+		})
+	}
+}

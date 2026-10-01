@@ -59,6 +59,7 @@ Then uncomment and edit the values you want to change.
 | `-F`, `--only` | | Show only matching files (may be repeated, matches by path or suffix) | |
 | `-o`, `--output` | `REVDIFF_OUTPUT` | Write annotations to file instead of stdout | |
 | `--post-flush-command` | `REVDIFF_POST_FLUSH_COMMAND` | Run command after a successful `O` flush | |
+| `--amp` | | Connect live review to an Amp connection file | |
 | `--history-dir` | `REVDIFF_HISTORY_DIR` | Directory for review history auto-saves | `~/.config/revdiff/history/` |
 | `--keys` | `REVDIFF_KEYS` | Path to keybindings file | `~/.config/revdiff/keybindings` |
 | `--dump-keys` | | Print effective keybindings to stdout and exit | |
@@ -167,6 +168,8 @@ The `scroll_diff_page_*` and `scroll_diff_half_page_*` actions are the page-size
 
 Fixed modal keys (Enter, Esc in annotation/search input, confirm discard) are not remappable. Keymap-resolved actions like `open_editor` work during annotation input and can be rebound. Chord bindings do not fire during text input — use single-key `ctrl+*` bindings for actions that need to work during annotation input.
 
-The `flush_output` action (default `O`) exports the current annotations without exiting revdiff. `--output` writes the full snapshot to a file; `--post-flush-command` sends it to a command on stdin. They work independently or together. At least one must be configured, and an empty annotation store produces only a status hint.
+The `stage_hunk` action (default `s`) stages the change under the cursor in an unstaged Git working-tree review. It supports modified tracked regular text files and rejects stale displayed changes.
+
+The `flush_output` action (default `O`) sends feedback to the bound thread when `--amp` is configured; live refresh pauses until pending comments are sent or removed. Otherwise, `--output` writes the full snapshot to a file and `--post-flush-command` sends it to a command on stdin. They work independently or together. An empty annotation store produces only a status hint.
 
 For clipboard-only flushes on macOS, set `post-flush-command = pbcopy` in the config file. No `--output` flag is required. On Linux, use `xclip -selection clipboard` for X11 or `wl-copy` for Wayland.

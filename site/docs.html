@@ -443,6 +443,7 @@ revdiff --dump-config > ~/.config/revdiff/config</code></div>
                 <tr><td><code>-F, --only</code></td><td>Show only matching files</td><td></td></tr>
                 <tr><td><code>-o, --output</code></td><td>Write annotations to file</td><td></td></tr>
                 <tr><td><code>--post-flush-command</code></td><td>Run command after a successful <code>O</code> flush</td><td></td></tr>
+                <tr><td><code>--amp</code></td><td>Connect live review to an Amp connection file</td><td></td></tr>
                 <tr><td><code>--annotations</code></td><td>Preload annotations from a markdown file in <code>-o</code> format</td><td></td></tr>
                 <tr><td><code>--history-dir</code></td><td>Directory for review history auto-saves</td><td><code>~/.config/revdiff/history/</code></td></tr>
                 <tr><td><code>--keys</code></td><td>Path to keybindings file</td><td><code>~/.config/revdiff/keybindings</code></td></tr>
@@ -561,7 +562,8 @@ color-border = #6272a4
                 <tr><td><code>@</code></td><td>Toggle annotation list popup</td></tr>
                 <tr><td><code>}</code> / <code>{</code></td><td>Jump to next/previous annotation (always crosses file boundaries; silent no-op at the first/last annotation)</td></tr>
                 <tr><td><code>d</code></td><td>Delete annotation under cursor</td></tr>
-                <tr><td><code>O</code></td><td>Export annotations without exiting (requires <code>--output</code> and/or <code>--post-flush-command</code>)</td></tr>
+                <tr><td><code>O</code></td><td>Send feedback with <code>--amp</code>, or export via <code>--output</code> / <code>--post-flush-command</code></td></tr>
+                <tr><td><code>s</code></td><td>Stage change under cursor (modified tracked text, Git working tree)</td></tr>
                 <tr><td><code>Ctrl+E</code></td><td>Open <code>$EDITOR</code> for multi-line annotation (<code>open_editor</code> &mdash; rebindable, during annotation input)</td></tr>
                 <tr><td><code>Esc</code></td><td>Cancel annotation input</td></tr>
             </tbody>
@@ -698,6 +700,17 @@ map alt+t&gt;n theme_select</code></div>
         </table>
         <p>When the preset is on, the digits <code>0</code>-<code>9</code> and the leader keys <code>g</code>, <code>z</code>, <code>Z</code> are intercepted before the regular keymap, so any standalone binding on those keys is overridden while the flag is active. <code>&lt;N&gt;j</code>/<code>&lt;N&gt;k</code>/<code>&lt;N&gt;G</code>, <code>gg</code>/<code>zz</code>/<code>zt</code>/<code>zb</code>, and the screen-position motions <code>H</code>/<code>M</code>/<code>L</code> apply to the diff pane only &mdash; in the file tree they fall through to the normal bindings. <code>ZZ</code> and <code>ZQ</code> work from any pane. While the preset is active <code>L</code> is a screen-position motion rather than the line-numbers toggle (<code>toggle_line_numbers</code>); remap it in the keybindings file if you need both. Press <code>Esc</code> to silently cancel a pending leader; an unknown second key surfaces a transient <code>Unknown: &lt;chord&gt;</code> hint in the status bar. A bare digit <code>0</code> is not consumed (falls through to whatever binding is mapped); counts over 9999 are clamped. Modal keys (search input, annotation input, overlay navigation) always take precedence over the interceptor, and <code>ctrl+*</code>/<code>alt+*</code> chord bindings keep working orthogonally.</p>
         <p>The help overlay (<code>?</code>) shows a dedicated <strong>Vim motion</strong> section listing all eleven preset bindings when <code>--vim-motion</code> is on; when off, the section is hidden.</p>
+
+        <h2 id="amp">Amp live review (this fork)</h2>
+        <p>Build this fork with <code>make build</code> and put <code>.bin/revdiff</code> on your PATH; upstream releases do not include this integration. Run <code>./plugins/amp/install.sh</code> from the repository root to install the bundled plugin into <code>~/.config/amp/plugins/revdiff.ts</code>, then reload Amp plugins. To replace a different installed version, rerun with <code>--force</code> after saving any local customizations.</p>
+        <ol>
+            <li>In your Amp thread, press <code>Ctrl+O</code> and choose <strong>revdiff: connect</strong>. The launch command is posted as a persistent thread message, not a popup; Amp may acknowledge the setup message.</li>
+            <li>Copy that message's command, with its real connection-file path, into the other terminal pane in the same Git checkout. If using this checkout's build, replace the initial <code>revdiff</code> executable with <code>./.bin/revdiff</code>.</li>
+            <li>Annotate with <code>Enter</code> or <code>a</code> (line), or <code>A</code> (file). Press <code>O</code> to send feedback without exiting. Amp receives it as a steering message, including while working.</li>
+            <li>Press <code>s</code> on an added/removed line to stage that contiguous change. Only modified tracked regular text files in an unstaged Git working-tree review are supported; new/deleted files, renames, binary files, and mode changes are not. Staging updates the index, never the working file, and rejects stale displayed changes.</li>
+        </ol>
+        <p>The file list and selected diff refresh about once per second, preserving the cursor. Refresh pauses during drafts, while unsent annotations remain, and during modal interactions. Successful sends clear only delivered, unchanged comments. Failed sends retain the snapshot; <code>O</code> retries it. Edited or new comments remain for the next send. Quit does not send: unsent comments follow normal output/history behavior.</p>
+        <p>Both processes must use the same host/filesystem. <code>--amp</code> requires a Git working-tree review and cannot be combined with refs, <code>--staged</code>, <code>--all-files</code>, stdin/compare modes, <code>--output</code>, or <code>--post-flush-command</code>. Connections use authenticated loopback HTTP and private temporary files. Use <strong>revdiff: disconnect</strong> to close the connection. After a plugin restart or disconnect, reconnect and relaunch revdiff; check the thread before resending uncertain feedback because deduplication does not survive restart.</p>
 
         <!-- claude code plugin -->
         <h2 id="plugin-install">Claude Code plugin</h2>

@@ -75,6 +75,7 @@ const (
 	ActionOpenEditor             Action = "open_editor"
 	ActionOpenFileInEditor       Action = "open_file_in_editor"
 	ActionFlushOutput            Action = "flush_output"
+	ActionStageHunk              Action = "stage_hunk"
 )
 
 // SectionPane is the help section name for pane-related keybindings.
@@ -104,6 +105,7 @@ var validActions = map[Action]bool{
 	ActionOpenEditor:       true,
 	ActionOpenFileInEditor: true,
 	ActionFlushOutput:      true,
+	ActionStageHunk:        true,
 }
 
 // deprecatedActionAliases maps obsolete action names parsed from user
@@ -219,6 +221,7 @@ func defaultDescriptions() []HelpEntry {
 		{ActionNextHunk, "next hunk", "File/Hunk"},
 		{ActionPrevHunk, "prev hunk", "File/Hunk"},
 		{ActionOpenFileInEditor, "open focused file in $EDITOR", "File/Hunk"},
+		{ActionStageHunk, "stage change under cursor (Git working tree)", "File/Hunk"},
 
 		// pane
 		{ActionTogglePane, "toggle pane focus", SectionPane},
@@ -300,6 +303,7 @@ func defaultBindings() map[string]Action {
 		"}":      ActionNextAnnotation,
 		"{":      ActionPrevAnnotation,
 		"O":      ActionFlushOutput,
+		"s":      ActionStageHunk,
 		"v":      ActionToggleCollapsed,
 		"C":      ActionToggleCompact,
 		"w":      ActionToggleWrap,

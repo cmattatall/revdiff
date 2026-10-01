@@ -26,6 +26,9 @@ type postFlushFinishedMsg struct {
 // mutated, so annotations persist in-session and can be re-flushed. Feedback
 // is reported through output.hint.
 func (m Model) handleFlushOutput() (tea.Model, tea.Cmd) {
+	if m.live.sender != nil {
+		return m.sendFeedback()
+	}
 	n := m.store.Count()
 	if n == 0 {
 		m.output.hint = "No annotations to flush"

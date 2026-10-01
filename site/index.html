@@ -232,6 +232,11 @@
                 <p>Install via <a href="https://github.com/umputun/revdiff?tab=readme-ov-file#claude-code-plugin">Claude Code plugin</a>. Use <code>/revdiff</code> to review uncommitted changes, <code>/revdiff-rerun</code> to address annotations, and a planning plugin that auto-launches on plan exit.</p>
             </div>
             <div class="feature-card">
+                <div class="feature-icon"><span class="glyph accent" aria-label="Amp integration">A</span></div>
+                <h3>Amp live review</h3>
+                <p>This fork adds <a href="docs.html#amp">split-terminal Amp review</a>: send feedback without quitting, watch edits refresh, and stage tracked text changes with <code>s</code>.</p>
+            </div>
+            <div class="feature-card">
                 <div class="feature-icon"><span class="glyph accent" aria-label="Pi integration">P</span></div>
                 <h3>Pi integration</h3>
                 <p>Launch revdiff from <a href="https://github.com/badlogic/pi-mono">pi</a> with direct terminal handoff. Captured annotations are returned to the agent, and the agent reruns <code>revdiff_review</code> after code changes until no annotations are captured.</p>
@@ -381,6 +386,8 @@
 
 <section id="plugin" class="plugin">
     <div class="section-inner">
+        <h2>Amp plugin (this fork)</h2>
+        <p class="section-sub">Keep Amp in one pane and revdiff in the other. Build this fork, run <code>./plugins/amp/install.sh</code>, reload Amp plugins, and choose <strong>revdiff: connect</strong> in Amp. Run the displayed command in the sibling pane. <a href="docs.html#amp">Setup and limitations</a>.</p>
         <h2>Claude Code plugin</h2>
         <p class="section-sub">Interactive code review directly from a Claude session. Annotate, fix, re-review in a loop.</p>
         <div class="plugin-flow">

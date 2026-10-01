@@ -2,7 +2,7 @@
 
 TUI for reviewing diffs, files, and documents with inline annotations. Outputs structured annotations to stdout on quit, making it easy to pipe results into AI agents, scripts, or other tools.
 
-Built for a specific use case: reviewing code changes, plans, and documents without leaving a terminal-based AI coding session (e.g., Claude Code). Just enough UI to navigate diffs and files, annotate specific lines, and return the results to the calling process - no more, no less.
+Built for a specific use case: reviewing code changes, plans, and documents without leaving a terminal-based AI coding session (e.g., Amp, Claude Code, Codex, OpenCode, or pi). Just enough UI to navigate diffs and files, annotate specific lines, and return the results to the calling process - no more, no less.
 
 ## Features
 
@@ -82,6 +82,19 @@ go install github.com/umputun/revdiff/app/revdiff@latest
 Installs the `revdiff` binary into `GOBIN` (defaults to `$(go env GOPATH)/bin`). Add that directory to your `PATH`.
 
 **Binary releases:** download from [GitHub Releases](https://github.com/umputun/revdiff/releases) (deb, rpm, archives for linux/darwin amd64/arm64).
+
+## Amp live review (this fork)
+
+Build this fork with `make build` and put `.bin/revdiff` on your PATH; upstream releases do not include this integration. Run `./plugins/amp/install.sh` from the repository root to install the bundled plugin into `~/.config/amp/plugins/revdiff.ts`, then reload Amp plugins. To replace a different installed version, rerun with `--force` after saving any local customizations.
+
+1. In your Amp thread, press **Ctrl+O** and choose **revdiff: connect**. The launch command is posted as a persistent thread message, not a popup; Amp may acknowledge the setup message.
+2. Copy that message's command, with its real connection-file path, into the other terminal pane in the same Git checkout. If using this checkout's build, replace the initial `revdiff` executable with `./.bin/revdiff`.
+3. Annotate with `Enter` or `a` (line) and `A` (file). Press `O` to send feedback to that Amp thread without leaving revdiff. Amp receives it as a steering message, including while working.
+4. Press `s` on an added/removed line to stage that contiguous change. Staging supports modified, tracked regular text files in an unstaged Git working-tree review; new/deleted files, renames, binary files, mode changes, refs, and staged views are not supported. Staging changes the index, never the working file, and rejects stale displayed changes.
+
+The file list and selected diff refresh about once per second. Refresh pauses during annotation input, while unsent comments exist, and during modal interactions. Successful sends clear only the delivered, unchanged comments; failed sends retain the snapshot, and `O` retries it without duplicating an acknowledged request in the same plugin process. Comments added or edited during delivery stay for the next send. Quit does not send; remaining comments follow the normal output/history behavior. Use **revdiff: disconnect** to close the connection.
+
+Both processes must run on the same host/filesystem. `--amp` requires a Git working-tree review and cannot be combined with refs, `--staged`, `--all-files`, stdin/compare modes, `--output`, or `--post-flush-command`. Connections use authenticated loopback HTTP and private temporary connection files. Plugin restart/disconnect requires reconnecting and relaunching revdiff; check the thread before resending an uncertain delivery across restarts. See [Amp plugin details](plugins/amp/README.md).
 
 ## Claude Code Plugin
 
@@ -418,6 +431,7 @@ Positional arguments support several forms:
 | `-F`, `--only` | Show only matching files by exact path or suffix, may be repeated (e.g. `--only=model.go`) | |
 | `-o`, `--output` | Write annotations to file instead of stdout, env: `REVDIFF_OUTPUT` | |
 | `--post-flush-command` | Run command after a successful `O` flush, env: `REVDIFF_POST_FLUSH_COMMAND`, config: `post-flush-command` | |
+| `--amp` | Connect live review to an Amp connection file | |
 | `--annotations` | Preload annotations from a markdown file in `-o` format | |
 | `--history-dir` | Directory for review history auto-saves, env: `REVDIFF_HISTORY_DIR` | `~/.config/revdiff/history/` |
 | `--config` | Path to config file, env: `REVDIFF_CONFIG` | `~/.config/revdiff/config` |
@@ -774,7 +788,8 @@ The file picker lists paths currently visible in the sidebar, so annotated-only 
 | `@` | Toggle annotation list popup (navigate and jump to any annotation) |
 | `}` / `{` | Jump to next/previous annotation (always crosses file boundaries; silent no-op at the first/last annotation) |
 | `d` | Delete annotation under cursor |
-| `O` | Export annotations without exiting (requires `--output` and/or `--post-flush-command`) |
+| `O` | Send feedback with `--amp`, or export via `--output` / `--post-flush-command` |
+| `s` | Stage change under cursor (modified tracked text, Git working tree) |
 | `Ctrl+E` (during annotation input) | Open `$EDITOR` for multi-line annotation (`open_editor` — rebindable) |
 | `Esc` | Cancel annotation input |
 

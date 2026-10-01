@@ -57,6 +57,7 @@ type options struct {
 	HistoryDir            string   `long:"history-dir" ini-name:"history-dir" env:"REVDIFF_HISTORY_DIR" description:"directory for review history auto-saves"`
 	Output                string   `long:"output" short:"o" env:"REVDIFF_OUTPUT" no-ini:"true" description:"write annotations to file instead of stdout"`
 	PostFlushCommand      string   `long:"post-flush-command" ini-name:"post-flush-command" env:"REVDIFF_POST_FLUSH_COMMAND" description:"run command after a successful O flush"`
+	Amp                   string   `long:"amp" no-ini:"true" description:"connect live review to an Amp connection file"`
 	Keys                  string   `long:"keys" env:"REVDIFF_KEYS" no-ini:"true" description:"path to keybindings file"`
 	DumpKeys              bool     `long:"dump-keys" no-ini:"true" description:"print effective keybindings to stdout and exit"`
 	Theme                 string   `long:"theme" ini-name:"theme" env:"REVDIFF_THEME" description:"load theme from themes directory"`
@@ -174,6 +175,11 @@ func parseArgs(args []string) (options, error) {
 		return options{}, errors.New("--description and --description-file are mutually exclusive")
 	}
 	opts.PostFlushCommand = strings.TrimSpace(opts.PostFlushCommand)
+
+	if opts.Amp != "" && (opts.ref() != "" || opts.Staged || opts.AllFiles || opts.Stdin ||
+		opts.CompareOld != "" || opts.CompareNew != "" || opts.Output != "" || opts.PostFlushCommand != "") {
+		return options{}, errors.New("--amp requires a working-tree review without refs, --staged, --all-files, --stdin, --compare-old/--compare-new, --output, or --post-flush-command")
+	}
 
 	if err := validateStdinFlags(opts); err != nil {
 		return options{}, err
