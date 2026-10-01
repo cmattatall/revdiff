@@ -349,7 +349,7 @@ func TestModel_CommandVimSettings(t *testing.T) {
 }
 
 func TestModel_CommandVimAliases(t *testing.T) {
-	for _, command := range []string{"q", "q!", "w"} {
+	for _, command := range []string{"q", "w"} {
 		m := testModel(nil, nil)
 		m.store.Add(annotation.Annotation{File: "a.go", Line: 1, Comment: "keep this note"})
 		sender := &feedbackStub{}
@@ -363,11 +363,7 @@ func TestModel_CommandVimAliases(t *testing.T) {
 		case "q":
 			require.NotNil(t, cmd)
 			require.IsType(t, tea.QuitMsg{}, cmd())
-			require.False(t, m.discarded)
 			require.Equal(t, 1, m.store.Count())
-		case "q!":
-			require.Nil(t, cmd)
-			require.True(t, m.inConfirmDiscard, "retain revdiff's existing discard confirmation")
 		case "w":
 			require.NotNil(t, cmd)
 			model, _ = m.Update(cmd())
@@ -376,6 +372,22 @@ func TestModel_CommandVimAliases(t *testing.T) {
 			require.Len(t, sender.content, 1)
 			require.Contains(t, sender.content[0], "keep this note")
 		}
+	}
+}
+
+func TestModel_CommandDiscardQuitRemoved(t *testing.T) {
+	for _, command := range []string{"discard_quit", "q!"} {
+		t.Run(command, func(t *testing.T) {
+			m := testModel(nil, nil)
+			m.store.Add(annotation.Annotation{File: "a.go", Line: 1, Comment: "keep"})
+			m.startCommand()
+			m.command.input.SetValue(command)
+			require.NotContains(t, ansi.Strip(m.commandPaneView()), "· "+command)
+			model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			m = model.(Model)
+			require.Nil(t, cmd)
+			require.Equal(t, 1, m.store.Count())
+		})
 	}
 }
 

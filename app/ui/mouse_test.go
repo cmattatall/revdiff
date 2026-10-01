@@ -805,19 +805,6 @@ func TestModel_HandleMouse_SwallowedWhileReloadPending(t *testing.T) {
 	assert.NotEmpty(t, model.reload.hint, "wheel must not erase the reload prompt while pending")
 }
 
-func TestModel_HandleMouse_SwallowedWhileConfirmDiscard(t *testing.T) {
-	m := mouseTestModel(t, []string{"a.go"}, map[string][]diff.DiffLine{
-		"a.go": {{NewNum: 1, Content: "a", ChangeType: diff.ChangeContext}},
-	})
-	m.inConfirmDiscard = true
-	m.nav.diffCursor = 0
-
-	result, _ := m.Update(leftPressAt(60, 12))
-	model := result.(Model)
-	assert.Equal(t, 0, model.nav.diffCursor)
-	assert.True(t, model.inConfirmDiscard)
-}
-
 func TestModel_HandleMouse_SwallowedWhileOverlayOpen(t *testing.T) {
 	m := mouseTestModel(t, []string{"a.go"}, map[string][]diff.DiffLine{
 		"a.go": {{NewNum: 1, Content: "a", ChangeType: diff.ChangeContext}},

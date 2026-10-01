@@ -1666,42 +1666,13 @@ func TestModel_EditExistingFileAnnotationShowsInput(t *testing.T) {
 	assert.Contains(t, rendered, "file:", "should show file: prefix during input")
 }
 
-func TestModel_DiscardedAccessor(t *testing.T) {
-	t.Run("default is false", func(t *testing.T) {
-		m := testModel([]string{"a.go"}, nil)
-		assert.False(t, m.Discarded())
-	})
-
-	t.Run("true when set", func(t *testing.T) {
-		m := testModel([]string{"a.go"}, nil)
-		m.discarded = true
-		assert.True(t, m.Discarded())
-	})
-}
-
-func TestModel_QKeyDiscardNoAnnotations(t *testing.T) {
-	m := testModel([]string{"a.go"}, nil)
-
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'Q'}})
-	require.NotNil(t, cmd)
-
-	model := result.(Model)
-	assert.True(t, model.Discarded(), "should be discarded when no annotations")
-	msg := cmd()
-	_, ok := msg.(tea.QuitMsg)
-	assert.True(t, ok, "should quit")
-}
-
-func TestModel_QKeyWithAnnotationsEntersConfirming(t *testing.T) {
+func TestModel_QKeyDoesNotQuitOrDropAnnotations(t *testing.T) {
 	m := testModel([]string{"a.go"}, nil)
 	m.store.Add(annotation.Annotation{File: "a.go", Line: 1, Type: "+", Comment: "test"})
 
 	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'Q'}})
-	assert.Nil(t, cmd, "should not quit yet")
-
-	model := result.(Model)
-	assert.True(t, model.inConfirmDiscard, "should enter confirming state")
-	assert.False(t, model.Discarded(), "should not be discarded yet")
+	require.Nil(t, cmd)
+	assert.Equal(t, 1, result.(Model).store.Count())
 }
 
 func TestModel_QKeyDuringAnnotationIgnored(t *testing.T) {
@@ -1725,20 +1696,7 @@ func TestModel_QKeyDuringAnnotationIgnored(t *testing.T) {
 	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'Q'}})
 	model = result.(Model)
 	assert.True(t, model.annot.annotating, "should still be annotating")
-	assert.False(t, model.Discarded(), "should not be discarded")
-	assert.False(t, model.inConfirmDiscard, "should not enter confirming")
 	assert.Contains(t, model.annot.input.Value(), "Q", "Q should be typed into input")
-}
-
-func TestModel_StatusBarDiscardConfirmation(t *testing.T) {
-	m := testModel([]string{"a.go"}, nil)
-	m.layout.width = 120
-	m.store.Add(annotation.Annotation{File: "a.go", Line: 1, Type: "+", Comment: "note"})
-	m.store.Add(annotation.Annotation{File: "b.go", Line: 5, Type: " ", Comment: "other"})
-	m.inConfirmDiscard = true
-
-	status := m.statusBarText()
-	assert.Equal(t, "discard 2 annotations? [y/n]", status)
 }
 
 func TestModel_SingleFileAnnotationWorks(t *testing.T) {

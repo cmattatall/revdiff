@@ -637,22 +637,6 @@ func TestModel_ViewNoStatusBar(t *testing.T) {
 	assert.Contains(t, view, "a.go", "tree content should still appear")
 }
 
-func TestModel_QKeyNoStatusBarSkipsConfirmation(t *testing.T) {
-	m := testModel([]string{"a.go"}, nil)
-	m.cfg.noStatusBar = true
-	m.store.Add(annotation.Annotation{File: "a.go", Line: 1, Type: "+", Comment: "test"})
-
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'Q'}})
-	require.NotNil(t, cmd)
-
-	model := result.(Model)
-	assert.True(t, model.Discarded(), "should immediately discard when status bar is hidden")
-	assert.False(t, model.inConfirmDiscard, "should not enter confirming state without status bar")
-	msg := cmd()
-	_, ok := msg.(tea.QuitMsg)
-	assert.True(t, ok, "should quit immediately")
-}
-
 func TestModel_StatusBarNoKeyHints(t *testing.T) {
 	m := testModel([]string{"a.go"}, nil)
 	m.layout.width = 120

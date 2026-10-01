@@ -135,7 +135,7 @@ The command palette also runs every keymap action by name, including unbound act
 
 Matching prefixes show a muted inline completion: typing `:h` displays `:help` with only `elp` dimmed. Arrow-key browsing changes the suggestion; `Tab` accepts it. Suggestions never change the typed command until accepted.
 
-Vim-style commands are available too: `:set number` / `:set nonumber` show/hide line numbers, and `:set wrap` / `:set nowrap` enable/disable wrapping. Repeating a `set` command keeps the requested state rather than toggling it. `:q` quits normally, `:q!` uses revdiff's discard-and-quit confirmation, and `:w` flushes annotations to the configured output or connected harness (it does not write source files). These names also support completion.
+Vim-style commands are available too: `:set number` / `:set nonumber` show/hide line numbers, and `:set wrap` / `:set nowrap` enable/disable wrapping. Repeating a `set` command keeps the requested state rather than toggling it. `:q` quits normally, and `:w` flushes annotations to the configured output or connected harness (it does not write source files). These names also support completion.
 
 Single-line annotation, search, command, file-picker, and theme-picker inputs use revdiff's built-in Bubbles text-input bindings, not your shell's keymap: arrows and `Ctrl+B`/`Ctrl+F` move by character, `Ctrl+A`/`Ctrl+E` move to the start/end, `Backspace`/`Ctrl+H` delete backward, `Ctrl+W` (or `Alt+Backspace`) deletes the previous word, and `Ctrl+U`/`Ctrl+K` delete from the cursor to the start/end. Existing `Enter`, `Esc`, search-history, and list-navigation behavior is unchanged. The terminal sends key sequences; revdiff cannot inherit zsh/readline bindings or Command-key shortcuts. Configure Option/Alt to send Meta for Alt bindings.
 
@@ -198,7 +198,6 @@ Press `Space` to mark the focused file reviewed. Press `F` to toggle the sidebar
 | `i` | Toggle info popup — review scope (mode, VCS, ref, filters, file/status counts, aggregate `+/-` stats) plus the commit log for the current ref range when applicable |
 | `R` | Reload diff from VCS (warns if annotations exist) |
 | `q` | Quit, output annotations to stdout |
-| `Q` | Discard all annotations and quit (confirms if annotations exist) |
 
 ## Status Bar Icons
 
@@ -235,7 +234,7 @@ revdiff enables mouse tracking by default so the scroll wheel and left-click wor
 - **Left-click in the file picker** — jumps to the clicked file (same as pressing `Enter`). Clicks on the filter row or blank separator are ignored.
 - **Scroll wheel in the file picker** — moves the picker cursor. Shift+wheel uses a half-page step.
 
-Horizontal wheel, right-click, middle-click, drag selection, and clicks on the status bar or diff header are intentionally ignored. Clicks outside an open overlay are swallowed — dismiss an overlay with `Esc` or its toggle key. Modal states (annotation input, search input, confirm discard, reload confirm) swallow mouse events entirely.
+Horizontal wheel, right-click, middle-click, drag selection, and clicks on the status bar or diff header are intentionally ignored. Clicks outside an open overlay are swallowed — dismiss an overlay with `Esc` or its toggle key. Modal states (annotation input, search input, reload confirm) swallow mouse events entirely.
 
 **Text selection trade-off** — once mouse tracking is on, plain drag is captured by revdiff. For terminal-native text selection:
 
@@ -292,11 +291,10 @@ Opt-in vim-style motion layer activated via `--vim-motion`, `REVDIFF_VIM_MOTION=
 | `zt` | Align viewport top on cursor (diff pane) |
 | `zb` | Align viewport bottom on cursor (diff pane) |
 | `ZZ` | Quit (any pane) |
-| `ZQ` | Discard annotations and quit (any pane) |
 
-When the preset is on, the digits `0`-`9` and the leader keys `g`, `z`, `Z` are intercepted before the regular keymap, so any standalone binding on those keys is overridden while the flag is active. `<N>j`/`<N>k`/`<N>G`, `gg`/`zz`/`zt`/`zb`, and the screen-position motions `H`/`M`/`L` apply to the diff pane only — in the file tree they fall through to the normal bindings. `ZZ` and `ZQ` work from any pane. While the preset is active `L` is a screen-position motion rather than the line-numbers toggle (`toggle_line_numbers`); remap it in the keybindings file if you need both. Press `Esc` to silently cancel a pending leader; an unknown second key surfaces a transient `Unknown: <chord>` hint in the status bar. A bare digit `0` is not consumed; counts over 9999 are clamped. Modal keys (search input, annotation input, overlay navigation) always take precedence over the interceptor, and `ctrl+*`/`alt+*` chord bindings keep working orthogonally.
+When the preset is on, the digits `0`-`9` and the leader keys `g`, `z`, `Z` are intercepted before the regular keymap, so any standalone binding on those keys is overridden while the flag is active. `<N>j`/`<N>k`/`<N>G`, `gg`/`zz`/`zt`/`zb`, and the screen-position motions `H`/`M`/`L` apply to the diff pane only — in the file tree they fall through to the normal bindings. `ZZ` works from any pane. While the preset is active `L` is a screen-position motion rather than the line-numbers toggle (`toggle_line_numbers`); remap it in the keybindings file if you need both. Press `Esc` to silently cancel a pending leader; an unknown second key surfaces a transient `Unknown: <chord>` hint in the status bar. A bare digit `0` is not consumed; counts over 9999 are clamped. Modal keys (search input, annotation input, overlay navigation) always take precedence over the interceptor, and `ctrl+*`/`alt+*` chord bindings keep working orthogonally.
 
-The help overlay (`?`) shows a dedicated **Vim motion** section listing all eleven preset bindings when `--vim-motion` is on; when off, the section is hidden.
+The help overlay (`?`) shows a dedicated **Vim motion** section listing all ten preset bindings when `--vim-motion` is on; when off, the section is hidden.
 
 ## Output Format
 
@@ -324,7 +322,7 @@ Comment body lines starting with `## ` (the record-header form) are prefixed wit
 
 Use `--output` / `-o` flag to write annotations to a file instead of stdout.
 
-Exit status: `0` = no annotations, discarded annotations, or default mode; `10` = annotations were produced with `--exit-code-on-annotations`, `REVDIFF_EXIT_CODE_ON_ANNOTATIONS`, or `exit-code-on-annotations`; `1` = real errors. Agent launchers set `REVDIFF_EXIT_CODE_ON_ANNOTATIONS` and treat `10` as success-with-annotations.
+Exit status: `0` = no annotations or default mode; `10` = annotations were produced with `--exit-code-on-annotations`, `REVDIFF_EXIT_CODE_ON_ANNOTATIONS`, or `exit-code-on-annotations`; `1` = real errors. Agent launchers set `REVDIFF_EXIT_CODE_ON_ANNOTATIONS` and treat `10` as success-with-annotations.
 
 ## Asking Questions Instead of Directives
 
@@ -353,6 +351,6 @@ Each history file contains:
 - Full annotation output (same format as stdout)
 - Raw git diff for annotated files only
 
-History auto-save is always on and silent — errors are logged to stderr, never fail the process. No history is saved on discard quit (`Q`) or when there are no annotations. For `--stdin` mode, files are saved under `stdin/` subdirectory; for `--only` without git, the parent directory name is used instead of a repo name.
+History auto-save is always on and silent — errors are logged to stderr, never fail the process. No history is saved when there are no annotations. For `--stdin` mode, files are saved under `stdin/` subdirectory; for `--only` without git, the parent directory name is used instead of a repo name.
 
 Override the history directory with `--history-dir`, `REVDIFF_HISTORY_DIR` env var, or `history-dir` in the config file.

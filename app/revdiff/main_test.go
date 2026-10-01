@@ -71,7 +71,6 @@ func TestAnnotationExitCode(t *testing.T) {
 		{name: "no output with flag enabled", enabled: true, output: "", want: 0},
 		{name: "output with flag disabled", enabled: false, output: "## file.go:1 (+)\ncomment\n", want: 0},
 		{name: "output with flag enabled", enabled: true, output: "## file.go:1 (+)\ncomment\n", want: exitCodeAnnotations},
-		{name: "discarded empty output", enabled: true, output: "", want: 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -85,7 +84,6 @@ func TestFinalize(t *testing.T) {
 	tests := []struct {
 		name           string
 		output         string
-		discarded      bool
 		signaled       bool
 		withOutputFile bool
 		wantHistory    bool
@@ -95,8 +93,6 @@ func TestFinalize(t *testing.T) {
 		{name: "signaled with output file writes no handoff", output: output, signaled: true, withOutputFile: true, wantHistory: true, wantHandoff: false},
 		{name: "graceful with output file", output: output, withOutputFile: true, wantHistory: true, wantHandoff: true},
 		{name: "graceful to stdout", output: output, wantHistory: true, wantHandoff: true},
-		{name: "discarded writes nothing", output: output, discarded: true, wantHistory: false, wantHandoff: false},
-		{name: "discarded during signal still writes nothing", output: output, discarded: true, signaled: true, wantHistory: false, wantHandoff: false},
 		{name: "empty output writes nothing", output: "", wantHistory: false, wantHandoff: false},
 	}
 	for _, tt := range tests {
@@ -114,7 +110,6 @@ func TestFinalize(t *testing.T) {
 				opts:        opts,
 				annotations: tt.output,
 				files:       []string{"file.go"},
-				discarded:   tt.discarded,
 				gitRoot:     "",
 				workDir:     "repo",
 				signaled:    tt.signaled,

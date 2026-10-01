@@ -37,11 +37,10 @@ Then uncomment and edit the values you want to change.
 | `--filter-unreviewed` | `REVDIFF_FILTER_UNREVIEWED` | Show only files not marked reviewed | `false` |
 | `--annotation-marker` | `REVDIFF_ANNOTATION_MARKER` | Prefix shown before annotation lines | `💬` |
 | `--exit-code-on-annotations` | `REVDIFF_EXIT_CODE_ON_ANNOTATIONS` | Exit 10 when annotations are produced | `false` |
-| `--no-confirm-discard` | `REVDIFF_NO_CONFIRM_DISCARD` | Skip confirmation when discarding annotations with Q | `false` |
 | `--no-confirm-reload` | `REVDIFF_NO_CONFIRM_RELOAD` | Skip confirmation when dropping annotations on reload with R | `false` |
 | `--no-mouse` | `REVDIFF_NO_MOUSE` | Disable mouse support (scroll wheel, click) | `false` |
 | `--no-tree` | `REVDIFF_NO_TREE` | Hide the file tree pane | `false` |
-| `--vim-motion` | `REVDIFF_VIM_MOTION` | Enable vim-style motion preset (counts, `gg`, `G`, `H`/`M`/`L`, `zz`/`zt`/`zb`, `ZZ`/`ZQ`) | `false` |
+| `--vim-motion` | `REVDIFF_VIM_MOTION` | Enable vim-style motion preset (counts, `gg`, `G`, `H`/`M`/`L`, `zz`/`zt`/`zb`, `ZZ`) | `false` |
 | `--chroma-style` | `REVDIFF_CHROMA_STYLE` | Chroma color theme for syntax highlighting | `catppuccin-macchiato` |
 | `--theme` | `REVDIFF_THEME` | Load color theme from `~/.config/revdiff/themes/`; use `auto` to choose by terminal background | |
 | `--auto-theme-dark` | `REVDIFF_AUTO_THEME_DARK` | Theme used by `--theme auto` on dark terminal backgrounds | `revdiff` |
@@ -166,11 +165,11 @@ unmap q
 map ctrl+d half_page_down
 ```
 
-Available actions: `down`, `up`, `page_down`, `page_up`, `half_page_down`, `half_page_up`, `home`, `end`, `scroll_left`, `scroll_right`, `scroll_center`, `scroll_top`, `scroll_bottom`, `scroll_diff_down`, `scroll_diff_up`, `scroll_diff_page_down`, `scroll_diff_page_up`, `scroll_diff_half_page_down`, `scroll_diff_half_page_up`, `next_item`, `prev_item`, `jump_file`, `next_hunk`, `prev_hunk`, `open_file_in_editor`, `toggle_pane`, `focus_tree`, `focus_diff`, `search`, `confirm`, `annotate_file`, `delete_annotation`, `annot_list`, `open_editor`, `next_annotation`, `prev_annotation`, `flush_output`, `toggle_collapsed`, `toggle_compact`, `toggle_wrap`, `toggle_tree`, `toggle_line_numbers`, `toggle_blame`, `toggle_word_diff`, `toggle_hunk`, `toggle_untracked`, `mark_reviewed`, `filter_unreviewed`, `theme_select`, `filter`, `info`, `reload`, `quit`, `discard_quit`, `help`, `dismiss`
+Available actions: `down`, `up`, `page_down`, `page_up`, `half_page_down`, `half_page_up`, `home`, `end`, `scroll_left`, `scroll_right`, `scroll_center`, `scroll_top`, `scroll_bottom`, `scroll_diff_down`, `scroll_diff_up`, `scroll_diff_page_down`, `scroll_diff_page_up`, `scroll_diff_half_page_down`, `scroll_diff_half_page_up`, `next_item`, `prev_item`, `jump_file`, `next_hunk`, `prev_hunk`, `open_file_in_editor`, `toggle_pane`, `focus_tree`, `focus_diff`, `search`, `confirm`, `annotate_file`, `delete_annotation`, `annot_list`, `open_editor`, `next_annotation`, `prev_annotation`, `flush_output`, `toggle_collapsed`, `toggle_compact`, `toggle_wrap`, `toggle_tree`, `toggle_line_numbers`, `toggle_blame`, `toggle_word_diff`, `toggle_hunk`, `toggle_untracked`, `mark_reviewed`, `filter_unreviewed`, `theme_select`, `filter`, `info`, `reload`, `quit`, `help`, `dismiss`
 
 The `scroll_diff_page_*` and `scroll_diff_half_page_*` actions are the page-sized versions of `J`/`K`: they scroll the diff viewport from either pane. They ship with no default key, so they appear in neither the help overlay nor `--dump-keys` until bound. Binding them to `pgdown`/`pgup`/`ctrl+d`/`ctrl+u` gives lazygit-style paging that always targets the diff. Doing so takes those keys away from tree and markdown TOC paging, replaces cursor paging in the diff pane, and — since `page_down`, `page_up`, `half_page_down` and `half_page_up` have no other default key — leaves them unbound everywhere, including the help and info overlays.
 
-Fixed modal keys (Enter, Esc in annotation/search input, confirm discard) are not remappable. Keymap-resolved actions like `open_editor` work during annotation input and can be rebound. Chord bindings do not fire during text input — use single-key `ctrl+*` bindings for actions that need to work during annotation input.
+Fixed modal keys (Enter and Esc in annotation/search input) are not remappable. Keymap-resolved actions like `open_editor` work during annotation input and can be rebound. Chord bindings do not fire during text input — use single-key `ctrl+*` bindings for actions that need to work during annotation input.
 
 The `stage_hunk` action (default `s`) stages the change under the cursor in an unstaged Git working-tree review. It supports modified tracked regular text files and rejects stale displayed changes.
 

@@ -64,7 +64,7 @@ func TestDefault_allExpectedBindings(t *testing.T) {
 		{"L", ActionToggleLineNums}, {"B", ActionToggleBlame}, {"W", ActionToggleWordDiff},
 		{".", ActionToggleHunk}, {" ", ActionMarkReviewed}, {"f", ActionFilter}, {"F", ActionFilterUnreviewed},
 		{"u", ActionToggleUntracked},
-		{"q", ActionQuit}, {"Q", ActionDiscardQuit}, {"?", ActionHelp}, {"T", ActionThemeSelect}, {"esc", ActionDismiss},
+		{"q", ActionQuit}, {"?", ActionHelp}, {"T", ActionThemeSelect}, {"esc", ActionDismiss},
 		{"i", ActionInfo},
 		{"R", ActionReload},
 	}
@@ -242,7 +242,7 @@ func TestUnbind(t *testing.T) {
 	km.Unbind("q")
 	assert.Equal(t, Action(""), km.Resolve("q"))
 	// other bindings unaffected
-	assert.Equal(t, ActionDiscardQuit, km.Resolve("Q"), "Q should still map to discard_quit")
+	assert.Equal(t, ActionHelp, km.Resolve("?"))
 }
 
 func TestUnbind_noop(t *testing.T) {

@@ -922,11 +922,9 @@ func TestModel_StatusBarSearchInputTakesPriority(t *testing.T) {
 	m.file.name = "a.go"
 	m.search.active = true
 	m.search.input = textinput.New()
-	m.inConfirmDiscard = true // should not show discard prompt
 
 	status := m.statusBarText()
-	assert.Contains(t, status, "/", "search input should take priority over discard")
-	assert.NotContains(t, status, "discard")
+	assert.Contains(t, status, "/", "search input should be shown")
 }
 
 func TestModel_StatusBarSearchMatchPosition(t *testing.T) {

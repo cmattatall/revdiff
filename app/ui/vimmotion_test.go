@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/umputun/revdiff/app/annotation"
 	"github.com/umputun/revdiff/app/diff"
 	"github.com/umputun/revdiff/app/keymap"
 )
@@ -68,7 +69,6 @@ func TestVimChordTable_Bindings(t *testing.T) {
 		"zt": keymap.ActionScrollTop,
 		"zb": keymap.ActionScrollBottom,
 		"ZZ": keymap.ActionQuit,
-		"ZQ": keymap.ActionDiscardQuit,
 	}
 	assert.Equal(t, expected, vimChordTable)
 }
@@ -360,7 +360,7 @@ func TestInterceptVimMotion_LeaderEntryZTreeFallsThrough(t *testing.T) {
 }
 
 func TestInterceptVimMotion_LeaderEntryCapitalZPaneAgnostic(t *testing.T) {
-	// Z (for ZZ/ZQ quit aliases) must activate in any pane
+	// Z (for the ZZ quit alias) must activate in any pane
 	panes := []pane{paneDiff, paneTree}
 	for _, p := range panes {
 		t.Run(paneName(p), func(t *testing.T) {
@@ -426,12 +426,6 @@ func TestResolveVimLeader_AllChordTableEntries(t *testing.T) {
 				msg := cmd()
 				_, ok := msg.(tea.QuitMsg)
 				assert.True(t, ok, "ZZ must emit tea.QuitMsg")
-			},
-		},
-		{
-			name: "ZQ -> discard_quit", leader: "Z", second: "Q",
-			check: func(t *testing.T, m Model, cmd tea.Cmd) {
-				assert.True(t, m.discarded, "ZQ must set discarded flag")
 			},
 		},
 	}
@@ -642,14 +636,12 @@ func TestVimMotion_FullFlow_ZZ(t *testing.T) {
 	require.NotNil(t, cmd, "ZZ must dispatch a quit command")
 	_, ok := cmd().(tea.QuitMsg)
 	assert.True(t, ok, "ZZ emits tea.QuitMsg")
-	assert.False(t, model.discarded, "ZZ does not set discarded flag")
 	assert.Empty(t, model.vim.leader)
 }
 
-func TestVimMotion_FullFlow_ZQ(t *testing.T) {
-	// with an empty annotation store, handleDiscardQuit quits immediately
-	// without the confirm dialog — matches the common flow at exit time.
+func TestVimMotion_ZQDoesNotQuitOrDropAnnotations(t *testing.T) {
 	m := vimTestModel(t, 100)
+	m.store.Add(annotation.Annotation{File: "a.go", Line: 1, Comment: "keep"})
 
 	result, _ := m.Update(keyMsg('Z'))
 	model := result.(Model)
@@ -657,10 +649,8 @@ func TestVimMotion_FullFlow_ZQ(t *testing.T) {
 
 	result, cmd := model.Update(keyMsg('Q'))
 	model = result.(Model)
-	require.NotNil(t, cmd, "ZQ must dispatch a quit command")
-	_, ok := cmd().(tea.QuitMsg)
-	assert.True(t, ok, "ZQ emits tea.QuitMsg")
-	assert.True(t, model.discarded, "ZQ sets discarded flag (annotations dropped)")
+	require.Nil(t, cmd, "ZQ must not dispatch a quit command")
+	assert.Equal(t, 1, model.store.Count())
 	assert.Empty(t, model.vim.leader)
 }
 

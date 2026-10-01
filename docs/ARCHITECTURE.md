@@ -40,7 +40,7 @@ TUI for reviewing diffs, files, and documents with inline annotations, built wit
 `package main` is the composition root, split across files by concern:
 
 - **`main.go`** — `main()`, early-exit commands (version, dump-config, dump-keys), `run()`
-  orchestration, `finalize()` (history safety-net vs `-o` handoff after `p.Run()`)
+  orchestration, `finalize()` (history safety-net and `-o` handoff after `p.Run()`)
 - **`config.go`** — `options` struct, `parseArgs`, `dumpConfig`, `loadConfigFile`, config-path
   helpers
 - **`stdin.go`** — stdin validation, `/dev/tty` reopen, stdin renderer prep
@@ -132,7 +132,7 @@ across files by concern to keep files under ~500 lines:
 - **`model.go`** — Model struct, sub-state structs, `NewModel`, `Init`, `Update`, `handleKey`,
   interfaces
 - **`view.go`** — `View()`, status bar rendering, ANSI helpers
-- **`handlers.go`** — modal handlers (enter/esc, discard, filter, reviewed), help spec
+- **`handlers.go`** — modal handlers (enter/esc, filter, reviewed), help spec
 - **`loaders.go`** — async file/blame loading, reviewed-fingerprint reconciliation, loaded-message
   handlers, data helpers
 - **`diffview.go`** — diff line rendering, gutters, line styling, search highlights
@@ -317,7 +317,7 @@ load, stored parallel to `diffLines`.
 actions. Loaded from file (`map <key> <action>` / `unmap <key>` format) or defaults.
 
 Handlers use `m.keymap.Resolve(msg.String())` instead of raw key strings. Modal text-entry keys
-(annotation input, search input, confirm discard) stay hardcoded. Overlay key dispatch uses keymap
+(annotation input, search input) stay hardcoded. Overlay key dispatch uses keymap
 actions for j/k/up/down but keeps `enter` and `esc` hardcoded.
 
 Two-stage chord bindings (kitty-style, e.g. `map ctrl+w>x mark_reviewed`) are supported with a
@@ -462,7 +462,7 @@ main()  [main.go]
       → construct style, theme catalog adapter, all dependencies
       → ui.NewModel(ModelConfig{...})
       → tea.NewProgram(model, WithoutSignalHandler).Run()  [shutdownGuard owns SIGHUP/SIGTERM; SIGINT drained]
-      → finalize()      [main.go] → saveHistory() on non-discarded, non-empty exit; -o output only on graceful (non-signal) exit
+      → finalize()      [main.go] → saveHistory() on non-empty exit; -o output only on graceful (non-signal) exit
 ```
 
 ### File Loading (async)

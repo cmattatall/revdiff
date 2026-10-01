@@ -312,118 +312,6 @@ func TestModel_QuitNoAnnotationsEmptyOutput(t *testing.T) {
 	assert.Empty(t, model.Store().FormatOutput())
 }
 
-func TestModel_NoConfirmDiscardWired(t *testing.T) {
-	renderer := &mocks.RendererMock{
-		ChangedFilesFunc: func(string, bool) ([]diff.FileEntry, error) { return nil, nil },
-		FileDiffFunc:     func(diff.FileDiffRequest) ([]diff.DiffLine, error) { return nil, nil },
-	}
-	store := annotation.NewStore()
-	m := testNewModel(t, renderer, store, noopHighlighter(), ModelConfig{NoConfirmDiscard: true, TreeWidthRatio: 3})
-	assert.True(t, m.cfg.noConfirmDiscard, "noConfirmDiscard should be wired from ModelConfig")
-}
-
-func TestModel_ConfirmDiscardY(t *testing.T) {
-	m := testModel([]string{"a.go"}, nil)
-	m.store.Add(annotation.Annotation{File: "a.go", Line: 1, Type: "+", Comment: "test"})
-	m.inConfirmDiscard = true
-
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
-	require.NotNil(t, cmd)
-
-	model := result.(Model)
-	assert.True(t, model.Discarded(), "y should confirm discard")
-	msg := cmd()
-	_, ok := msg.(tea.QuitMsg)
-	assert.True(t, ok, "should quit after y")
-}
-
-func TestModel_ConfirmDiscardN(t *testing.T) {
-	m := testModel([]string{"a.go"}, nil)
-	m.store.Add(annotation.Annotation{File: "a.go", Line: 1, Type: "+", Comment: "test"})
-	m.inConfirmDiscard = true
-
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
-	assert.Nil(t, cmd, "n should not quit")
-
-	model := result.(Model)
-	assert.False(t, model.inConfirmDiscard, "n should cancel confirmation")
-	assert.False(t, model.Discarded(), "should not be discarded")
-}
-
-func TestModel_ConfirmDiscardEsc(t *testing.T) {
-	m := testModel([]string{"a.go"}, nil)
-	m.store.Add(annotation.Annotation{File: "a.go", Line: 1, Type: "+", Comment: "test"})
-	m.inConfirmDiscard = true
-
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
-	assert.Nil(t, cmd, "esc should not quit")
-
-	model := result.(Model)
-	assert.False(t, model.inConfirmDiscard, "esc should cancel confirmation")
-	assert.False(t, model.Discarded())
-}
-
-func TestModel_ConfirmDiscardSecondQ(t *testing.T) {
-	m := testModel([]string{"a.go"}, nil)
-	m.store.Add(annotation.Annotation{File: "a.go", Line: 1, Type: "+", Comment: "test"})
-	m.inConfirmDiscard = true
-
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'Q'}})
-	require.NotNil(t, cmd)
-
-	model := result.(Model)
-	assert.True(t, model.Discarded(), "second Q should confirm discard")
-	msg := cmd()
-	_, ok := msg.(tea.QuitMsg)
-	assert.True(t, ok, "should quit after second Q")
-}
-
-func TestModel_QKeyNoConfirmDiscardWithAnnotations(t *testing.T) {
-	m := testModel([]string{"a.go"}, nil)
-	m.cfg.noConfirmDiscard = true
-	m.store.Add(annotation.Annotation{File: "a.go", Line: 1, Type: "+", Comment: "test"})
-
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'Q'}})
-	require.NotNil(t, cmd)
-
-	model := result.(Model)
-	assert.True(t, model.Discarded(), "should immediately discard with noConfirmDiscard")
-	assert.False(t, model.inConfirmDiscard, "should not enter confirming state")
-	msg := cmd()
-	_, ok := msg.(tea.QuitMsg)
-	assert.True(t, ok, "should quit immediately")
-}
-
-func TestModel_ConfirmDiscardBlocksOtherKeys(t *testing.T) {
-	m := testModel([]string{"a.go"}, nil)
-	m.store.Add(annotation.Annotation{File: "a.go", Line: 1, Type: "+", Comment: "test"})
-	m.inConfirmDiscard = true
-
-	// pressing j (navigation) should be blocked
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
-	assert.Nil(t, cmd, "j should be blocked during confirmation")
-	model := result.(Model)
-	assert.True(t, model.inConfirmDiscard, "should still be confirming")
-
-	// pressing q should be blocked too
-	result, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
-	assert.Nil(t, cmd, "q should be blocked during confirmation")
-	model = result.(Model)
-	assert.True(t, model.inConfirmDiscard, "should still be confirming")
-}
-
-func TestModel_ConfirmDiscardAllowsNonKeyMessages(t *testing.T) {
-	m := testModel([]string{"a.go"}, nil)
-	m.store.Add(annotation.Annotation{File: "a.go", Line: 1, Type: "+", Comment: "test"})
-	m.inConfirmDiscard = true
-
-	// WindowSizeMsg should still be handled
-	result, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
-	model := result.(Model)
-	assert.Equal(t, 100, model.layout.width, "resize should be handled during confirmation")
-	assert.True(t, model.inConfirmDiscard, "should still be confirming after resize")
-}
-
 func TestModel_HandleEscKeyClearsSearch(t *testing.T) {
 	m := testModel([]string{"a.go"}, map[string][]diff.DiffLine{
 		"a.go": {{ChangeType: diff.ChangeAdd, Content: "hello world"}},
@@ -1121,10 +1009,10 @@ func TestBuildHelpSpec_VimMotionSectionOn(t *testing.T) {
 		}
 	}
 	require.NotNil(t, vimSection, "help overlay must include a Vim motion section when --vim-motion is on")
-	require.Len(t, vimSection.Entries, 11, "Vim motion section must list all 11 preset bindings")
+	require.Len(t, vimSection.Entries, 10, "Vim motion section must list all 10 preset bindings")
 
 	// verify each expected binding is present by key string
-	wantKeys := []string{"N j / N k", "gg", "G / N G", "H / N H", "M", "L / N L", "zz", "zt", "zb", "ZZ", "ZQ"}
+	wantKeys := []string{"N j / N k", "gg", "G / N G", "H / N H", "M", "L / N L", "zz", "zt", "zb", "ZZ"}
 	for i, want := range wantKeys {
 		assert.Equal(t, want, vimSection.Entries[i].Keys,
 			"entry %d key string mismatch", i)
@@ -1140,7 +1028,7 @@ func TestModel_HelpOverlayScrollsOnSmallTerminal(t *testing.T) {
 	require.True(t, m.overlay.Active())
 
 	top := m.View()
-	require.NotContains(t, top, "discard and quit", "last section must start below the fold at 100x40")
+	require.NotContains(t, top, "dismiss / cancel", "last section must start below the fold at 100x40")
 
 	scrolled := m
 	for range 4 {
@@ -1150,7 +1038,7 @@ func TestModel_HelpOverlayScrollsOnSmallTerminal(t *testing.T) {
 	view := scrolled.View()
 
 	assert.NotEqual(t, top, view, "page-down must scroll the help body")
-	assert.Contains(t, view, "discard and quit", "paging must reach the last section")
+	assert.Contains(t, view, "dismiss / cancel", "paging must reach the last section")
 	assert.True(t, scrolled.overlay.Active(), "scroll keys must not close the help overlay")
 }
 
