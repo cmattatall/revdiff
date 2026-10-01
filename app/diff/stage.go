@@ -3,10 +3,35 @@ package diff
 import (
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 )
+
+// StageFile stages the current working-tree file, including deletion or rename.
+// Unlike StageHunk, this deliberately includes changes made since the last render.
+func (g *Git) StageFile(path, oldPath string) error {
+	paths := []string{path}
+	if oldPath != "" && oldPath != path {
+		paths = append(paths, oldPath)
+	}
+	for _, p := range paths {
+		if !filepath.IsLocal(p) || filepath.Clean(p) == "." {
+			return errors.New("select a file inside the repository")
+		}
+		info, err := os.Lstat(filepath.Join(g.workDir, p))
+		if err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("inspect file for staging: %w", err)
+		}
+		if err == nil && !info.Mode().IsRegular() && info.Mode()&os.ModeSymlink == 0 {
+			return errors.New("select a file, not a directory or submodule")
+		}
+	}
+	_, err := g.runGit(append([]string{"add", "-A", "--"}, paths...)...)
+	return err
+}
 
 // StageHunk stages the contiguous change under the cursor, never the working
 // file itself. Only ordinary tracked text modifications are supported. The
