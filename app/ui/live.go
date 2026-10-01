@@ -10,6 +10,7 @@ import (
 
 	"github.com/umputun/revdiff/app/annotation"
 	"github.com/umputun/revdiff/app/diff"
+	"github.com/umputun/revdiff/app/keymap"
 )
 
 // FeedbackSender delivers feedback to a bound harness session.
@@ -20,9 +21,10 @@ type FeedbackSender interface {
 	DisplayName() string
 }
 
-// HunkStager stages the displayed change, rejecting stale content.
-type HunkStager interface {
+// Stager stages reviewed hunks or entire current working-tree files.
+type Stager interface {
 	StageHunk(path string, displayed []diff.DiffLine, cursor int) error
+	StageFile(path, oldPath string) error
 }
 
 type discoveryState int
@@ -47,7 +49,7 @@ type liveState struct {
 	sender      FeedbackSender
 	discover    func() (FeedbackSender, error)
 	discovery   discoveryState
-	stager      HunkStager
+	stager      Stager
 	operation   liveOperation
 	err         error
 	pending     []annotation.Annotation
@@ -71,7 +73,10 @@ type feedbackDiscoveredMsg struct {
 	err    error
 }
 type feedbackSentMsg struct{ err error }
-type hunkStagedMsg struct{ err error }
+type stagedMsg struct {
+	action keymap.Action
+	err    error
+}
 type liveLoadedMsg struct {
 	files filesLoadedMsg
 	file  fileLoadedMsg
@@ -246,7 +251,7 @@ func (m Model) handleFeedbackSent(msg feedbackSentMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleStageHunk() (tea.Model, tea.Cmd) {
+func (m Model) handleStage(action keymap.Action) (tea.Model, tea.Cmd) {
 	if m.live.stager == nil {
 		m.output.hint = "Staging requires an unstaged Git working-tree review"
 		return m, nil
@@ -254,7 +259,7 @@ func (m Model) handleStageHunk() (tea.Model, tea.Cmd) {
 	// Explain the actual blocker instead of treating every refresh pause as an
 	// annotation problem. Staging reloads the diff, so pending notes stay guarded.
 	switch {
-	case m.layout.focus != paneDiff:
+	case action == keymap.ActionStageHunk && m.layout.focus != paneDiff:
 		m.output.hint = "Focus the diff pane before staging"
 	case !m.filesLoaded || m.file.requestedPath != "":
 		m.output.hint = "Wait for the diff to finish loading before staging"
@@ -267,6 +272,20 @@ func (m Model) handleStageHunk() (tea.Model, tea.Cmd) {
 	case m.livePaused():
 		m.output.hint = "Finish the current interaction before staging"
 	default:
+		if action == keymap.ActionStageFile {
+			path := m.file.name
+			if m.layout.focus == paneTree {
+				path = m.tree.SelectedFile()
+			}
+			if path == "" || !slices.Contains(m.tree.VisibleFiles(), path) {
+				m.output.hint = "Select a file before staging"
+				return m, nil
+			}
+			m.live.operation = liveStaging
+			m.output.hint = "Staging file"
+			stager, oldPath := m.live.stager, m.tree.OldPath(path)
+			return m, func() tea.Msg { return stagedMsg{action: action, err: stager.StageFile(path, oldPath)} }
+		}
 		if m.tree.FileStatus(m.file.name) != diff.FileModified {
 			m.output.hint = "Hunk staging supports modified tracked text files only"
 			return m, nil
@@ -274,7 +293,7 @@ func (m Model) handleStageHunk() (tea.Model, tea.Cmd) {
 		m.live.operation = liveStaging
 		m.output.hint = "Staging hunk"
 		stager, path, lines, cursor := m.live.stager, m.file.name, slices.Clone(m.file.lines), m.nav.diffCursor
-		return m, func() tea.Msg { return hunkStagedMsg{err: stager.StageHunk(path, lines, cursor)} }
+		return m, func() tea.Msg { return stagedMsg{action: action, err: stager.StageHunk(path, lines, cursor)} }
 	}
 	return m, nil
 }

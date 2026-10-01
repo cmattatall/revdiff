@@ -9,6 +9,7 @@ import (
 
 	"github.com/umputun/revdiff/app/annotation"
 	"github.com/umputun/revdiff/app/diff"
+	"github.com/umputun/revdiff/app/keymap"
 )
 
 type feedbackStub struct {
@@ -26,10 +27,88 @@ func (s *feedbackStub) Send(content string) error {
 	return s.err
 }
 
-type hunkStagerFunc func(string, []diff.DiffLine, int) error
+type stagerStub struct {
+	hunk func(string, []diff.DiffLine, int) error
+	file func(string, string) error
+}
 
-func (f hunkStagerFunc) StageHunk(path string, lines []diff.DiffLine, cursor int) error {
-	return f(path, lines, cursor)
+func (s stagerStub) StageHunk(path string, lines []diff.DiffLine, cursor int) error {
+	return s.hunk(path, lines, cursor)
+}
+
+func (s stagerStub) StageFile(path, oldPath string) error {
+	return s.file(path, oldPath)
+}
+
+func TestStageFileShortcutUsesFocusedSelection(t *testing.T) {
+	for _, focus := range []pane{paneTree, paneDiff} {
+		for _, stageErr := range []error{nil, errors.New("index locked")} {
+			m := testModel([]string{"a.go", "b.go"}, nil)
+			entries := []diff.FileEntry{{Path: "a.go", Status: diff.FileModified}, {Path: "b.go", OldPath: "old.go", Status: diff.FileRenamed}}
+			model, _ := m.handleFilesLoaded(filesLoadedMsg{entries: entries})
+			m = model.(Model)
+			model, _ = m.handleFileLoaded(fileLoadedMsg{file: "a.go", seq: m.file.loadSeq})
+			m = model.(Model)
+			m.tree.SelectByPath("b.go")
+			m.layout.focus = focus
+			want, old := "a.go", ""
+			if focus == paneTree {
+				want, old = "b.go", "old.go"
+			}
+			calls := 0
+			m.live.stager = stagerStub{file: func(path, oldPath string) error {
+				calls++
+				require.Equal(t, want, path)
+				require.Equal(t, old, oldPath)
+				return stageErr
+			}}
+			model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'S'}})
+			m = model.(Model)
+			require.NotNil(t, cmd, "file staging does not need a changed line under the cursor")
+			require.Zero(t, calls, "Git IO must run in the command")
+			require.Equal(t, liveStaging, m.live.operation)
+			_, duplicate := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'S'}})
+			require.Nil(t, duplicate)
+			model, reload := m.Update(cmd())
+			m = model.(Model)
+			require.Equal(t, 1, calls)
+			require.Equal(t, liveIdle, m.live.operation)
+			if stageErr != nil {
+				require.Nil(t, reload)
+				require.Equal(t, "Stage failed: index locked", m.output.hint)
+			} else {
+				require.NotNil(t, reload)
+				require.False(t, m.filesLoaded)
+				require.Equal(t, "File staged", m.output.hint)
+			}
+		}
+	}
+}
+
+func TestStageFileGuards(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		setup func(*Model)
+		want  string
+	}{
+		{"unavailable", func(m *Model) { m.live.stager = nil }, "Staging requires"},
+		{"loading", func(m *Model) { m.file.requestedPath = "a.go" }, "Wait for the diff"},
+		{"sending", func(m *Model) { m.live.operation = liveSending }, "Wait for feedback"},
+		{"unconfirmed", func(m *Model) { m.live.pending = []annotation.Annotation{{File: "a.go"}} }, "Retry the unconfirmed"},
+		{"annotations", func(m *Model) { m.store.Add(annotation.Annotation{File: "other.go", Line: 1, Comment: "keep"}) }, "Send or remove annotations"},
+		{"no selection", func(m *Model) { m.file.name = "" }, "Select a file"},
+		{"directory", func(m *Model) { m.file.name = "folder" }, "Select a file"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := testModel([]string{"a.go", "folder/b.go"}, nil)
+			m.file.name, m.layout.focus = "a.go", paneDiff
+			m.live.stager = stagerStub{file: func(string, string) error { t.Fatal("must not stage"); return nil }}
+			tc.setup(&m)
+			model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'S'}})
+			require.Nil(t, cmd)
+			require.Contains(t, model.(Model).output.hint, tc.want)
+		})
+	}
 }
 
 func TestStageHunkReportsActualBlocker(t *testing.T) {
@@ -53,10 +132,10 @@ func TestStageHunkReportsActualBlocker(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m := testModel([]string{"a.go"}, nil)
 			m.layout.focus = paneDiff
-			m.live.stager = hunkStagerFunc(func(string, []diff.DiffLine, int) error {
+			m.live.stager = stagerStub{hunk: func(string, []diff.DiffLine, int) error {
 				t.Fatal("blocked shortcut must not stage")
 				return nil
-			})
+			}}
 			tc.setup(&m)
 			count := m.store.Count()
 			model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
@@ -85,13 +164,13 @@ func TestStageShortcutCapturesDisplayedHunk(t *testing.T) {
 		m.nav.diffCursor = 1
 		m.layout.focus = paneDiff
 		calls := 0
-		m.live.stager = hunkStagerFunc(func(path string, displayed []diff.DiffLine, cursor int) error {
+		m.live.stager = stagerStub{hunk: func(path string, displayed []diff.DiffLine, cursor int) error {
 			calls++
 			require.Equal(t, "a.go", path)
 			require.Equal(t, "new", displayed[1].Content)
 			require.Equal(t, 1, cursor)
 			return stageErr
-		})
+		}}
 		sender := &feedbackStub{}
 		m.live.discover = func() (FeedbackSender, error) { return sender, nil }
 		model, lookup := m.discoverFeedback(false)
@@ -169,7 +248,7 @@ func TestStageReloadPreservesPosition(t *testing.T) {
 			m.layout.viewport.SetContent(m.renderDiff())
 			m.layout.viewport.SetYOffset(m.cursorViewportY() - 4)
 			row := m.cursorViewportY() - m.layout.viewport.YOffset
-			m.live.stager = hunkStagerFunc(func(string, []diff.DiffLine, int) error { return nil })
+			m.live.stager = stagerStub{hunk: func(string, []diff.DiffLine, int) error { return nil }}
 			model, stage := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
 			m = model.(Model)
 			require.NotNil(t, stage)
@@ -197,7 +276,7 @@ func TestStageAnchorDoesNotLeakToOtherLoads(t *testing.T) {
 			model, _ = m.handleFileLoaded(fileLoadedMsg{file: "a.go", seq: m.file.loadSeq, lines: lines})
 			m = model.(Model)
 			m.nav.diffCursor = 1
-			model, _ = m.Update(hunkStagedMsg{})
+			model, _ = m.Update(stagedMsg{action: keymap.ActionStageHunk})
 			m = model.(Model)
 			switch action {
 			case "file disappears":

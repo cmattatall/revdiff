@@ -29,7 +29,7 @@ The installer builds the matching binary from this [revdiff fork](https://github
 3. If multiple sessions match, revdiff lists them rather than guessing. Disconnect extras, or press **Ctrl+O → revdiff: connect** in your intended Amp thread to get an explicit `--amp` command. Only this manual command posts setup instructions as a thread message. Add `--untracked` to include new files in either mode.
 4. Annotate a line with `Enter` or `a`, annotate a file with `A`, and inspect annotations with `@`.
 5. Press `O` to send feedback without quitting revdiff. The plugin appends it to the bound Amp thread as a steering message, including while the agent is working.
-6. Press `s` on an added or removed line to stage that contiguous change. The user owns staging; feedback tells Amp not to stage, unstage, reset, or commit without asking.
+6. Press `s` on an added or removed line to stage that contiguous change, or `S` (Shift+S) to stage the entire selected file from the tree or diff pane. The user owns staging; feedback tells Amp not to stage, unstage, reset, or commit without asking.
 
 The bottom panel shows **Harness: waiting** before connecting, then **Harness (amp): &lt;title&gt; &lt;thread ID&gt;**; the identity replaces a separate "connected" label. Each harness supplies its own name and display text. **sending** and **unconfirmed** appear beside that identity during a send or after an unacknowledged delivery. **Harness: unavailable** means discovery failed (for example, multiple sessions matched); press `O` for details. The row stays visible during annotation input and transient status messages, unless the status bar is disabled. A background connection never sends annotations on its own; `O` is still required. Without a connection, comments remain local and quit uses normal output/history behavior.
 
@@ -49,6 +49,7 @@ Choose **revdiff: disconnect** when finished. This also disables automatic regis
 - Graceful disconnect or plugin disposal removes private connection files and closes servers. A crash may leave stale files, which discovery ignores without deleting. After restart, register the session and relaunch revdiff.
 - Automatic connection applies only to unstaged Git working-tree reviews. Refs, `--staged`, `--all-files`, stdin/compare modes, `--output`, and `--post-flush-command` skip discovery; combining them with explicit `--amp` is an error.
 - Hunk staging supports modified tracked regular text files, not new/deleted files, renames, binaries, or mode changes. It rejects stale displayed changes and updates only the index, never the working file.
+- Whole-file staging (`stage_file`, default `S`) stages the current working-tree version like `git add`, including edits since the last render. It supports new/deleted files, renames, binaries, symlinks, and mode changes, but not directories or submodules. Both staging shortcuts require no pending annotations and an unstaged Git working-tree review; neither changes the working file.
 
 ### Tests
 

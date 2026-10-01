@@ -730,7 +730,7 @@ type ModelConfig struct {
 	PostFlushHook        PostFlushHook                  // optional command run after an in-session output flush
 	Feedback             FeedbackSender                 // optional harness connection; enables live refresh
 	DiscoverFeedback     func() (FeedbackSender, error) // optional lookup until a connection is found
-	Stager               HunkStager                     // optional unstaged Git hunk staging
+	Stager               Stager                         // optional unstaged Git staging
 	// CommitLog enumerates commits in the current ref range for the info popup's
 	// commit-log section. When nil, NewModel attempts to derive the source by
 	// type-asserting the Renderer against diff.CommitLogger; if the assertion
@@ -996,13 +996,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleLiveLoaded(msg)
 	case feedbackSentMsg:
 		return m.handleFeedbackSent(msg)
-	case hunkStagedMsg:
+	case stagedMsg:
 		m.live.operation = liveIdle
 		if msg.err != nil {
 			m.output.hint = "Stage failed: " + msg.err.Error()
 			return m, nil
 		}
 		m.output.hint = "Hunk staged"
+		if msg.action == keymap.ActionStageFile {
+			m.output.hint = "File staged"
+		}
 		cmd := m.triggerReload()
 		m.live.stageAnchor = m.captureStageAnchor()
 		return m, cmd
@@ -1186,8 +1189,8 @@ func (m Model) dispatchAction(action keymap.Action) (tea.Model, tea.Cmd) {
 		return m.handleAnnotNav(action == keymap.ActionNextAnnotation)
 	case keymap.ActionReload:
 		return m.handleReload()
-	case keymap.ActionStageHunk:
-		return m.handleStageHunk()
+	case keymap.ActionStageHunk, keymap.ActionStageFile:
+		return m.handleStage(action)
 	case keymap.ActionFlushOutput:
 		return m.handleFlushOutput()
 	default: // remaining actions (navigation, search, etc.) handled by pane-specific handlers below

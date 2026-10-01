@@ -34,7 +34,7 @@ func TestDefault_allExpectedBindings(t *testing.T) {
 		{"P", ActionJumpFile},
 		{":", ActionCommand},
 		{"]", ActionNextHunk}, {"[", ActionPrevHunk}, {"e", ActionOpenFileInEditor},
-		{"s", ActionStageHunk},
+		{"s", ActionStageHunk}, {"S", ActionStageFile},
 		{"tab", ActionTogglePane}, {"h", ActionFocusTree}, {"l", ActionFocusDiff},
 		{"/", ActionSearch},
 		{"a", ActionConfirm}, {"enter", ActionConfirm},
@@ -126,6 +126,25 @@ func TestActionJumpFile_RegistrationHelpAndDump(t *testing.T) {
 	var dumped strings.Builder
 	require.NoError(t, km.Dump(&dumped))
 	assert.Contains(t, dumped.String(), "map P jump_file")
+}
+
+func TestStageFileBinding(t *testing.T) {
+	require.True(t, IsValidAction(ActionStageFile))
+	km := Default()
+	var dumped strings.Builder
+	require.NoError(t, km.Dump(&dumped))
+	require.Contains(t, dumped.String(), "map S stage_file")
+	km.Bind("alt+s", ActionStageFile)
+	require.Equal(t, ActionStageFile, km.Resolve("alt+s"))
+	for _, section := range km.HelpSections() {
+		for _, entry := range section.Entries {
+			if entry.Action == ActionStageFile {
+				require.Equal(t, "stage entire selected file (Git working tree)", entry.Description)
+				return
+			}
+		}
+	}
+	t.Fatal("stage_file must appear in help")
 }
 
 // pins the default off ctrl+p: host terminals bind it (agterm session_palette,

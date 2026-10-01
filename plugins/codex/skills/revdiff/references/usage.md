@@ -154,8 +154,11 @@ Single-line annotation, search, command, file-picker, and theme-picker inputs us
 | `d` | Delete annotation under cursor |
 | `O` | Send feedback with `--amp`, or export via `--output` / `--post-flush-command` |
 | `s` | Stage change under cursor (modified tracked text, Git working tree) |
+| `S` (Shift+S) | Stage entire selected file (Git working tree, `stage_file` — rebindable) |
 | `Alt+E` (during annotation input) | Open `$EDITOR` for multi-line annotation (`open_editor` — rebindable) |
 | `Esc` | Cancel annotation input |
+
+`S` stages the entire selected file from the tree or diff pane, like `git add`, including edits since the last render. It supports new/deleted files, renames, binaries, symlinks, and mode changes, but not directories or submodules. Both staging shortcuts require an unstaged Git working-tree review and no pending annotations; neither changes the working file.
 
 While the annotation input is active, press `Alt+E` (or whatever key is bound to `open_editor`) to hand off the current text to an external editor for multi-line comments. `Ctrl+E` now retains its standard end-of-line behavior; users who prefer the old shortcut can add `map ctrl+e open_editor`. Editor resolution: `$EDITOR` → `$VISUAL` → `vi`. Values with arguments work (e.g. `EDITOR="code --wait"`). On editor save and quit, the full file contents (including newlines) become the annotation. Quitting the editor with an empty file cancels the annotation and preserves any previously stored note on that line. Multi-line annotations are rendered line-by-line in the diff view, shown flattened in the annotation list popup (`@`), and emitted with embedded newlines in the structured output.
 

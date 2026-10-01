@@ -90,7 +90,8 @@ Run `./plugins/amp/install.sh` from this fork's repository root (requires Go). I
 1. Open an Amp thread in your Git checkout. The plugin registers the session automatically, without posting a setup message. After reloading the plugin in an existing thread, registration happens when you next send a prompt or choose **revdiff: connect**.
 2. Run `revdiff` in another terminal pane in the **same directory**. It automatically connects when exactly one live Amp session matches. Use `revdiff --untracked` to include new files. If multiple sessions match, disconnect the extras or use **Ctrl+O → revdiff: connect** in the intended Amp thread to get an explicit `--amp` command.
 3. Annotate with `Enter` or `a` (line) and `A` (file). Press `O` to send feedback to that Amp thread without leaving revdiff. Amp receives it as a steering message, including while working.
-4. Press `s` on an added/removed line to stage that contiguous change. Staging supports modified, tracked regular text files in an unstaged Git working-tree review; new/deleted files, renames, binary files, mode changes, refs, and staged views are not supported. Staging changes the index, never the working file, and rejects stale displayed changes.
+4. Press `s` on an added/removed line to stage that contiguous change. Hunk staging supports modified, tracked regular text files in an unstaged Git working-tree review; new/deleted files, renames, binary files, mode changes, refs, and staged views are not supported. Hunk staging changes the index, never the working file, and rejects stale displayed changes.
+5. Press `S` (Shift+S) to stage the entire selected file from the tree or diff pane (`stage_file`, rebindable). This stages the current working-tree version, including edits since the last render, like `git add`. It also supports new/deleted files, renames, binaries, symlinks, and mode changes; directories and submodules are excluded. Both staging shortcuts require an unstaged Git working-tree review and no pending annotations. Neither changes the working file.
 
 The bottom panel shows **Harness: waiting** until a session is found, then **Harness (amp): &lt;title&gt; &lt;thread ID&gt;**. The identity itself indicates the connection; there is no separate "connected" label. Each harness supplies its own name and display text. Revdiff checks once per second while waiting, even if you are writing annotations; `O` also retries discovery. Connecting never sends comments automatically. **sending** and **unconfirmed** appear beside the identity during an active send or after an unacknowledged delivery; **Harness: unavailable** indicates a discovery error. This row remains visible during input and status messages, unless the status bar is disabled.
 
@@ -801,6 +802,7 @@ Single-line annotation, search, command, file-picker, and theme-picker inputs us
 | `d` | Delete annotation under cursor |
 | `O` | Send feedback to connected Amp, or export via `--output` / `--post-flush-command` |
 | `s` | Stage change under cursor (modified tracked text, Git working tree) |
+| `S` (Shift+S) | Stage entire selected file (Git working tree, `stage_file` — rebindable) |
 | `Alt+E` (during annotation input) | Open `$EDITOR` for multi-line annotation (`open_editor` — rebindable) |
 | `Esc` | Cancel annotation input |
 
@@ -956,7 +958,7 @@ When the leader is pressed, the status bar shows `Pending: ctrl+w, esc to cancel
 
 **Navigation:** `down`, `up`, `page_down`, `page_up`, `half_page_down`, `half_page_up`, `home`, `end`, `command`, `scroll_left`, `scroll_right`, `scroll_center`, `scroll_top`, `scroll_bottom`, `scroll_diff_down`, `scroll_diff_up`, `scroll_diff_page_down`, `scroll_diff_page_up`, `scroll_diff_half_page_down`, `scroll_diff_half_page_up`
 
-**File/Hunk:** `next_item`, `prev_item`, `jump_file`, `next_hunk`, `prev_hunk`, `open_file_in_editor`
+**File/Hunk:** `next_item`, `prev_item`, `jump_file`, `next_hunk`, `prev_hunk`, `open_file_in_editor`, `stage_hunk`, `stage_file`
 
 **Pane:** `toggle_pane`, `focus_tree`, `focus_diff`
 

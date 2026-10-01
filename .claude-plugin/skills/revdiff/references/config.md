@@ -174,6 +174,8 @@ Fixed modal keys (Enter, Esc in annotation/search input, confirm discard) are no
 
 The `stage_hunk` action (default `s`) stages the change under the cursor in an unstaged Git working-tree review. It supports modified tracked regular text files and rejects stale displayed changes.
 
+The `stage_file` action (default `S`, Shift+S) stages the entire selected file from the tree or diff pane in an unstaged Git working-tree review. It stages current contents like `git add`, including edits since the last render. Both staging actions require no pending annotations.
+
 The `flush_output` action (default `O`) sends feedback to the bound thread when `--amp` is configured; live refresh pauses until pending comments are sent or removed. Otherwise, `--output` writes the full snapshot to a file and `--post-flush-command` sends it to a command on stdin. They work independently or together. An empty annotation store produces only a status hint.
 
 For clipboard-only flushes on macOS, set `post-flush-command = pbcopy` in the config file. No `--output` flag is required. On Linux, use `xclip -selection clipboard` for X11 or `wl-copy` for Wayland.

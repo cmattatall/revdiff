@@ -244,7 +244,7 @@ func run(opts options) (int, error) {
 			return 0, err
 		}
 	}
-	var stager ui.HunkStager
+	var stager ui.Stager
 	if vcsType == diff.VCSGit && opts.ref() == "" && !opts.Staged && !opts.AllFiles {
 		stager = diff.NewGit(gitRoot)
 	}
