@@ -46,6 +46,7 @@ type editorFinishedMsg struct {
 	fileName   string
 	fileLevel  bool
 	line       int
+	endLine    int
 	changeType string
 
 	// restoreMouse requests mouse tracking after the editor returns.
@@ -69,6 +70,7 @@ func (m *Model) openEditor() tea.Cmd {
 	}
 	fileName := m.file.name
 	fileLevel := m.annot.fileAnnotating
+	endLine := m.annot.endLine
 
 	var line int
 	var changeType string
@@ -84,7 +86,7 @@ func (m *Model) openEditor() tea.Cmd {
 	cmd, complete, err := m.editor.Command(content)
 	if err != nil {
 		return func() tea.Msg {
-			return editorFinishedMsg{err: err, seed: content, fileName: fileName, fileLevel: fileLevel, line: line, changeType: changeType}
+			return editorFinishedMsg{err: err, seed: content, fileName: fileName, fileLevel: fileLevel, line: line, endLine: endLine, changeType: changeType}
 		}
 	}
 
@@ -102,6 +104,7 @@ func (m *Model) openEditor() tea.Cmd {
 			fileName:     fileName,
 			fileLevel:    fileLevel,
 			line:         line,
+			endLine:      endLine,
 			changeType:   changeType,
 		}
 	})
@@ -335,7 +338,7 @@ func (m Model) handleEditorFinished(msg editorFinishedMsg) (tea.Model, tea.Cmd) 
 		m.cancelAnnotation()
 		return m, cmd
 	}
-	m.saveComment(msg.content, msg.fileName, msg.fileLevel, msg.line, msg.changeType)
+	m.saveComment(msg.content, msg.fileName, msg.fileLevel, msg.line, msg.endLine, msg.changeType)
 	return m, cmd
 }
 

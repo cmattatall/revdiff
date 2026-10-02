@@ -798,6 +798,8 @@ func TestModel_HomeEndMoveCursorToBoundaries(t *testing.T) {
 	}
 
 	m := testModel([]string{"a.go"}, map[string][]diff.DiffLine{"a.go": lines})
+	m.keymap.Bind("home", keymap.ActionHome)
+	m.keymap.Bind("end", keymap.ActionEnd)
 
 	// initialize viewport via resize
 	result, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
@@ -830,6 +832,8 @@ func TestModel_HomeEndSkipDividers(t *testing.T) {
 	}
 
 	m := testModel([]string{"a.go"}, map[string][]diff.DiffLine{"a.go": lines})
+	m.keymap.Bind("home", keymap.ActionHome)
+	m.keymap.Bind("end", keymap.ActionEnd)
 
 	// initialize viewport via resize
 	result, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
@@ -1087,6 +1091,8 @@ func TestModel_TreeCtrlUMovesCursorByHalfPage(t *testing.T) {
 func TestModel_TreeHomeEndMoveToBoundaries(t *testing.T) {
 	files := []string{"cmd/main.go", "internal/a.go", "internal/b.go", "internal/c.go", "pkg/util.go"}
 	m := testModel(files, nil)
+	m.keymap.Bind("home", keymap.ActionHome)
+	m.keymap.Bind("end", keymap.ActionEnd)
 	m.tree = testNewFileTree(files)
 	m.layout.focus = paneTree
 

@@ -541,7 +541,7 @@ func (m Model) handleFilesLoaded(msg filesLoadedMsg) (tea.Model, tea.Cmd) {
 	if f := m.tree.SelectedFile(); f != "" {
 		seq := m.file.loadSeq
 		cmd := m.requestFileDiff(f)
-		if stageAnchor != nil && stageAnchor.file == f && stageAnchor.seq == seq && !m.selectedTreeStaged() {
+		if stageAnchor != nil && stageAnchor.file == f && stageAnchor.seq == seq && stageAnchor.staged == m.selectedTreeStaged() {
 			stageAnchor.seq = m.file.loadSeq
 			m.live.stageAnchor = stageAnchor
 		}

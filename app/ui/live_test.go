@@ -28,8 +28,10 @@ func (s *feedbackStub) Send(content string) error {
 }
 
 type stagerStub struct {
-	hunk func(string, []diff.DiffLine, int) error
-	file func(string, string) error
+	hunk        func(string, []diff.DiffLine, int) error
+	file        func(string, string) error
+	unstageHunk func(string, []diff.DiffLine, int) error
+	unstageFile func(string, string) error
 }
 
 func (s stagerStub) StageHunk(path string, lines []diff.DiffLine, cursor int) error {
@@ -38,6 +40,14 @@ func (s stagerStub) StageHunk(path string, lines []diff.DiffLine, cursor int) er
 
 func (s stagerStub) StageFile(path, oldPath string) error {
 	return s.file(path, oldPath)
+}
+
+func (s stagerStub) UnstageHunk(path string, lines []diff.DiffLine, cursor int) error {
+	return s.unstageHunk(path, lines, cursor)
+}
+
+func (s stagerStub) UnstageFile(path, oldPath string) error {
+	return s.unstageFile(path, oldPath)
 }
 
 func TestStageFileShortcutUsesFocusedSelection(t *testing.T) {
@@ -55,6 +65,11 @@ func TestStageFileShortcutUsesFocusedSelection(t *testing.T) {
 			if focus == paneTree {
 				want, old = "b.go", "old.go"
 			}
+			other := "b.go"
+			if want == "b.go" {
+				other = "a.go"
+			}
+			m.store.Add(annotation.Annotation{File: other, Line: 3, Comment: "not the staging target"})
 			calls := 0
 			m.live.stager = stagerStub{file: func(path, oldPath string) error {
 				calls++
@@ -95,7 +110,7 @@ func TestStageFileGuards(t *testing.T) {
 		{"loading", func(m *Model) { m.file.requestedPath = "a.go" }, "Wait for the diff"},
 		{"sending", func(m *Model) { m.live.operation = liveSending }, "Wait for feedback"},
 		{"unconfirmed", func(m *Model) { m.live.pending = []annotation.Annotation{{File: "a.go"}} }, "Retry the unconfirmed"},
-		{"annotations", func(m *Model) { m.store.Add(annotation.Annotation{File: "other.go", Line: 1, Comment: "keep"}) }, "Send or remove annotations"},
+		{"annotations", func(m *Model) { m.store.Add(annotation.Annotation{File: "a.go", Line: 1, Comment: "keep"}) }, "Send or remove annotations"},
 		{"no selection", func(m *Model) { m.file.name = "" }, "Select a file"},
 		{"directory", func(m *Model) { m.file.name = "folder" }, "Select a file"},
 	} {
@@ -111,6 +126,84 @@ func TestStageFileGuards(t *testing.T) {
 	}
 }
 
+func TestStagePreservesUnrelatedFeedback(t *testing.T) {
+	for _, staged := range []bool{false, true} {
+		for _, action := range []keymap.Action{keymap.ActionStageHunk, keymap.ActionStageFile} {
+			for _, retry := range []bool{false, true} {
+				m := splitTestModel(t)
+				m.tree.(*workingTree).SelectEntry(diff.FileEntry{Path: "partial.go", Staged: staged})
+				model, _ := m.handleFileLoaded(m.loadFileDiff("partial.go")().(fileLoadedMsg))
+				m = model.(Model)
+				m.layout.focus = paneDiff
+				m.nav.diffCursor = len(m.file.lines) - 1
+				note := annotation.Annotation{File: "other.go", Line: 7, Type: "+", Comment: "keep this feedback"}
+				m.store.Add(note)
+				snapshot := m.store.FormatOutput()
+				sender := &feedbackStub{}
+				m.live.sender = sender
+				if retry {
+					sender.err = errors.New("unconfirmed delivery")
+					model, send := m.sendFeedback()
+					m = model.(Model)
+					model, _ = m.Update(send())
+					m = model.(Model)
+				}
+				calls := 0
+				file := func(path, old string) error { require.Equal(t, "partial.go", path); calls++; return nil }
+				hunk := func(path string, _ []diff.DiffLine, _ int) error { return file(path, "") }
+				stub := stagerStub{file: file, hunk: hunk}
+				if staged {
+					stub = stagerStub{unstageFile: file, unstageHunk: hunk}
+				}
+				m.live.stager = stub
+				model, stage := m.handleStage(action)
+				m = model.(Model)
+				require.NotNil(t, stage, "unrelated notes must not block either index operation")
+				model, reload := m.Update(stage())
+				m = model.(Model)
+				require.NotNil(t, reload)
+				require.Equal(t, 1, calls)
+				model, _ = m.handleFilesLoaded(m.loadFiles()().(filesLoadedMsg))
+				m = model.(Model)
+				model, _ = m.handleFileLoaded(m.loadFileDiff(m.tree.SelectedFile())().(fileLoadedMsg))
+				m = model.(Model)
+				require.Equal(t, []annotation.Annotation{note}, m.store.Get("other.go"))
+				if retry {
+					require.Equal(t, []annotation.Annotation{note}, m.live.pending)
+					require.Equal(t, snapshot, m.live.content)
+				}
+				// The original payload must still be deliverable after the reload.
+				sender.err = nil
+				model, send := m.sendFeedback()
+				m = model.(Model)
+				require.NotNil(t, send)
+				model, _ = m.Update(send())
+				m = model.(Model)
+				require.Equal(t, snapshot, sender.content[len(sender.content)-1])
+				require.Zero(t, m.store.Count())
+			}
+		}
+	}
+}
+
+func TestStageFileGuardsRenameOrigin(t *testing.T) {
+	for _, retry := range []bool{false, true} {
+		m := splitTestModel(t)
+		m.tree.(*workingTree).Rebuild([]diff.FileEntry{{Path: "renamed.go", OldPath: "old.go", Status: diff.FileRenamed, Staged: true}})
+		m.layout.focus = paneTree
+		m.live.stager = stagerStub{unstageFile: func(string, string) error { t.Fatal("must protect rename origin"); return nil }}
+		note := annotation.Annotation{File: "old.go", Line: 2, Comment: "preserve"}
+		if retry {
+			m.live.pending = []annotation.Annotation{note}
+		} else {
+			m.store.Add(note)
+		}
+		model, cmd := m.handleStage(keymap.ActionStageFile)
+		require.Nil(t, cmd)
+		require.Contains(t, model.(Model).output.hint, "for this file before unstaging")
+	}
+}
+
 func TestStageHunkReportsActualBlocker(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -122,16 +215,16 @@ func TestStageHunkReportsActualBlocker(t *testing.T) {
 		{"diff loading", func(m *Model) { m.file.requestedPath = "other.go" }, "Wait for the diff to finish loading before staging"},
 		{"sending", func(m *Model) { m.live.operation = liveSending }, "Wait for feedback to finish sending before staging"},
 		{"unconfirmed", func(m *Model) {
-			m.live.pending = []annotation.Annotation{{File: "other.go", Line: 7, Comment: "retry me"}}
-		}, "Retry the unconfirmed feedback before staging"},
-		{"annotations in other files", func(m *Model) {
-			m.store.Add(annotation.Annotation{File: "other.go", Line: 7, Comment: "keep me"})
+			m.live.pending = []annotation.Annotation{{File: "a.go", Line: 7, Comment: "retry me"}}
+		}, "Retry the unconfirmed feedback for this file before staging"},
+		{"annotations in selected file", func(m *Model) {
+			m.store.Add(annotation.Annotation{File: "a.go", Line: 7, Comment: "keep me"})
 			m.store.Add(annotation.Annotation{File: "third.go", Line: 9, Comment: "keep me too"})
-		}, "Send or remove annotations before staging (2 pending across all files)"},
+		}, "Send or remove annotations for this file before staging (1 pending)"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := testModel([]string{"a.go"}, nil)
-			m.layout.focus = paneDiff
+			m.layout.focus, m.file.name = paneDiff, "a.go"
 			m.live.stager = stagerStub{hunk: func(string, []diff.DiffLine, int) error {
 				t.Fatal("blocked shortcut must not stage")
 				return nil
@@ -263,6 +356,53 @@ func TestStageReloadPreservesPosition(t *testing.T) {
 			require.Nil(t, m.live.stageAnchor)
 		})
 	}
+}
+
+func TestUnstageHunkPreservesHEADPosition(t *testing.T) {
+	m := splitTestModel(t)
+	m.layout.focus = paneDiff
+	var before, after []diff.DiffLine
+	for n := 1; n <= 60; n++ {
+		line := diff.DiffLine{OldNum: n, NewNum: n + 5, Content: "context", ChangeType: diff.ChangeContext}
+		after = append(after, line)
+		if n == 30 {
+			for added := 35; added <= 37; added++ {
+				before = append(before, diff.DiffLine{NewNum: added, Content: "inserted", ChangeType: diff.ChangeAdd})
+			}
+		}
+		if n >= 30 {
+			line.NewNum += 3
+		}
+		before = append(before, line)
+	}
+	m.file.lines = before
+	m.nav.diffCursor = 31 // final inserted line; follow the next HEAD line, 30
+	m.layout.viewport.Height = 12
+	m.layout.viewport.SetContent(m.renderDiff())
+	m.layout.viewport.SetYOffset(m.cursorViewportY() - 4)
+	calls := 0
+	m.live.stager = stagerStub{unstageHunk: func(path string, lines []diff.DiffLine, cursor int) error {
+		calls++
+		require.Equal(t, "partial.go", path)
+		require.Equal(t, 37, lines[cursor].NewNum)
+		return nil
+	}}
+	model, unstage := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	m = model.(Model)
+	require.NotNil(t, unstage)
+	require.Zero(t, calls)
+	model, reload := m.Update(unstage())
+	m = model.(Model)
+	require.NotNil(t, reload)
+	require.Equal(t, 1, calls)
+	require.Equal(t, "Hunk unstaged", m.output.hint)
+	model, _ = m.handleFilesLoaded(m.loadFiles()().(filesLoadedMsg))
+	m = model.(Model)
+	model, _ = m.handleFileLoaded(fileLoadedMsg{file: "partial.go", seq: m.file.loadSeq, staged: true, lines: after})
+	m = model.(Model)
+	require.Equal(t, 30, m.file.lines[m.nav.diffCursor].OldNum)
+	require.Equal(t, 4, m.cursorViewportY()-m.layout.viewport.YOffset)
+	require.True(t, m.file.staged)
 }
 
 func TestStageAnchorDoesNotLeakToOtherLoads(t *testing.T) {

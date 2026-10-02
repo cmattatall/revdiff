@@ -47,7 +47,6 @@ func TestDefault_allExpectedBindings(t *testing.T) {
 		{"j", ActionDown}, {"k", ActionUp}, {"down", ActionDown}, {"up", ActionUp},
 		{"pgdown", ActionPageDown}, {"pgup", ActionPageUp},
 		{"ctrl+d", ActionHalfPageDown}, {"ctrl+u", ActionHalfPageUp},
-		{"home", ActionHome}, {"end", ActionEnd},
 		{"left", ActionScrollLeft}, {"right", ActionScrollRight},
 		{"J", ActionScrollDiffDown}, {"K", ActionScrollDiffUp},
 		{"n", ActionNextItem}, {"N", ActionPrevItem}, {"p", ActionPrevItem},
@@ -83,8 +82,6 @@ func TestDefault_specialKeysMatchBubbletea(t *testing.T) {
 	}{
 		{tea.KeyPgDown, "pgdown"},
 		{tea.KeyPgUp, "pgup"},
-		{tea.KeyHome, "home"},
-		{tea.KeyEnd, "end"},
 		{tea.KeyUp, "up"},
 		{tea.KeyDown, "down"},
 		{tea.KeyLeft, "left"},
@@ -159,7 +156,7 @@ func TestStageFileBinding(t *testing.T) {
 	for _, section := range km.HelpSections() {
 		for _, entry := range section.Entries {
 			if entry.Action == ActionStageFile {
-				require.Equal(t, "stage entire selected file (Git working tree)", entry.Description)
+				require.Equal(t, "stage/unstage entire selected file (Git working tree)", entry.Description)
 				return
 			}
 		}

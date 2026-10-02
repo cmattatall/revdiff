@@ -175,6 +175,11 @@ across files by concern to keep files under ~500 lines:
   pauses live refresh and renders a four-row bordered command pane above the footer,
   with separate input and help/error rows, even with the status bar hidden. Search uses the
   same pane frame and height accounting while retaining its own matching and query-history state.
+- **`command_history.go`** — bounded in-session command history and Ctrl+R case-insensitive
+  subsequence search. The command pane expands into a selectable list with a filter input;
+  its visible window follows the selection without separate scroll state.
+  Recalled commands return to the palette for editing
+  before execution; command history is independent of text-search history.
 - **`mouse.go`** — mouse event routing: `handleMouse` dispatch, `hitTest` pane classification
   (`hitZone`), wheel/left-click helpers (`clickTree`, `clickDiff`), layout helpers
   (`statusBarHeight`, `diffTopRow`, `treeTopRow`). Diff-pane wheel events defer both the cursor pin

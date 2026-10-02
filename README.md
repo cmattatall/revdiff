@@ -90,8 +90,8 @@ Run `./plugins/amp/install.sh` from this fork's repository root (requires Go). I
 1. Open an Amp thread in your Git checkout. The plugin registers the session automatically, without posting a setup message. After reloading the plugin in an existing thread, registration happens when you next send a prompt or choose **revdiff: connect**.
 2. Run `revdiff` in another terminal pane in the **same directory**. It automatically connects when exactly one live Amp session matches. The default working-tree view includes staged, unstaged, and untracked files. Type `:harness connect amp` to retry discovery manually without sending annotations. If multiple sessions match, disconnect the extras or use **Ctrl+O → revdiff: connect** in the intended Amp thread to get an explicit `--amp` command.
 3. Annotate with `Enter` or `a` (line) and `A` (file). Press `O` (Shift+O) or run `:harness send` to send feedback to that Amp thread without leaving revdiff. Amp receives it as a steering message, including while working.
-4. Press `s` on an added/removed line to stage that contiguous change. Hunk staging supports modified, tracked regular text files selected from the **Changes** region; new/deleted files, renames, binary files, mode changes, and ref comparisons are not supported. Hunk staging changes the index, never the working file, and rejects stale displayed changes.
-5. Press `S` (Shift+S) to stage the entire selected file from the tree or diff pane (`stage_file`, rebindable). This stages the current working-tree version, including edits since the last render, like `git add`. It also supports new/deleted files, renames, binaries, symlinks, and mode changes; directories and submodules are excluded. Both staging shortcuts require a selection from **Changes** and no pending annotations. Neither changes the working file.
+4. Press `s` on an added/removed line to stage that contiguous change from **Changes**, or unstage it from **Staged**. Hunk operations support modified, tracked regular text files; new/deleted files, renames, binary files, mode changes, and ref comparisons are not supported. They change the index, never the working file, and reject stale displayed changes.
+5. Press `S` (Shift+S) to stage or unstage the entire selected file from the tree or diff pane (`stage_file`, rebindable). In **Changes**, this stages the current working-tree version, including edits since the last render, like `git add`. In **Staged**, it restores the index to HEAD (new files become untracked), without changing working files. Whole-file operations support new/deleted files, renames, binaries, symlinks, and mode changes. Both shortcuts require no pending annotations on the selected file or its rename origin. Annotations on other files, including unconfirmed sends, remain intact and do not block staging or unstaging; an active send must finish first.
 
 The bottom panel shows **Harness: waiting** until a session is found, then **Harness (amp): &lt;title&gt; &lt;thread ID&gt;**. The identity itself indicates the connection; there is no separate "connected" label. Each harness supplies its own name and display text. Revdiff checks once per second while waiting, even if you are writing annotations; `O` also retries discovery. Connecting never sends comments automatically. **sending** and **unconfirmed** appear beside the identity during an active send or after an unacknowledged delivery; **Harness: unavailable** indicates a discovery error. This row remains visible during input and status messages, unless the status bar is disabled.
 
@@ -746,7 +746,7 @@ In the Claude Code and Codex plugins, you can also tell the agent to use a past 
 
 ### Key Bindings
 
-In Git working-tree reviews, the sidebar has two fixed-height regions separated by a blank row: **Staged** above **Changes** (unstaged and untracked files). A partially staged file appears in both; selecting it shows that region's diff. Use `j`/`k` to move between the regions or click a file. Each region scrolls independently. Stage from Changes with `s` (hunk) or `S` (file). Historical comparisons and non-Git views keep a single tree.
+In Git working-tree reviews, the sidebar has two fixed-height regions separated by a blank row: **Staged** above **Changes** (unstaged and untracked files). A partially staged file appears in both; selecting it shows that region's diff. Use `j`/`k` to move between the regions or click a file. Each region scrolls independently. Use `s` (hunk) or `S` (file) to stage from Changes or unstage from Staged. The palette shows `:stage hunk` / `:stage file` in Changes and `:unstage hunk` / `:unstage file` in Staged. Whole-file operations from the diff return focus to the next file in the same tree section; hunk operations preserve your position where possible. Historical comparisons and non-Git views keep a single tree.
 
 **Navigation:**
 
@@ -756,13 +756,13 @@ In Git working-tree reviews, the sidebar has two fixed-height regions separated 
 | `<N>j` / `<N>k` | Move N cursor positions down/up in the file pane (e.g. `5j`; no preset required) |
 | `h/l` | Switch between file tree and diff pane |
 | left/right | Horizontal scroll in diff pane (truncated lines show `«` / `»` overflow indicators at the edges) |
-| `Tab` | Switch between file tree and diff pane |
+| `Tab` | Switch focus to next pane |
 | `PgDown/PgUp` | Page scroll in file tree and diff pane |
 | `Ctrl+d/Ctrl+u` | Half-page scroll in file tree and diff pane |
 | `J/K` | Scroll diff viewport (works from either pane) |
-| `Home/End` | Jump to first/last item |
+| `:$` then `Enter` | Jump to the last source line shown in the current file |
 | `:` | Open command palette (action name or source line; `Tab` completes, arrows browse) |
-| `:<line>` then `Enter` | Jump to a source line in the displayed file (`Esc` cancels) |
+| `:<line>` then `Enter` | Jump to a source line in the displayed file (`:1` for the first line; `Esc` cancels) |
 | `Enter` | Switch to diff pane (tree) / start annotation (diff pane) |
 | `n/p` | Next/previous changed file; next/prev header in markdown TOC mode (n = next match when search active) |
 | `P` | Open the file picker |
@@ -776,6 +776,10 @@ Press `L` in the file viewer to show line numbers, or launch with `--line-number
 Pressing `:` opens a dedicated bordered command palette above the footer. Run any keymap action by name, including unbound actions: `:stage_file`, `:stage_hunk`, `:reload`, `:toggle_line_numbers`, `:help`, or `:quit`. Type part of a name or description to filter suggestions, use `↑`/`↓` to browse, then `Tab` to complete. `Enter` runs a complete action name, line number, or the sole matching suggestion: both `:set num` and `:set numb` run `:set number` without Tab. Ambiguous and unknown names stay editable. Actions use the focused pane and retain their normal availability checks and confirmations. `:open_editor` opens the annotation at the focused diff line in `$EDITOR`.
 
 Matching prefixes show a muted inline completion: typing `:h` displays `:help` with only `elp` dimmed. Arrow-key browsing changes the suggestion; `Tab` accepts it. Suggestions never change the typed command until accepted.
+
+The palette remembers the last 50 distinct executed commands for the current session. `Ctrl+R` opens a selectable history list, newest first. The input only fuzzy-filters the list, case-insensitively (`vwd` matches `view word diff`). Use `↑`/`↓`, `PgUp`/`PgDn`, or repeat `Ctrl+R` to browse results; `Enter` or `Tab` recalls the selected command without executing it. Press `Enter` again to run it. `Esc` returns to your previous input; `Ctrl+C` closes the palette. History is not saved across restarts.
+
+Annotation commands are grouped under `:annotate`: `:annotate file`, `:annotate hunk`, and `:annotate list`. `:annotate` (or `:a`) annotates the current change hunk when the diff cursor is on one; otherwise it annotates the file, including from tree focus. Explicit hunk annotation requires a changed line. Hunk ranges use the new-code lines for replacements/additions and old-code lines for deletion-only changes. No keyword is needed in the comment. The existing `a`/`Enter` line-annotation shortcuts are unchanged.
 
 `:h` is also an explicit alias for `:help`, so Enter opens help directly. The command palette works from either pane, including while files are loading.
 
@@ -818,8 +822,8 @@ The `/` prompt and search-history help appear above the footer, including with `
 | `}` / `{` | Jump to next/previous annotation (always crosses file boundaries; silent no-op at the first/last annotation) |
 | `d` | Delete annotation under cursor |
 | `O` | Send feedback to connected Amp, or export via `--output` / `--post-flush-command` |
-| `s` | Stage change under cursor (modified tracked text, Git working tree) |
-| `S` (Shift+S) | Stage entire selected file (Git working tree, `stage_file` — rebindable) |
+| `s` | Stage/unstage change under cursor (modified tracked text, Git working tree) |
+| `S` (Shift+S) | Stage/unstage entire selected file (Git working tree, `stage_file` — rebindable) |
 | `Alt+E` (during annotation input) | Open `$EDITOR` for multi-line annotation (`open_editor` — rebindable) |
 | `Esc` | Cancel annotation input |
 

@@ -17,10 +17,13 @@ import (
 
 // commandState holds the action palette and Vim-style source-line jump prompt.
 type commandState struct {
-	active   bool
-	input    textinput.Model
-	err      string
-	selected int
+	active        bool
+	input         textinput.Model
+	err           string
+	selected      int
+	history       []string
+	searchDraft   string
+	historySearch bool
 }
 
 type commandEntry struct {
@@ -33,6 +36,19 @@ type commandEntry struct {
 // Keep related operations together without exposing implementation-style names.
 func (m Model) paletteCommand(action keymap.Action) string {
 	switch action {
+	case keymap.ActionStageHunk, keymap.ActionStageFile:
+		verb, scope := "stage", "hunk"
+		if m.stagedContext() {
+			verb = "unstage"
+		}
+		if action == keymap.ActionStageFile {
+			scope = "file"
+		}
+		return verb + " " + scope
+	case keymap.ActionAnnotateFile:
+		return "annotate file"
+	case keymap.ActionAnnotList:
+		return "annotate list"
 	case keymap.ActionToggleCollapsed:
 		return "view collapsed"
 	case keymap.ActionToggleCompact:
@@ -68,6 +84,8 @@ func (m Model) paletteCommand(action keymap.Action) string {
 
 func (m Model) commandEntries() []commandEntry {
 	entries := []commandEntry{
+		{"annotate", "annotate the selected hunk or file (:a)", ""},
+		{"annotate hunk", "annotate the change hunk under the diff cursor", ""},
 		{"q", "quit", keymap.ActionQuit},
 		{"w", "flush annotations to output or harness", keymap.ActionFlushOutput},
 		{"harness send", "send annotations to the connected harness", keymap.ActionFlushOutput},
@@ -109,7 +127,7 @@ func (m *Model) startCommand() tea.Cmd {
 	ti.CharLimit = 128
 	ti.Width = max(1, m.layout.width-5) // borders, padding, and ':'
 	cmd := ti.Focus()
-	m.command = commandState{active: true, input: ti}
+	m.command = commandState{active: true, input: ti, history: m.command.history}
 	// The command pane remains independent of --no-status-bar.
 	m.layout.viewport.Height = m.paneHeight() - 1
 	return cmd
@@ -122,7 +140,17 @@ func (m *Model) closeCommand() {
 }
 
 func (m Model) handleCommandKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.command.historySearch {
+		return m.handleCommandHistoryKey(msg)
+	}
 	switch msg.Type {
+	case tea.KeyCtrlR:
+		m.command.historySearch = true
+		m.command.searchDraft = m.command.input.Value()
+		m.command.selected = 0
+		m.command.err = ""
+		m.layout.viewport.Height = m.paneHeight() - 1
+		return m, nil
 	case tea.KeyEsc, tea.KeyCtrlC:
 		m.closeCommand()
 		return m, nil
@@ -169,6 +197,9 @@ func (m *Model) submitCommand() (tea.Model, tea.Cmd) {
 	if value == "h" {
 		value = "help"
 	}
+	if value == "a" {
+		value = "annotate"
+	}
 	if value == "" {
 		m.closeCommand()
 		return *m, nil
@@ -181,18 +212,46 @@ func (m *Model) submitCommand() (tea.Model, tea.Cmd) {
 			m.command.err = "Unknown or unavailable harness in this review: " + name
 			return *m, nil
 		}
+		m.command.remember(value)
 		m.closeCommand()
 		return m.connectHarness(name)
 	}
 	for _, entry := range m.commandEntries() {
 		// Accept exact keybinding IDs too, but keep them out of suggestions.
 		if entry.name == value || (string(entry.action) == value && entry.name == m.paletteCommand(entry.action)) {
+			if entry.name == "annotate" || entry.name == "annotate file" || entry.name == "annotate hunk" {
+				if !m.filesLoaded || m.file.requestedPath != "" {
+					m.command.err = "Wait for the selected file to load"
+					return *m, nil
+				}
+				if m.file.name == "" {
+					m.command.err = "No file selected"
+					return *m, nil
+				}
+				if _, ok := m.cursorHunkStart(); entry.name == "annotate hunk" && (!ok || m.layout.focus != paneDiff) {
+					m.command.err = "Move the diff cursor onto a change hunk"
+					return *m, nil
+				}
+			}
 			// Close first: live operations must not see the palette as a modal
 			// blocker, and newly opened overlays need the restored pane height.
+			m.command.remember(entry.name)
 			m.closeCommand()
 			// Vim's set/unset commands are idempotent, unlike the underlying
 			// toggle actions. Still use normal dispatch when a change is needed.
 			switch entry.name {
+			case "annotate", "annotate file", "annotate hunk":
+				_, onHunk := m.cursorHunkStart()
+				hunk := entry.name == "annotate hunk" || (entry.name == "annotate" && m.layout.focus == paneDiff && onHunk)
+				m.layout.focus = paneDiff
+				var cmd tea.Cmd
+				if hunk {
+					cmd = m.startHunkAnnotation()
+				} else {
+					cmd = m.startFileAnnotation()
+				}
+				m.layout.viewport.SetContent(m.renderDiff())
+				return *m, cmd
 			case "focus diff", "fd":
 				m.layout.focus = paneDiff
 				return *m, nil
@@ -219,8 +278,8 @@ func (m *Model) submitCommand() (tea.Model, tea.Cmd) {
 		}
 	}
 	n, err := strconv.Atoi(value)
-	if err != nil || n < 1 || strings.Trim(value, "0123456789") != "" {
-		m.command.err = "Unknown command; Tab completes action names"
+	if value != "$" && (err != nil || n < 1 || strings.Trim(value, "0123456789") != "") {
+		m.command.err = "Unknown command"
 		if strings.Trim(value, "0123456789+-") == "" {
 			m.command.err = "Enter a positive line number"
 		}
@@ -230,11 +289,29 @@ func (m *Model) submitCommand() (tea.Model, tea.Cmd) {
 		m.command.err = "Wait for the selected file to load"
 		return *m, nil
 	}
+	if value == "$" {
+		deleted := m.tree.FileStatus(m.file.name) == diff.FileDeleted
+		for _, line := range m.file.lines {
+			if line.ChangeType == diff.ChangeDivider {
+				continue
+			}
+			number := line.NewNum
+			if deleted {
+				number = line.OldNum
+			}
+			n = max(n, number)
+		}
+		if n == 0 {
+			m.command.err = "No source lines are shown"
+			return *m, nil
+		}
+	}
 	idx := m.sourceLineIndex(n)
 	if idx < 0 {
 		m.command.err = fmt.Sprintf("Line %d is not shown", n)
 		return *m, nil
 	}
+	m.command.remember(value)
 	m.closeCommand()
 	m.layout.focus = paneDiff
 	m.annot.cursorOnAnnotation = false
@@ -247,8 +324,15 @@ func (m *Model) submitCommand() (tea.Model, tea.Cmd) {
 
 func (m Model) commandMatches() []commandEntry {
 	query := strings.ToLower(strings.TrimSpace(m.command.input.Value()))
+	if query == "$" {
+		return nil // source-line address, not a search for $EDITOR commands
+	}
 	var matches []commandEntry
 	for _, entry := range m.commandEntries() {
+		// A recalled stage command must not complete to its opposite operation.
+		if strings.HasPrefix(query, "stage ") && strings.HasPrefix(entry.name, "unstage ") {
+			continue
+		}
 		// Completing an exact name must not replace it with a substring match
 		// (for example, down must not complete to page_down).
 		if entry.name == query {
@@ -293,6 +377,9 @@ func (m Model) sourceLineIndex(n int) int {
 }
 
 func (m Model) commandPaneHeight() int {
+	if m.command.active && m.command.historySearch {
+		return m.commandHistoryRows() + 4 // title, filter, and two borders
+	}
 	if m.command.active || m.search.active {
 		return 4 // input, help/error, and two borders
 	}
@@ -312,19 +399,25 @@ func (m Model) commandPaneView() string {
 		}
 		return m.inputPaneView(input.View(), scope+" · Enter find · ↑↓ history · Esc cancel")
 	}
+	if m.command.historySearch {
+		return m.commandHistoryView()
+	}
 	input.CompletionStyle = input.PlaceholderStyle
-	help := "Enter run/jump · Tab complete · ↑↓ browse · Esc cancel"
+	help := ""
 	if matches := m.commandMatches(); len(matches) > 0 {
 		entry := matches[m.command.selected]
 		// Suggestions are render-only. Tab accepts the same selected action;
 		// moving within the input or scrolling it hides the ghost suffix.
 		input.ShowSuggestions = input.Position() == len([]rune(input.Value())) && ansi.StringWidth(input.Value()) < input.Width
 		input.SetSuggestions([]string{entry.name})
-		help = fmt.Sprintf("%s (%d/%d) · Tab complete · ↑↓ browse · %s",
+		help = fmt.Sprintf("%s (%d/%d) · %s",
 			entry.name, m.command.selected+1, len(matches), entry.description)
 		query := strings.ToLower(strings.TrimSpace(m.command.input.Value()))
-		if len(matches) == 1 || query == entry.name || (query == "h" && entry.name == "help") {
-			help = "Enter run · Esc cancel · " + entry.description
+		if len(matches) == 1 || query == entry.name || (query == "h" && entry.name == "help") || (query == "a" && entry.name == "annotate") {
+			help = entry.description
+		}
+		if query == "" {
+			help = ""
 		}
 	}
 	if m.command.err != "" {

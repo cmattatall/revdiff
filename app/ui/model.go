@@ -546,6 +546,7 @@ type annotationState struct {
 	fileAnnotating     bool            // true when annotating at file level (Line=0)
 	cursorOnAnnotation bool            // true when cursor is on the annotation sub-line (not the diff line)
 	input              textinput.Model // text input for annotations
+	endLine            int             // explicit range end for hunk annotations; 0 for a single line
 	// existingMultiline holds the original multi-line comment of an annotation
 	// being re-edited. textinput's sanitizer collapses \n to space, so pre-filling
 	// via SetValue would silently flatten the stored content. When set, the
@@ -735,7 +736,7 @@ type ModelConfig struct {
 	Feedback             FeedbackSender                            // optional harness connection; enables live refresh
 	DiscoverFeedback     func() (FeedbackSender, error)            // optional lookup until a connection is found
 	Harnesses            map[string]func() (FeedbackSender, error) // named lookups for :harness connect <type>
-	Stager               Stager                                    // optional unstaged Git staging
+	Stager               Stager                                    // optional Git index operations
 	// CommitLog enumerates commits in the current ref range for the info popup's
 	// commit-log section. When nil, NewModel attempts to derive the source by
 	// type-asserting the Renderer against diff.CommitLogger; if the assertion
@@ -1002,22 +1003,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleFeedbackSent(msg)
 	case stagedMsg:
 		m.live.operation = liveIdle
+		verb, result := "Stage", "staged"
+		if msg.unstage {
+			verb, result = "Unstage", "unstaged"
+		}
 		if msg.err != nil {
-			m.output.hint = "Stage failed: " + msg.err.Error()
+			m.output.hint = verb + " failed: " + msg.err.Error()
 			return m, nil
 		}
-		m.output.hint = "Hunk staged"
+		m.output.hint = "Hunk " + result
 		if msg.action == keymap.ActionStageFile {
-			m.output.hint = "File staged"
+			m.output.hint = "File " + result
 		}
 		cmd := m.triggerReload()
 		m.live.stageAnchor = m.captureStageAnchor()
 		if tree, ok := m.tree.(*workingTree); ok && msg.action == keymap.ActionStageFile && m.layout.focus == paneDiff {
-			// Select the successor before rebuilding, while the staged file still
-			// has its place in Changes. Rebuild preserves this selection by path.
-			tree.changes.SelectByPath(m.file.name)
-			tree.changes.StepFile(sidepane.DirectionNext)
-			tree.activeStaged = false
+			// Select the successor in the original section before rebuilding.
+			// Rebuild preserves this selection by path.
+			tree.side(msg.unstage).SelectByPath(m.file.name)
+			tree.side(msg.unstage).StepFile(sidepane.DirectionNext)
+			tree.activeStaged = msg.unstage
 			m.live.stageAnchor = nil
 			if m.layout.treeHidden {
 				m.toggleTreePane()

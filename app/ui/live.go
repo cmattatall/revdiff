@@ -21,10 +21,12 @@ type FeedbackSender interface {
 	DisplayName() string
 }
 
-// Stager stages reviewed hunks or entire current working-tree files.
+// Stager stages or unstages reviewed hunks and entire files.
 type Stager interface {
 	StageHunk(path string, displayed []diff.DiffLine, cursor int) error
 	StageFile(path, oldPath string) error
+	UnstageHunk(path string, displayed []diff.DiffLine, cursor int) error
+	UnstageFile(path, oldPath string) error
 }
 
 type discoveryState int
@@ -59,13 +61,15 @@ type liveState struct {
 	stageAnchor *stageAnchor
 }
 
-// stageAnchor follows the working-tree line, not its changing diff index/type.
+// stageAnchor follows the unchanged side: working-tree lines when staging,
+// HEAD lines when unstaging, rather than the changing diff index/type.
 // seq binds it first to the file-list reload, then to its selected file request.
 type stageAnchor struct {
-	file string
-	seq  uint64
-	line int
-	row  int
+	file   string
+	seq    uint64
+	line   int
+	row    int
+	staged bool
 }
 
 type liveTickMsg struct{}
@@ -76,8 +80,9 @@ type feedbackDiscoveredMsg struct {
 }
 type feedbackSentMsg struct{ err error }
 type stagedMsg struct {
-	action keymap.Action
-	err    error
+	action  keymap.Action
+	unstage bool
+	err     error
 }
 type liveLoadedMsg struct {
 	files filesLoadedMsg
@@ -169,9 +174,13 @@ func (m Model) liveTick() tea.Cmd {
 }
 
 func (m Model) livePaused() bool {
-	return !m.filesLoaded || m.file.requestedPath != "" || m.annot.annotating || m.store.Count() > 0 ||
-		m.live.operation != liveIdle || len(m.live.pending) > 0 || m.search.active ||
-		m.nav.scanKind != treeScanIdle || m.command.active || m.overlay.Active() || m.reload.pending
+	return !m.filesLoaded || m.file.requestedPath != "" || m.store.Count() > 0 ||
+		m.live.operation != liveIdle || len(m.live.pending) > 0 || m.liveInteractionActive()
+}
+
+func (m Model) liveInteractionActive() bool {
+	return m.annot.annotating || m.search.active || m.nav.scanKind != treeScanIdle ||
+		m.command.active || m.overlay.Active() || m.reload.pending
 }
 
 func (m Model) pollLive() (tea.Model, tea.Cmd) {
@@ -278,53 +287,72 @@ func (m Model) handleFeedbackSent(msg feedbackSentMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) stagedContext() bool {
+	return m.cfg.workingTree && ((m.layout.focus == paneTree && m.selectedTreeStaged()) || (m.layout.focus == paneDiff && m.file.staged))
+}
+
 func (m Model) handleStage(action keymap.Action) (tea.Model, tea.Cmd) {
 	if m.live.stager == nil {
-		m.output.hint = "Staging requires an unstaged Git working-tree review"
+		m.output.hint = "Staging requires a Git working-tree review"
 		return m, nil
 	}
-	if m.cfg.workingTree && ((m.layout.focus == paneTree && m.selectedTreeStaged()) || (m.layout.focus == paneDiff && m.file.staged)) {
-		m.output.hint = "Staging is available from Changes"
-		return m, nil
+	unstage := m.stagedContext()
+	operation, progress := "staging", "Staging"
+	if unstage {
+		operation, progress = "unstaging", "Unstaging"
 	}
-	// Explain the actual blocker instead of treating every refresh pause as an
-	// annotation problem. Staging reloads the diff, so pending notes stay guarded.
+	path := m.file.name
+	if action == keymap.ActionStageFile && m.layout.focus == paneTree {
+		path = m.tree.SelectedFile()
+	}
+	oldPath := m.tree.OldPath(path)
+	// Index edits change only these paths. The reload preserves the store and
+	// retry snapshot, so annotations on unrelated files remain safe to send.
+	affects := func(a annotation.Annotation) bool { return a.File == path || (oldPath != "" && a.File == oldPath) }
+	notes := len(m.store.Get(path))
+	if oldPath != "" && oldPath != path {
+		notes += len(m.store.Get(oldPath))
+	}
 	switch {
 	case action == keymap.ActionStageHunk && m.layout.focus != paneDiff:
-		m.output.hint = "Focus the diff pane before staging"
+		m.output.hint = "Focus the diff pane before " + operation
 	case !m.filesLoaded || m.file.requestedPath != "":
-		m.output.hint = "Wait for the diff to finish loading before staging"
+		m.output.hint = "Wait for the diff to finish loading before " + operation
 	case m.live.operation == liveSending:
-		m.output.hint = "Wait for feedback to finish sending before staging"
-	case len(m.live.pending) > 0:
-		m.output.hint = "Retry the unconfirmed feedback before staging"
-	case m.store.Count() > 0:
-		m.output.hint = fmt.Sprintf("Send or remove annotations before staging (%d pending across all files)", m.store.Count())
-	case m.livePaused():
-		m.output.hint = "Finish the current interaction before staging"
+		m.output.hint = "Wait for feedback to finish sending before " + operation
+	case slices.ContainsFunc(m.live.pending, affects):
+		m.output.hint = "Retry the unconfirmed feedback for this file before " + operation
+	case notes > 0:
+		m.output.hint = fmt.Sprintf("Send or remove annotations for this file before %s (%d pending)", operation, notes)
+	case m.live.operation != liveIdle || m.liveInteractionActive():
+		m.output.hint = "Finish the current interaction before " + operation
 	default:
 		if action == keymap.ActionStageFile {
-			path := m.file.name
-			if m.layout.focus == paneTree {
-				path = m.tree.SelectedFile()
-			}
 			if path == "" || !slices.Contains(m.tree.VisibleFiles(), path) {
-				m.output.hint = "Select a file before staging"
+				m.output.hint = "Select a file before " + operation
 				return m, nil
 			}
 			m.live.operation = liveStaging
-			m.output.hint = "Staging file"
-			stager, oldPath := m.live.stager, m.tree.OldPath(path)
-			return m, func() tea.Msg { return stagedMsg{action: action, err: stager.StageFile(path, oldPath)} }
+			m.output.hint = progress + " file"
+			stager := m.live.stager
+			update := stager.StageFile
+			if unstage {
+				update = stager.UnstageFile
+			}
+			return m, func() tea.Msg { return stagedMsg{action: action, unstage: unstage, err: update(path, oldPath)} }
 		}
 		if m.tree.FileStatus(m.file.name) != diff.FileModified {
-			m.output.hint = "Hunk staging supports modified tracked text files only"
+			m.output.hint = "Hunk " + operation + " supports modified tracked text files only"
 			return m, nil
 		}
 		m.live.operation = liveStaging
-		m.output.hint = "Staging hunk"
+		m.output.hint = progress + " hunk"
 		stager, path, lines, cursor := m.live.stager, m.file.name, slices.Clone(m.file.lines), m.nav.diffCursor
-		return m, func() tea.Msg { return stagedMsg{action: action, err: stager.StageHunk(path, lines, cursor)} }
+		update := stager.StageHunk
+		if unstage {
+			update = stager.UnstageHunk
+		}
+		return m, func() tea.Msg { return stagedMsg{action: action, unstage: unstage, err: update(path, lines, cursor)} }
 	}
 	return m, nil
 }
@@ -333,17 +361,17 @@ func (m Model) captureStageAnchor() *stageAnchor {
 	if m.nav.diffCursor < 0 || m.nav.diffCursor >= len(m.file.lines) {
 		return nil
 	}
-	a := &stageAnchor{file: m.file.name, seq: m.file.loadSeq, row: m.cursorViewportY() - m.layout.viewport.YOffset}
-	// A removed line has no working-tree number. Follow its replacement or
-	// next surviving line, falling back to the preceding line at EOF.
+	a := &stageAnchor{file: m.file.name, seq: m.file.loadSeq, row: m.cursorViewportY() - m.layout.viewport.YOffset, staged: m.file.staged}
+	// Follow the next surviving line when the cursor has no number on the
+	// stable side, falling back to the preceding line at EOF.
 	for i := m.nav.diffCursor; i < len(m.file.lines); i++ {
-		if line := m.file.lines[i].NewNum; line > 0 {
+		if line := a.lineNumber(m.file.lines[i]); line > 0 {
 			a.line = line
 			return a
 		}
 	}
 	for i := m.nav.diffCursor - 1; i >= 0; i-- {
-		if line := m.file.lines[i].NewNum; line > 0 {
+		if line := a.lineNumber(m.file.lines[i]); line > 0 {
 			a.line = line
 			break
 		}
@@ -351,14 +379,22 @@ func (m Model) captureStageAnchor() *stageAnchor {
 	return a
 }
 
+func (a stageAnchor) lineNumber(line diff.DiffLine) int {
+	if a.staged {
+		return line.OldNum
+	}
+	return line.NewNum
+}
+
 func (m *Model) applyStageAnchor(a *stageAnchor) {
 	nearest := -1
 	for i, line := range m.file.lines {
-		if line.NewNum <= 0 {
+		n := a.lineNumber(line)
+		if n <= 0 {
 			continue
 		}
-		distance := max(line.NewNum-a.line, a.line-line.NewNum)
-		if nearest < 0 || distance < max(m.file.lines[nearest].NewNum-a.line, a.line-m.file.lines[nearest].NewNum) {
+		distance := max(n-a.line, a.line-n)
+		if nearest < 0 || distance < max(a.lineNumber(m.file.lines[nearest])-a.line, a.line-a.lineNumber(m.file.lines[nearest])) {
 			nearest = i
 		}
 	}

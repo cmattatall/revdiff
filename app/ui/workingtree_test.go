@@ -165,10 +165,18 @@ func TestWorkingTreeSearchAndReviewedStateUseBothSides(t *testing.T) {
 
 func TestWorkingTreeStagingAndUntrackedReplacement(t *testing.T) {
 	m := splitTestModel(t)
-	m.live.stager = stagerStub{file: func(string, string) error { t.Fatal("index entry must not be restaged"); return nil }}
+	calls := 0
+	m.live.stager = stagerStub{unstageFile: func(path, oldPath string) error {
+		calls++
+		require.Equal(t, "partial.go", path)
+		return nil
+	}}
 	model, cmd := m.handleStage(keymap.ActionStageFile)
-	require.Nil(t, cmd)
-	require.Contains(t, model.(Model).output.hint, "Changes")
+	require.NotNil(t, cmd)
+	require.Zero(t, calls)
+	require.True(t, cmd().(stagedMsg).unstage)
+	require.Equal(t, 1, calls)
+	require.Equal(t, "Unstaging file", model.(Model).output.hint)
 	m.loadUntracked = func() ([]string, error) { return []string{"replacement.go"}, nil }
 	m.diffRenderer.(*mocks.RendererMock).ChangedFilesFunc = func(_ string, staged bool) ([]diff.FileEntry, error) {
 		if staged {
@@ -188,23 +196,28 @@ func TestWholeFileStagingReturnsToNextChange(t *testing.T) {
 	for _, tc := range []struct {
 		name, path, want string
 		hidden, fail     bool
+		unstage          bool
 	}{
 		{name: "middle file", path: "b.go", want: "c.go"},
 		{name: "last file wraps", path: "c.go", want: "a.go"},
 		{name: "hidden tree reopens", path: "b.go", want: "c.go", hidden: true},
 		{name: "failed stage stays put", path: "b.go", want: "b.go", fail: true},
+		{name: "unstage middle file", path: "b.go", want: "c.go", unstage: true},
+		{name: "unstage last file wraps", path: "c.go", want: "a.go", unstage: true},
+		{name: "unstage hidden tree reopens", path: "b.go", want: "c.go", unstage: true, hidden: true},
+		{name: "failed unstage stays put", path: "b.go", want: "b.go", unstage: true, fail: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := splitTestModel(t)
 			entries := []diff.FileEntry{
-				{Path: tc.path, Status: diff.FileModified, Staged: true},
-				{Path: "a.go", Status: diff.FileModified},
-				{Path: "b.go", Status: diff.FileModified},
-				{Path: "c.go", Status: diff.FileModified},
+				{Path: tc.path, Status: diff.FileModified, Staged: !tc.unstage},
+				{Path: "a.go", Status: diff.FileModified, Staged: tc.unstage},
+				{Path: "b.go", Status: diff.FileModified, Staged: tc.unstage},
+				{Path: "c.go", Status: diff.FileModified, Staged: tc.unstage},
 			}
 			model, _ := m.handleFilesLoaded(filesLoadedMsg{seq: m.filesLoadSeq, entries: entries})
 			m = model.(Model)
-			m.tree.(*workingTree).SelectEntry(diff.FileEntry{Path: tc.path})
+			m.tree.(*workingTree).SelectEntry(diff.FileEntry{Path: tc.path, Staged: tc.unstage})
 			model, load := m.loadSelectedIfChanged()
 			m = model.(Model)
 			model, _ = m.Update(load())
@@ -213,13 +226,18 @@ func TestWholeFileStagingReturnsToNextChange(t *testing.T) {
 			if tc.hidden {
 				m.toggleTreePane()
 			}
-			m.live.stager = stagerStub{file: func(path, _ string) error {
+			update := func(path, _ string) error {
 				require.Equal(t, tc.path, path)
 				if tc.fail {
 					return errors.New("index locked")
 				}
 				return nil
-			}}
+			}
+			stub := stagerStub{file: update}
+			if tc.unstage {
+				stub.file, stub.unstageFile = nil, update
+			}
+			m.live.stager = stub
 			model, stage := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'S'}})
 			m = model.(Model)
 			require.NotNil(t, stage)
@@ -234,14 +252,14 @@ func TestWholeFileStagingReturnsToNextChange(t *testing.T) {
 			require.NotNil(t, reload)
 			var refreshed []diff.FileEntry
 			for _, entry := range entries {
-				if entry.Staged || entry.Path != tc.path {
+				if entry.Staged != tc.unstage || entry.Path != tc.path {
 					refreshed = append(refreshed, entry)
 				}
 			}
 			model, load = m.handleFilesLoaded(filesLoadedMsg{seq: m.filesLoadSeq, entries: refreshed})
 			m = model.(Model)
 			require.Equal(t, tc.want, m.tree.SelectedFile(), "advance from the old position, not the reset tree cursor")
-			require.False(t, m.selectedTreeStaged(), "stay in Changes rather than selecting the newly staged copy")
+			require.Equal(t, tc.unstage, m.selectedTreeStaged(), "stay in the original section")
 			require.NotNil(t, load)
 			model, _ = m.Update(load())
 			m = model.(Model)

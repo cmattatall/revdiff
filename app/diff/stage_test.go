@@ -88,6 +88,23 @@ func TestGitStageFileKinds(t *testing.T) {
 				}
 				require.True(t, strings.HasPrefix(entry, mode))
 			}
+			workingBefore, err := g.runGit("diff", "HEAD", "--binary", "--no-renames")
+			require.NoError(t, err)
+			require.NoError(t, g.UnstageFile(path, oldPath))
+			staged, err := g.runGit("diff", "--cached")
+			require.NoError(t, err)
+			require.Empty(t, staged)
+			// New files become untracked after unstaging; compare their bytes
+			// separately because git diff omits untracked paths.
+			if kind == "untracked" || kind == "renamed" {
+				data, err := os.ReadFile(filepath.Join(root, path))
+				require.NoError(t, err)
+				require.Equal(t, want, string(data))
+			} else {
+				workingAfter, err := g.runGit("diff", "HEAD", "--binary", "--no-renames")
+				require.NoError(t, err)
+				require.Equal(t, workingBefore, workingAfter, "unstaging must not touch working files or modes")
+			}
 		})
 	}
 }
@@ -156,4 +173,94 @@ func TestGitStageHunkRejectsUnseenEdit(t *testing.T) {
 	indexed, err := g.runGit("show", ":file.txt")
 	require.NoError(t, err)
 	require.Equal(t, "before\n", indexed)
+}
+
+func TestGitUnstageHunk(t *testing.T) {
+	for _, name := range []string{"notes.txt", ":(glob)*.txt", "space and \"quote\".txt"} {
+		t.Run(name, func(t *testing.T) {
+			root := setupTestRepo(t)
+			old := "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten"
+			staged := "one\ninsert A\ninsert B\ntwo\nthree\nfour\nfive\nsix\nseven\nEIGHT\nnine\nTEN"
+			writeFile(t, root, name, old)
+			writeFile(t, root, "other.txt", "other original\n")
+			gitCmd(t, root, "add", ".")
+			gitCmd(t, root, "commit", "-m", "baseline")
+			writeFile(t, root, name, staged)
+			writeFile(t, root, "other.txt", "other staged\n")
+			gitCmd(t, root, "add", ".")
+			working := "unrelated unstaged edit\n" + staged
+			writeFile(t, root, name, working)
+			g := NewGit(root)
+			lines, err := g.FileDiff(FileDiffRequest{Path: name, Staged: true})
+			require.NoError(t, err)
+			cursor := slices.IndexFunc(lines, func(l DiffLine) bool { return l.Content == "insert B" })
+			require.NoError(t, g.UnstageHunk(name, lines, cursor))
+			indexed, err := g.runGit("show", ":"+name)
+			require.NoError(t, err)
+			require.Equal(t, "one\ntwo\nthree\nfour\nfive\nsix\nseven\nEIGHT\nnine\nTEN", indexed)
+			require.ErrorContains(t, g.UnstageHunk(name, lines, cursor), "changed since display")
+			// Remove the remaining hunks in reverse order, including EOF without a newline.
+			for _, text := range []string{"TEN", "EIGHT"} {
+				lines, err = g.FileDiff(FileDiffRequest{Path: name, Staged: true})
+				require.NoError(t, err)
+				cursor = slices.IndexFunc(lines, func(l DiffLine) bool { return l.Content == text })
+				require.NoError(t, g.UnstageHunk(name, lines, cursor))
+			}
+			indexed, err = g.runGit("show", ":"+name)
+			require.NoError(t, err)
+			require.Equal(t, old, indexed)
+			other, err := g.runGit("show", ":other.txt")
+			require.NoError(t, err)
+			require.Equal(t, "other staged\n", other)
+			data, err := os.ReadFile(filepath.Join(root, name))
+			require.NoError(t, err)
+			require.Equal(t, working, string(data))
+		})
+	}
+}
+
+func TestGitUnstageFileInitialAndLiteralPaths(t *testing.T) {
+	for _, committed := range []bool{false, true} {
+		root := setupTestRepo(t)
+		name := ":(glob)*.txt"
+		writeFile(t, root, name, "original\n")
+		writeFile(t, root, "other.txt", "other\n")
+		gitCmd(t, root, "add", ".")
+		if committed {
+			gitCmd(t, root, "commit", "-m", "baseline")
+			writeFile(t, root, name, "staged\n")
+			writeFile(t, root, "other.txt", "other staged\n")
+			gitCmd(t, root, "add", ".")
+		}
+		writeFile(t, root, name, "working only\n")
+		g := NewGit(root)
+		require.NoError(t, g.UnstageFile(name, ""))
+		indexed, err := g.runGit("show", ":"+name)
+		if committed {
+			require.NoError(t, err)
+			require.Equal(t, "original\n", indexed)
+		} else {
+			require.Error(t, err)
+		}
+		changed, err := g.runGit("diff", "--cached", "--name-only")
+		require.NoError(t, err)
+		require.Equal(t, "other.txt\n", changed)
+		data, err := os.ReadFile(filepath.Join(root, name))
+		require.NoError(t, err)
+		require.Equal(t, "working only\n", string(data))
+	}
+}
+
+func TestGitUnstageFileRejectsDirectory(t *testing.T) {
+	root := setupTestRepo(t)
+	require.NoError(t, os.Mkdir(filepath.Join(root, "folder"), 0o700))
+	writeFile(t, root, "folder/child", "keep staged\n")
+	gitCmd(t, root, "add", ".")
+	g := NewGit(root)
+	for _, path := range []string{"", ".", "folder", "../outside"} {
+		require.Error(t, g.UnstageFile(path, ""))
+	}
+	indexed, err := g.runGit("show", ":folder/child")
+	require.NoError(t, err)
+	require.Equal(t, "keep staged\n", indexed)
 }

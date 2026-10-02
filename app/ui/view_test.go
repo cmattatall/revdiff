@@ -1211,6 +1211,7 @@ func TestModel_TOCPaneNavigation(t *testing.T) {
 
 	t.Run("home moves to first entry", func(t *testing.T) {
 		m := setup(t)
+		m.keymap.Bind("home", keymap.ActionHome)
 		moveTOCTo(m.file.mdTOC, 3)
 
 		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyHome})
@@ -1220,6 +1221,7 @@ func TestModel_TOCPaneNavigation(t *testing.T) {
 
 	t.Run("end moves to last entry", func(t *testing.T) {
 		m := setup(t)
+		m.keymap.Bind("end", keymap.ActionEnd)
 		assert.Equal(t, 0, tocLineIdx(t, m.file.mdTOC)) // starts at top (lineIdx=0)
 
 		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnd})

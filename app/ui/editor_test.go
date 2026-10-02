@@ -110,6 +110,30 @@ func TestOpenEditor_FileLevelCapturesTarget(t *testing.T) {
 	assert.Equal(t, "file-level seed", fake.CommandCalls()[0].Content, "editor must receive the current input value")
 }
 
+func TestOpenEditor_HunkRangeCapturesTarget(t *testing.T) {
+	m := testModel([]string{"a.go"}, nil)
+	m.file.name, m.layout.focus = "a.go", paneDiff
+	m.file.lines = []diff.DiffLine{
+		{NewNum: 7, Content: "one", ChangeType: diff.ChangeAdd},
+		{NewNum: 8, Content: "two", ChangeType: diff.ChangeAdd},
+	}
+	m.nav.diffCursor = 1
+	m.startHunkAnnotation()
+	m.editor = mockEditor("", errors.New("setup failed"))
+	cmd := m.openEditor()
+	require.NotNil(t, cmd)
+	msg := cmd().(editorFinishedMsg)
+	require.Equal(t, 7, msg.line)
+	require.Equal(t, 8, msg.endLine)
+	// A later completion must use the captured range even if the UI has moved.
+	m.file.name, m.file.lines = "b.go", nil
+	m.annot.endLine = 0
+	msg.err, msg.content = nil, "first\nsecond"
+	model, _ := m.Update(msg)
+	m = model.(Model)
+	require.Equal(t, []annotation.Annotation{{File: "a.go", Line: 7, EndLine: 8, Type: "+", Comment: "first\nsecond"}}, m.store.Get("a.go"))
+}
+
 func TestOpenEditor_LineLevelReturnsNilWhenNoCursorLine(t *testing.T) {
 	m := testModel([]string{"a.go"}, nil)
 	m.tree = testNewFileTree([]string{"a.go"})

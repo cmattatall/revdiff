@@ -225,11 +225,11 @@ func defaultDescriptions() []HelpEntry {
 		{ActionNextHunk, "next hunk", "File/Hunk"},
 		{ActionPrevHunk, "prev hunk", "File/Hunk"},
 		{ActionOpenFileInEditor, "open focused file in $EDITOR", "File/Hunk"},
-		{ActionStageHunk, "stage change under cursor (Git working tree)", "File/Hunk"},
-		{ActionStageFile, "stage entire selected file (Git working tree)", "File/Hunk"},
+		{ActionStageHunk, "stage/unstage change under cursor (Git working tree)", "File/Hunk"},
+		{ActionStageFile, "stage/unstage entire selected file (Git working tree)", "File/Hunk"},
 
 		// pane
-		{ActionTogglePane, "toggle pane focus", SectionPane},
+		{ActionTogglePane, "switch focus to next pane", SectionPane},
 		{ActionFocusTree, "focus tree pane", SectionPane},
 		{ActionFocusDiff, "focus diff pane", SectionPane},
 
@@ -281,8 +281,6 @@ func defaultBindings() map[string]Action {
 		"pgup":   ActionPageUp,
 		"ctrl+d": ActionHalfPageDown,
 		"ctrl+u": ActionHalfPageUp,
-		"home":   ActionHome,
-		"end":    ActionEnd,
 		"left":   ActionScrollLeft,
 		"right":  ActionScrollRight,
 		"J":      ActionScrollDiffDown,

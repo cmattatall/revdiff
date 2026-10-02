@@ -114,13 +114,13 @@ Use `--stdin` to review arbitrary piped or redirected text as one synthetic file
 | `j/k` or up/down | Navigate files (tree) / scroll diff (diff pane) |
 | `h/l` | Switch between file tree and diff pane |
 | left/right | Horizontal scroll in diff pane (truncated lines show `«` / `»` overflow indicators at the edges) |
-| `Tab` | Switch between file tree and diff pane |
+| `Tab` | Switch focus to next pane |
 | `PgDown/PgUp` | Page scroll in file tree and diff pane |
 | `Ctrl+d/Ctrl+u` | Half-page scroll in file tree and diff pane |
 | `J/K` | Scroll diff viewport (works from either pane) |
-| `Home/End` | Jump to first/last item |
+| `:$` then `Enter` | Jump to the last source line shown in the current file |
 | `:` | Open command palette (action name or source line; `Tab` completes, arrows browse) |
-| `:<line>` then `Enter` | Jump to a source line in the displayed file (`Esc` cancels) |
+| `:<line>` then `Enter` | Jump to a source line in the displayed file (`:1` for the first line; `Esc` cancels) |
 | `Enter` | Switch to diff pane (tree) / start annotation (diff pane) |
 | `n/p` | Next/previous changed file; next/prev header in markdown TOC mode (n = next match when search active) |
 | `P` | Open the file picker |
@@ -134,6 +134,10 @@ Press `L` in the file viewer to show line numbers, or launch with `--line-number
 The command palette also runs every keymap action by name, including unbound actions: `:stage_file`, `:stage_hunk`, `:reload`, `:toggle_line_numbers`, `:help`, or `:quit`. Type part of a name or description to filter suggestions, use `↑`/`↓` to browse, then `Tab` to complete. `Enter` runs a complete action name, line number, or the sole matching suggestion: both `:set num` and `:set numb` run `:set number` without Tab. Ambiguous and unknown names stay editable; `Esc` cancels. Actions use the focused pane and retain their normal availability checks and confirmations. `:open_editor` opens the annotation at the focused diff line in `$EDITOR`. The bordered pane preserves the footer and works with `--no-status-bar`; commands such as `help` and `quit` also work without a selected file.
 
 Matching prefixes show a muted inline completion: typing `:h` displays `:help` with only `elp` dimmed. Arrow-key browsing changes the suggestion; `Tab` accepts it. Suggestions never change the typed command until accepted.
+
+The palette remembers the last 50 distinct executed commands for the current session. `Ctrl+R` opens a selectable history list, newest first. The input only fuzzy-filters the list, case-insensitively (`vwd` matches `view word diff`). Use `↑`/`↓`, `PgUp`/`PgDn`, or repeat `Ctrl+R` to browse results; `Enter` or `Tab` recalls the selected command without executing it. Press `Enter` again to run it. `Esc` returns to your previous input; `Ctrl+C` closes the palette. History is not saved across restarts.
+
+Annotation commands are grouped under `:annotate`: `:annotate file`, `:annotate hunk`, and `:annotate list`. `:annotate` (or `:a`) annotates the current change hunk when the diff cursor is on one; otherwise it annotates the file, including from tree focus. Explicit hunk annotation requires a changed line. Hunk ranges use the new-code lines for replacements/additions and old-code lines for deletion-only changes. No keyword is needed in the comment. The existing `a`/`Enter` line-annotation shortcuts are unchanged.
 
 `:h` is also an explicit alias for `:help`, so Enter opens help directly. The command palette works from either pane, including while files are loading.
 
@@ -172,12 +176,12 @@ The `/` prompt and search-history help appear above the footer, including with `
 | `}` / `{` | Jump to next/previous annotation (always crosses file boundaries; silent no-op at the first/last annotation) |
 | `d` | Delete annotation under cursor |
 | `O` | Send feedback with `--amp`, or export via `--output` / `--post-flush-command` |
-| `s` | Stage change under cursor (modified tracked text, Git working tree) |
-| `S` (Shift+S) | Stage entire selected file (Git working tree, `stage_file` — rebindable) |
+| `s` | Stage/unstage change under cursor (modified tracked text, Git working tree) |
+| `S` (Shift+S) | Stage/unstage entire selected file (Git working tree, `stage_file` — rebindable) |
 | `Alt+E` (during annotation input) | Open `$EDITOR` for multi-line annotation (`open_editor` — rebindable) |
 | `Esc` | Cancel annotation input |
 
-`S` stages the entire selected file from the tree or diff pane, like `git add`, including edits since the last render. It supports new/deleted files, renames, binaries, symlinks, and mode changes, but not directories or submodules. Both staging shortcuts require a Git working-tree review and no pending annotations; neither changes the working file.
+In **Changes**, `s` / `S` stage a hunk / file (`:stage hunk` / `:stage file`). In **Staged**, the same keys unstage (`:unstage hunk` / `:unstage file`). Hunk operations support modified tracked regular text files and reject stale views. Whole-file staging includes working-copy edits since the last render; unstaging restores the index to HEAD, including removing initial additions. Whole-file operations support new/deleted files, renames, binaries, symlinks, and mode changes. They return focus from the diff to the next file in the same tree section. Both shortcuts require a Git working-tree review and no pending annotations on the selected file or its rename origin; neither changes working files. Annotations on other files, including unconfirmed sends, remain intact and do not block staging or unstaging; an active send must finish first.
 
 While the annotation input is active, press `Alt+E` (or whatever key is bound to `open_editor`) to hand off the current text to an external editor for multi-line comments. `Ctrl+E` now retains its standard end-of-line behavior; users who prefer the old shortcut can add `map ctrl+e open_editor`. Editor resolution: `$EDITOR` → `$VISUAL` → `vi`. Values with arguments work (e.g. `EDITOR="code --wait"`). On editor save and quit, the full file contents (including newlines) become the annotation. Quitting the editor with an empty file cancels the annotation and preserves any previously stored note on that line. Multi-line annotations are rendered line-by-line in the diff view, shown flattened in the annotation list popup (`@`), and emitted with embedded newlines in the structured output.
 

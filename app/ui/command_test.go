@@ -49,6 +49,59 @@ func TestModel_CommandSourceLine(t *testing.T) {
 	}
 }
 
+func TestModel_CommandLastSourceLine(t *testing.T) {
+	for _, deleted := range []bool{false, true} {
+		m := testModel([]string{"a.go"}, nil)
+		status := diff.FileModified
+		want := 1
+		if deleted {
+			status, want = diff.FileDeleted, 2
+		}
+		m.tree = sidepane.NewFileTree([]diff.FileEntry{{Path: "a.go", Status: status}})
+		m.file.name = "a.go"
+		m.file.lines = []diff.DiffLine{
+			{NewNum: 1, OldNum: 1, Content: "first", ChangeType: diff.ChangeContext},
+			{NewNum: 42, OldNum: 55, Content: "last surviving line", ChangeType: diff.ChangeContext},
+			{OldNum: 56, Content: "removed tail", ChangeType: diff.ChangeRemove},
+			{NewNum: 99, OldNum: 99, ChangeType: diff.ChangeDivider},
+		}
+		if deleted {
+			for i := range 3 {
+				m.file.lines[i].NewNum = 0
+				m.file.lines[i].ChangeType = diff.ChangeRemove
+			}
+		}
+		m.modes.collapsed.enabled = true
+		m.modes.collapsed.expandedHunks = make(map[int]bool)
+		m.layout.focus = paneTree
+		m.startCommand()
+		m.command.input.SetValue("$")
+		require.Empty(t, m.commandMatches(), "source addresses must not complete to $EDITOR commands")
+		model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		m = model.(Model)
+		require.False(t, m.command.active)
+		require.Equal(t, paneDiff, m.layout.focus)
+		require.Equal(t, want, m.nav.diffCursor, "skip dividers and use the correct side's source lines")
+		if deleted {
+			require.True(t, m.modes.collapsed.expandedHunks[0])
+		}
+	}
+	for _, loading := range []bool{false, true} {
+		m := testModel(nil, nil)
+		m.filesLoaded = !loading
+		m.startCommand()
+		m.command.input.SetValue("$")
+		model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		m = model.(Model)
+		require.True(t, m.command.active)
+		if loading {
+			require.Equal(t, "Wait for the selected file to load", m.command.err)
+		} else {
+			require.Equal(t, "No source lines are shown", m.command.err)
+		}
+	}
+}
+
 func TestModel_CommandValidation(t *testing.T) {
 	for _, tt := range []struct {
 		value string
@@ -252,12 +305,12 @@ func TestModel_CommandCompletion(t *testing.T) {
 	m := testModel(nil, nil)
 	m.startCommand()
 	m.command.input.SetValue("STAGE")
-	require.Contains(t, ansi.Strip(m.commandPaneView()), "stage_file (1/2)")
+	require.Contains(t, ansi.Strip(m.commandPaneView()), "stage file (1/2)")
 	for _, key := range []tea.KeyType{tea.KeyUp, tea.KeyDown, tea.KeyDown} {
 		model, _ := m.Update(tea.KeyMsg{Type: key})
 		m = model.(Model)
 	}
-	require.Contains(t, ansi.Strip(m.commandPaneView()), "stage_hunk (2/2)")
+	require.Contains(t, ansi.Strip(m.commandPaneView()), "stage hunk (2/2)")
 	model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = model.(Model)
 	require.Nil(t, cmd, "ambiguous action names must not execute")
@@ -265,8 +318,8 @@ func TestModel_CommandCompletion(t *testing.T) {
 	require.Equal(t, "STAGE", m.command.input.Value())
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = model.(Model)
-	require.Equal(t, "stage_hunk", m.command.input.Value())
-	require.Equal(t, len("stage_hunk"), m.command.input.Position())
+	require.Equal(t, "stage hunk", m.command.input.Value())
+	require.Equal(t, len("stage hunk"), m.command.input.Position())
 	require.Empty(t, m.command.err)
 	// Editing a query resets selection, including when there are no matches.
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("xyz")})
@@ -274,7 +327,7 @@ func TestModel_CommandCompletion(t *testing.T) {
 	require.Zero(t, m.command.selected)
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = model.(Model)
-	require.Equal(t, "stage_hunkxyz", m.command.input.Value())
+	require.Equal(t, "stage hunkxyz", m.command.input.Value())
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
 	m = model.(Model)
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("toggle word wrap")})
@@ -344,7 +397,7 @@ func TestModel_CommandUniqueCompletionOnEnter(t *testing.T) {
 		m.layout.focus = paneTree
 		m.startCommand()
 		m.command.input.SetValue(query)
-		require.Contains(t, ansi.Strip(m.commandPaneView()), "Enter run")
+		require.Contains(t, ansi.Strip(m.commandPaneView()), "show line numbers")
 		require.Equal(t, query, m.command.input.Value(), "rendering must not accept completion")
 		model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 		m = model.(Model)
@@ -539,6 +592,53 @@ func TestModel_CommandDispatch(t *testing.T) {
 	}
 }
 
+func TestModel_CommandUnstage(t *testing.T) {
+	for _, command := range []string{"unstage file", "unstage hunk"} {
+		for _, annotated := range []bool{false, true} {
+			m := splitTestModel(t)
+			m.layout.focus = paneDiff
+			calls := 0
+			m.live.stager = stagerStub{
+				unstageFile: func(path, old string) error {
+					require.Equal(t, "unstage file", command)
+					require.Equal(t, "partial.go", path)
+					calls++
+					return nil
+				},
+				unstageHunk: func(path string, lines []diff.DiffLine, cursor int) error {
+					require.Equal(t, "unstage hunk", command)
+					require.Equal(t, "needle index", lines[cursor].Content)
+					calls++
+					return nil
+				},
+			}
+			m.startCommand()
+			m.command.input.SetValue(strings.TrimPrefix(command, "un"))
+			model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			m = model.(Model)
+			require.Nil(t, cmd, "recalled stage commands must not run the opposite operation")
+			require.True(t, m.command.active)
+			if annotated {
+				m.store.Add(annotation.Annotation{File: "partial.go", Line: 2, Comment: "keep"})
+			}
+			m.startCommand()
+			m.command.input.SetValue(command)
+			require.Contains(t, ansi.Strip(m.commandPaneView()), "stage/unstage")
+			model, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			m = model.(Model)
+			require.Zero(t, calls)
+			if annotated {
+				require.Nil(t, cmd)
+				require.Contains(t, m.output.hint, "Send or remove annotations for this file before unstaging")
+				continue
+			}
+			require.NotNil(t, cmd)
+			require.True(t, cmd().(stagedMsg).unstage)
+			require.Equal(t, 1, calls)
+		}
+	}
+}
+
 func TestModel_CommandStage(t *testing.T) {
 	for _, action := range []keymap.Action{keymap.ActionStageHunk, keymap.ActionStageFile} {
 		for _, annotated := range []bool{false, true} {
@@ -595,7 +695,7 @@ func TestModel_CommandWithoutFile(t *testing.T) {
 	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = model.(Model)
 	require.Equal(t, "quit", m.command.input.Value(), "must not complete to discard_quit")
-	require.Contains(t, ansi.Strip(m.commandPaneView()), "Enter run · Esc cancel · quit")
+	require.Equal(t, "quit", strings.Trim(strings.Split(ansi.Strip(m.commandPaneView()), "\n")[2], "│ "))
 	model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	require.False(t, model.(Model).command.active)
 	require.NotNil(t, cmd)
@@ -778,6 +878,81 @@ func TestModel_CommandFocusWithoutSplitTree(t *testing.T) {
 	m = model.(Model)
 	require.False(t, m.command.active)
 	require.Equal(t, paneDiff, m.layout.focus)
+}
+
+func TestModel_CommandAnnotateScopes(t *testing.T) {
+	for _, tc := range []struct {
+		command           string
+		focus             pane
+		cursor, line, end int
+		change            string
+	}{
+		{"annotate", paneDiff, 1, 7, 8, "+"},
+		{"a", paneDiff, 4, 7, 8, "+"},
+		{"annotate hunk", paneDiff, 2, 7, 8, "+"},
+		{"annotate hunk", paneDiff, 7, 30, 31, "-"},
+		{"annotate", paneDiff, 0, 0, 0, ""},
+		{"a", paneTree, 3, 0, 0, ""},
+		{"annotate file", paneDiff, 3, 0, 0, ""},
+	} {
+		m := testModel([]string{"a.go"}, nil)
+		m.file.name, m.layout.focus, m.nav.diffCursor = "a.go", tc.focus, tc.cursor
+		m.file.lines = []diff.DiffLine{
+			{OldNum: 19, NewNum: 6, Content: "context", ChangeType: diff.ChangeContext},
+			{OldNum: 20, Content: "old one", ChangeType: diff.ChangeRemove},
+			{OldNum: 21, Content: "old two", ChangeType: diff.ChangeRemove},
+			{NewNum: 7, Content: "new one", ChangeType: diff.ChangeAdd},
+			{NewNum: 8, Content: "new two", ChangeType: diff.ChangeAdd},
+			{OldNum: 22, NewNum: 9, Content: "context", ChangeType: diff.ChangeContext},
+			{OldNum: 30, Content: "deleted one", ChangeType: diff.ChangeRemove},
+			{OldNum: 31, Content: "deleted two", ChangeType: diff.ChangeRemove},
+		}
+		m.modes.collapsed.enabled = true
+		m.modes.collapsed.expandedHunks = make(map[int]bool)
+		m.startCommand()
+		m.command.input.SetValue(tc.command)
+		model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		m = model.(Model)
+		require.False(t, m.command.active, tc.command)
+		require.True(t, m.annot.annotating, tc.command)
+		require.Equal(t, paneDiff, m.layout.focus)
+		m.annot.input.SetValue("please simplify") // no magic 'hunk' keyword needed
+		model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		m = model.(Model)
+		require.Equal(t, []annotation.Annotation{{File: "a.go", Line: tc.line, EndLine: tc.end, Type: tc.change, Comment: "please simplify"}}, m.store.Get("a.go"))
+		require.Zero(t, m.annot.endLine, "range state must not leak into the next annotation")
+	}
+}
+
+func TestModel_CommandAnnotateCompletionAndValidation(t *testing.T) {
+	m := testModel([]string{"a.go"}, nil)
+	m.file.name = "a.go"
+	var family []string
+	for _, entry := range m.commandEntries() {
+		if strings.HasPrefix(entry.name, "a") {
+			family = append(family, entry.name)
+		}
+	}
+	require.Equal(t, []string{"annotate", "annotate file", "annotate hunk", "annotate list"}, family)
+	m.startCommand()
+	m.command.input.SetValue("a")
+	require.Equal(t, "annotate", m.commandMatches()[0].name)
+	m.command.input.SetValue("annotate hunk")
+	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(Model)
+	require.True(t, m.command.active)
+	require.Equal(t, "Move the diff cursor onto a change hunk", m.command.err)
+	m.file.requestedPath = "b.go"
+	m.command.input.SetValue("annotate")
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(Model)
+	require.True(t, m.command.active)
+	require.Equal(t, "Wait for the selected file to load", m.command.err)
+	m.command.input.SetValue("annotate list")
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(Model)
+	require.False(t, m.command.active)
+	require.True(t, m.overlay.Active(), "listing annotations does not require a loaded file")
 }
 
 func TestModel_CommandOpenEditor(t *testing.T) {

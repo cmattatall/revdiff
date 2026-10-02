@@ -94,6 +94,7 @@ func (m *Model) startAnnotation() tea.Cmd {
 	// Enter with empty input preserves it unchanged.
 	lineNum := m.diffLineNum(dl)
 	var preFill, existingMultiline string
+	m.annot.endLine = 0
 	for _, a := range m.store.Get(m.file.name) {
 		if a.Line != lineNum || a.Type != string(dl.ChangeType) {
 			continue
@@ -117,6 +118,36 @@ func (m *Model) startAnnotation() tea.Cmd {
 	m.annot.fileAnnotating = false
 	m.annot.existingMultiline = existingMultiline
 	m.ensureLineAnnotationInputVisible()
+	return cmd
+}
+
+// startHunkAnnotation anchors replacements on their new-code range, and
+// deletion-only hunks on their old-code range. Never mix line-number spaces.
+func (m *Model) startHunkAnnotation() tea.Cmd {
+	start, ok := m.cursorHunkStart()
+	if !ok {
+		return nil
+	}
+	anchor := start
+	for i := start; i < len(m.file.lines); i++ {
+		if m.file.lines[i].ChangeType == diff.ChangeAdd {
+			anchor = i
+			break
+		}
+		if m.file.lines[i].ChangeType != diff.ChangeRemove {
+			break
+		}
+	}
+	m.nav.diffCursor = anchor
+	m.annot.cursorOnAnnotation = false
+	m.ensureHunkExpanded(anchor)
+	cmd := m.startAnnotation()
+	if m.annot.annotating {
+		m.annot.endLine = m.hunkEndLine(anchor)
+		if m.annot.existingMultiline == "" {
+			m.annot.input.Placeholder = fmt.Sprintf("hunk annotation (lines %d–%d)...", m.diffLineNum(m.file.lines[anchor]), m.annot.endLine)
+		}
+	}
 	return cmd
 }
 
@@ -180,6 +211,7 @@ func (m *Model) startFileAnnotation() tea.Cmd {
 	m.annot.input = ti
 	m.annot.annotating = true
 	m.annot.fileAnnotating = true
+	m.annot.endLine = 0
 	m.annot.existingMultiline = existingMultiline
 	m.nav.diffCursor = -1 // position cursor on the file annotation line
 	m.layout.viewport.GotoTop()
@@ -196,7 +228,7 @@ func (m *Model) saveAnnotation() {
 	}
 
 	if m.annot.fileAnnotating {
-		m.saveComment(text, m.file.name, true, 0, "")
+		m.saveComment(text, m.file.name, true, 0, 0, "")
 		return
 	}
 
@@ -205,7 +237,7 @@ func (m *Model) saveAnnotation() {
 		m.cancelAnnotation()
 		return
 	}
-	m.saveComment(text, m.file.name, false, m.diffLineNum(dl), string(dl.ChangeType))
+	m.saveComment(text, m.file.name, false, m.diffLineNum(dl), m.annot.endLine, string(dl.ChangeType))
 }
 
 // saveComment persists the annotation text for the explicitly provided target.
@@ -216,7 +248,7 @@ func (m *Model) saveAnnotation() {
 // pair so cursor movement during an external editor session does not skew the
 // range; when fileName matches the currently loaded file, m.file.lines is
 // scanned, otherwise EndLine expansion is skipped (no hunk context available).
-func (m *Model) saveComment(text, fileName string, fileLevel bool, line int, changeType string) {
+func (m *Model) saveComment(text, fileName string, fileLevel bool, line, endLine int, changeType string) {
 	if text == "" {
 		m.cancelAnnotation()
 		return
@@ -226,6 +258,7 @@ func (m *Model) saveComment(text, fileName string, fileLevel bool, line int, cha
 		m.store.Add(annotation.Annotation{File: fileName, Line: 0, Type: "", Comment: text})
 		m.annot.annotating = false
 		m.annot.fileAnnotating = false
+		m.annot.endLine = 0
 		m.annot.existingMultiline = ""
 		m.nav.diffCursor = -1 // position cursor on the file annotation line
 		m.tree.RefreshFilter(m.annotatedFiles())
@@ -235,7 +268,10 @@ func (m *Model) saveComment(text, fileName string, fileLevel bool, line int, cha
 	}
 
 	a := annotation.Annotation{File: fileName, Line: line, Type: changeType, Comment: text}
-	if hunkKeywordRe.MatchString(text) && fileName == m.file.name {
+	if endLine > line {
+		a.EndLine = endLine
+	}
+	if endLine == 0 && hunkKeywordRe.MatchString(text) && fileName == m.file.name {
 		// re-derive the diff-line index from (line, changeType) so hunk-end
 		// detection survives cursor drift during an external editor session.
 		// only scan when the captured file still matches the loaded one —
@@ -256,6 +292,7 @@ func (m *Model) saveComment(text, fileName string, fileLevel bool, line int, cha
 	m.store.Add(a)
 	m.annot.annotating = false
 	m.annot.fileAnnotating = false // defensive hygiene: parity with file-level branch
+	m.annot.endLine = 0
 	m.annot.existingMultiline = ""
 	m.tree.RefreshFilter(m.annotatedFiles())
 	// sync scroll so a newly added multi-row annotation stays visible when the
@@ -267,6 +304,7 @@ func (m *Model) saveComment(text, fileName string, fileLevel bool, line int, cha
 func (m *Model) cancelAnnotation() {
 	m.annot.annotating = false
 	m.annot.fileAnnotating = false
+	m.annot.endLine = 0
 	m.annot.existingMultiline = ""
 	m.layout.viewport.SetContent(m.renderDiff())
 }
