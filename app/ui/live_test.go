@@ -247,6 +247,57 @@ func TestStageHunkReportsActualBlocker(t *testing.T) {
 	}
 }
 
+func TestStageAddedHunkUsesFileScopeForNewFiles(t *testing.T) {
+	for _, status := range []diff.FileStatus{diff.FileUntracked, diff.FileAdded, diff.FileModified} {
+		t.Run(string(status), func(t *testing.T) {
+			m := testModel([]string{"new.go"}, nil)
+			m.cfg.workingTree = true
+			m.tree = newWorkingTree(testFileTreeFactory())
+			model, _ := m.handleFilesLoaded(filesLoadedMsg{entries: []diff.FileEntry{{Path: "new.go", Status: status}}})
+			m = model.(Model)
+			lines := []diff.DiffLine{{NewNum: 1, Content: "package example", ChangeType: diff.ChangeAdd}}
+			model, _ = m.handleFileLoaded(fileLoadedMsg{file: "new.go", seq: m.file.loadSeq, lines: lines})
+			m = model.(Model)
+			m.layout.focus = paneDiff
+			var fileCalls, hunkCalls int
+			m.live.stager = stagerStub{
+				file: func(path, oldPath string) error {
+					fileCalls++
+					require.Equal(t, "new.go", path)
+					require.Empty(t, oldPath)
+					return nil
+				},
+				hunk: func(path string, displayed []diff.DiffLine, cursor int) error {
+					hunkCalls++
+					require.Equal(t, "new.go", path)
+					require.Equal(t, lines, displayed)
+					require.Zero(t, cursor)
+					return nil
+				},
+			}
+			model, cmd := m.Update(tea.KeyPressMsg{Code: 's', Text: "s"})
+			m = model.(Model)
+			require.NotNil(t, cmd)
+			require.Zero(t, fileCalls+hunkCalls, "staging must be asynchronous")
+			msg := cmd().(stagedMsg)
+			require.NoError(t, msg.err)
+			if status == diff.FileModified {
+				require.Equal(t, 1, hunkCalls, "all-added lines alone must not promote a tracked hunk to a file operation")
+				require.Zero(t, fileCalls)
+				require.Equal(t, keymap.ActionStageHunk, msg.action)
+			} else {
+				require.Equal(t, 1, fileCalls)
+				require.Zero(t, hunkCalls)
+				require.Equal(t, keymap.ActionStageFile, msg.action, "use whole-file focus and reload behavior")
+				model, reload := m.Update(msg)
+				require.NotNil(t, reload)
+				require.Equal(t, "File staged", model.(Model).output.hint)
+				require.Equal(t, paneTree, model.(Model).layout.focus)
+			}
+		})
+	}
+}
+
 func TestStageShortcutCapturesDisplayedHunk(t *testing.T) {
 	for _, stageErr := range []error{nil, errors.New("file changed since display")} {
 		m := testModel([]string{"a.go"}, nil)

@@ -204,9 +204,11 @@ The `/` prompt and search-history help appear above the footer, including with `
 | `}` / `{` | Jump to next/previous annotation (always crosses file boundaries; silent no-op at the first/last annotation) |
 | `d` / `:annotation delete` | Delete annotation under cursor |
 | `O` | Send feedback with `--amp`, or export via `--output` / `--post-flush-command` |
-| `s` | Stage/unstage change under cursor (modified tracked text, Git working tree) |
+| `s` | Stage/unstage change under cursor; stage whole file for new unstaged files (Git working tree) |
 | `S` (Shift+S) | Stage/unstage entire selected file (Git working tree, `stage_file` — rebindable) |
 | `Esc` | Cancel annotation input |
+
+For a new unstaged file, `s` or `:stage hunk` stages the whole file and uses the same focus and reload behavior as `S`.
 
 In **Changes**, `s` / `S` stage a hunk / file (`:stage hunk` / `:stage file`). In **Staged**, the same keys unstage (`:unstage hunk` / `:unstage file`). Hunk operations support modified tracked regular text files and reject stale views. Whole-file staging includes working-copy edits since the last render; unstaging restores the index to HEAD, including removing initial additions. Whole-file operations support new/deleted files, renames, binaries, symlinks, and mode changes. They return focus from the diff to the next file in the same tree section. Both shortcuts require a Git working-tree review and no pending annotations on the selected file or its rename origin; neither changes working files. Annotations on other files, including unconfirmed sends, remain intact and do not block staging or unstaging; an active send must finish first.
 
