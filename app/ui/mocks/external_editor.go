@@ -20,6 +20,9 @@ import (
 //			SourceCommandFunc: func(path string, line int) (*exec.Cmd, error) {
 //				panic("mock out the SourceCommand method")
 //			},
+//			WorkspaceCommandFunc: func(root string) *exec.Cmd {
+//				panic("mock out the WorkspaceCommand method")
+//			},
 //		}
 //
 //		// use mockedExternalEditor in code that requires ui.ExternalEditor
@@ -32,6 +35,9 @@ type ExternalEditorMock struct {
 
 	// SourceCommandFunc mocks the SourceCommand method.
 	SourceCommandFunc func(path string, line int) (*exec.Cmd, error)
+
+	// WorkspaceCommandFunc mocks the WorkspaceCommand method.
+	WorkspaceCommandFunc func(root string) *exec.Cmd
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -47,9 +53,15 @@ type ExternalEditorMock struct {
 			// Line is the line argument value.
 			Line int
 		}
+		// WorkspaceCommand holds details about calls to the WorkspaceCommand method.
+		WorkspaceCommand []struct {
+			// Root is the root argument value.
+			Root string
+		}
 	}
-	lockCommand       sync.RWMutex
-	lockSourceCommand sync.RWMutex
+	lockCommand          sync.RWMutex
+	lockSourceCommand    sync.RWMutex
+	lockWorkspaceCommand sync.RWMutex
 }
 
 // Command calls CommandFunc.
@@ -117,5 +129,37 @@ func (mock *ExternalEditorMock) SourceCommandCalls() []struct {
 	mock.lockSourceCommand.RLock()
 	calls = mock.calls.SourceCommand
 	mock.lockSourceCommand.RUnlock()
+	return calls
+}
+
+// WorkspaceCommand calls WorkspaceCommandFunc.
+func (mock *ExternalEditorMock) WorkspaceCommand(root string) *exec.Cmd {
+	if mock.WorkspaceCommandFunc == nil {
+		panic("ExternalEditorMock.WorkspaceCommandFunc: method is nil but ExternalEditor.WorkspaceCommand was just called")
+	}
+	callInfo := struct {
+		Root string
+	}{
+		Root: root,
+	}
+	mock.lockWorkspaceCommand.Lock()
+	mock.calls.WorkspaceCommand = append(mock.calls.WorkspaceCommand, callInfo)
+	mock.lockWorkspaceCommand.Unlock()
+	return mock.WorkspaceCommandFunc(root)
+}
+
+// WorkspaceCommandCalls gets all the calls that were made to WorkspaceCommand.
+// Check the length with:
+//
+//	len(mockedExternalEditor.WorkspaceCommandCalls())
+func (mock *ExternalEditorMock) WorkspaceCommandCalls() []struct {
+	Root string
+} {
+	var calls []struct {
+		Root string
+	}
+	mock.lockWorkspaceCommand.RLock()
+	calls = mock.calls.WorkspaceCommand
+	mock.lockWorkspaceCommand.RUnlock()
 	return calls
 }

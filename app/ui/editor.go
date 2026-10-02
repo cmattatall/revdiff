@@ -29,6 +29,8 @@ type ExternalEditor interface {
 	Command(content string) (*exec.Cmd, func(error) (string, error), error)
 	// SourceCommand prepares the editor invocation for an existing source file.
 	SourceCommand(path string, line int) (*exec.Cmd, error)
+	// WorkspaceCommand opens the editor in root without selecting a file.
+	WorkspaceCommand(root string) *exec.Cmd
 }
 
 // editorFinishedMsg is dispatched after the external annotation editor exits.
@@ -127,6 +129,12 @@ type sourceEditorTargetResult struct {
 }
 
 func (m *Model) openSourceEditor() tea.Cmd {
+	policy := m.cfg.sourceEditorPolicy
+	if policy.Available && policy.Root != "" && m.cfg.workingTree && m.filesLoaded && m.tree.TotalFiles() == 0 {
+		return tea.ExecProcess(m.editor.WorkspaceCommand(policy.Root), func(runErr error) tea.Msg {
+			return sourceEditorFinishedMsg{err: runErr, reloadAfterCleanExit: true}
+		})
+	}
 	result, err := m.sourceEditorTarget()
 	if err != nil {
 		m.editorState.hint = fmt.Sprintf("Editor unavailable: %v", err)
@@ -347,6 +355,10 @@ func (m Model) handleSourceEditorFinished(msg sourceEditorFinishedMsg) (tea.Mode
 	m.editorState.hint = "Returned from editor"
 	if !msg.reloadAfterCleanExit {
 		return m, nil
+	}
+	if msg.fileName == "" {
+		cmd := m.triggerReload()
+		return m, cmd
 	}
 	// Cross-file hunk navigation can advance the tree selection before the
 	// selected file load finishes. In that window, the editor returned for a

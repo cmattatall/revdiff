@@ -847,6 +847,48 @@ func TestHandleSourceEditorFinished_SkipsReloadWhenTreeSelectionChanged(t *testi
 	assert.Nil(t, model.nav.pendingHunkJump)
 }
 
+func TestModel_EditEmptyWorkingTree(t *testing.T) {
+	for _, focus := range []pane{paneTree, paneDiff} {
+		root := t.TempDir()
+		fake := mockSourceEditor(nil)
+		fake.WorkspaceCommandFunc = func(string) *exec.Cmd { return exec.Command("/bin/true") }
+		renderer := plainRenderer()
+		m := testNewModel(t, renderer, annotation.NewStore(), noopHighlighter(), ModelConfig{
+			WorkingTree:  true,
+			Editor:       fake,
+			SourceEditor: SourceEditorPolicy{Available: true, Root: root, ReloadAfterCleanExit: true},
+		})
+		model, _ := m.handleFilesLoaded(m.loadFiles()().(filesLoadedMsg))
+		m = model.(Model)
+		m.layout.focus = focus
+		m.startCommand()
+		m.command.input.SetValue("edit")
+		model, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		m = model.(Model)
+		require.NotNil(t, cmd)
+		require.False(t, m.command.active)
+		require.Empty(t, m.editorState.hint)
+		require.Len(t, fake.WorkspaceCommandCalls(), 1)
+		require.Equal(t, root, fake.WorkspaceCommandCalls()[0].Root)
+		require.Empty(t, fake.SourceCommandCalls())
+
+		renderer.ChangedFilesFunc = func(_ string, staged bool) ([]diff.FileEntry, error) {
+			if staged {
+				return nil, nil
+			}
+			return []diff.FileEntry{{Path: "edited.go", Status: diff.FileModified}}, nil
+		}
+		model, reload := m.handleSourceEditorFinished(sourceEditorFinishedMsg{reloadAfterCleanExit: true})
+		m = model.(Model)
+		require.NotNil(t, reload)
+		require.False(t, m.filesLoaded)
+		model, _ = m.Update(reload())
+		m = model.(Model)
+		require.Equal(t, []string{"edited.go"}, m.tree.VisibleFiles())
+		require.False(t, m.selectedTreeStaged())
+	}
+}
+
 func TestModel_EditUsesFocusedContext(t *testing.T) {
 	root := t.TempDir()
 	for _, path := range []string{"a.go", "b.go"} {

@@ -49,6 +49,15 @@ func (e Editor) Command(content string) (*exec.Cmd, func(error) (string, error),
 	return cmd, complete, nil
 }
 
+// WorkspaceCommand opens the editor in root without selecting a file.
+func (e Editor) WorkspaceCommand(root string) *exec.Cmd {
+	argv := e.resolve()
+	//nolint:gosec // user-controlled editor binary by design
+	cmd := exec.CommandContext(context.Background(), argv[0], argv[1:]...)
+	cmd.Dir = root
+	return cmd
+}
+
 // SourceCommand prepares an editor invocation for an existing source file.
 // Known editors receive best-effort line-navigation arguments; unknown editors
 // receive only the path so the command remains shell-free and predictable.

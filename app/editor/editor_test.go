@@ -172,6 +172,16 @@ func TestEditor_Command_TempFileCreateFailurePropagates(t *testing.T) {
 	assert.Nil(t, complete, "no complete fn returned when temp file creation fails")
 }
 
+func TestEditor_WorkspaceCommand(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	t.Setenv("EDITOR", `/bin/sh -c 'printf "%s\n" "$PWD" "$#" "$1"' -- "fixed arg"`)
+	cmd := Editor{}.WorkspaceCommand(root)
+	out, err := cmd.Output()
+	require.NoError(t, err)
+	require.Equal(t, root+"\n1\nfixed arg\n", string(out), "use the workspace directory and preserve editor arguments without adding a filename")
+}
+
 func TestEditor_SourceCommand_LineSyntax(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "a.go")
 	require.NoError(t, os.WriteFile(file, []byte("package main\n"), 0o600))
