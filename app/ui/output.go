@@ -32,8 +32,8 @@ func (m Model) handleFlushOutput() (tea.Model, tea.Cmd) {
 	if m.live.sender != nil {
 		return m.sendFeedback()
 	}
-	if m.live.discover != nil || m.live.discovery != discoveryIdle {
-		return m.discoverFeedback(true)
+	if m.live.discovery != discoveryDisabled && (m.live.discover != nil || m.live.discovery != discoveryIdle) {
+		return m.sendFeedback()
 	}
 	n := m.store.Count()
 	if n == 0 {
@@ -41,6 +41,9 @@ func (m Model) handleFlushOutput() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.cfg.outputPath == "" && m.postFlushHook == nil {
+		if m.live.discovery == discoveryDisabled {
+			return m.sendFeedback()
+		}
 		m.output.hint = "Output flush requires -o/--output or --post-flush-command"
 		return m, nil
 	}

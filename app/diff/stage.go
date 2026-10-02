@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -116,8 +117,8 @@ func (g *Git) updateIndexHunk(path string, displayed []DiffLine, cursor int, rev
 	if !slices.Equal(changes(parsed), changes(displayed)) {
 		return fmt.Errorf("file changed since display; reload before %s", operation)
 	}
-	// Keep Git's exact hunk bytes, including no-final-newline markers and
-	// quoted paths. A zero-context hunk matches revdiff's contiguous changes.
+	// Keep Git's hunk body, including no-final-newline markers and quoted
+	// paths. A zero-context hunk matches revdiff's contiguous changes.
 	hunks := strings.Split(raw[start+1:], "\n@@ ")
 	for i, hunk := range hunks {
 		if i > 0 {
@@ -138,11 +139,39 @@ func (g *Git) updateIndexHunk(path string, displayed []DiffLine, cursor int, rev
 			args = append(args, "--reverse")
 		}
 		cmd := exec.Command("git", append(args, "-")...)
-		cmd.Dir, cmd.Env, cmd.Stdin = g.workDir, GitEnv(), strings.NewReader(header+hunk)
+		cmd.Dir, cmd.Env, cmd.Stdin = g.workDir, GitEnv(), strings.NewReader(header+g.rebaseIndexHunk(hunk, reverse))
 		if out, applyErr := cmd.CombinedOutput(); applyErr != nil {
 			return fmt.Errorf("hunk %s: %w: %s", operation, applyErr, strings.TrimSpace(string(out)))
 		}
 		return nil
 	}
 	return errors.New("hunk not found; reload the diff")
+}
+
+// rebaseIndexHunk corrects a validated hunk's offsets for applying it alone.
+func (g *Git) rebaseIndexHunk(hunk string, reverse bool) string {
+	m := hunkHeaderRe.FindStringSubmatch(hunk)
+	oldStart, _ := strconv.Atoi(m[1])
+	newStart, _ := strconv.Atoi(m[3])
+	oldLen, newLen := 1, 1
+	if m[2] != "" {
+		oldLen, _ = strconv.Atoi(m[2])
+	}
+	if m[4] != "" {
+		newLen, _ = strconv.Atoi(m[4])
+	}
+	// Empty ranges name the preceding line rather than the first changed line.
+	shift := 0
+	if oldLen == 0 {
+		shift++
+	}
+	if newLen == 0 {
+		shift--
+	}
+	if reverse {
+		oldStart = newStart - shift
+	} else {
+		newStart = oldStart + shift
+	}
+	return fmt.Sprintf("@@ -%d,%d +%d,%d @@", oldStart, oldLen, newStart, newLen) + hunk[len(m[0]):]
 }

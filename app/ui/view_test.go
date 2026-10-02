@@ -48,13 +48,13 @@ func TestModel_SessionPanel(t *testing.T) {
 	m := testModel([]string{"a.go"}, nil)
 	m.review.cfg = &ReviewInfoConfig{VCS: "git", WorkDir: "/work/revdiff"}
 	sender := &feedbackStub{harness: "amp", display: "Review installer T-01a0f870-8501-7158-bd5f-36a7bcca868a"}
-	m.live.discover = func() (FeedbackSender, error) { return sender, nil }
+	m.live.discover = func() ([]FeedbackSender, error) { return []FeedbackSender{sender}, nil }
 	resized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	m = resized.(Model)
 	require.Equal(t, []string{"Harness: waiting"}, m.sessionPanelLines())
 	require.Equal(t, 2, m.statusBarHeight())
 	require.Equal(t, 25, m.layout.viewport.Height())
-	connected, _ := m.handleFeedbackDiscovered(feedbackDiscoveredMsg{sender: sender})
+	connected, _ := m.handleHarnessesDiscovered(harnessesDiscoveredMsg{sessions: []FeedbackSender{sender}})
 	m = connected.(Model)
 	require.Equal(t, 25, m.layout.viewport.Height(), "late connection must preserve viewport geometry")
 	require.Equal(t, []string{"Harness (amp): Review installer T-01a0f870-8501-7158-bd5f-36a7bcca868a"}, m.sessionPanelLines())
@@ -221,12 +221,13 @@ func TestModel_SessionPanelFeedbackConnection(t *testing.T) {
 		want  string
 	}{
 		{"standalone", liveState{}, ""},
-		{"waiting", liveState{discover: func() (FeedbackSender, error) { return nil, nil }}, "Harness: waiting"},
+		{"waiting", liveState{discover: func() ([]FeedbackSender, error) { return nil, nil }}, "Harness: waiting"},
+		{"disconnected", liveState{discovery: discoveryDisabled}, "Harness: disconnected"},
 		{"connected", liveState{sender: &feedbackStub{harness: "amp", display: "T-review"}}, "Harness (amp): T-review"},
 		{"different harness", liveState{sender: &feedbackStub{harness: "codex", display: "Implementation plan · session 42"}}, "Harness (codex): Implementation plan · session 42"},
 		{"sending", liveState{sender: &feedbackStub{harness: "codex", display: "session 42"}, operation: liveSending}, "Harness (codex): session 42 · sending"},
 		{"unconfirmed", liveState{sender: &feedbackStub{harness: "amp", display: "T-review"}, err: fmt.Errorf("offline")}, "Harness (amp): T-review · unconfirmed"},
-		{"unavailable", liveState{discover: func() (FeedbackSender, error) { return nil, nil }, err: fmt.Errorf("ambiguous")}, "Harness: unavailable"},
+		{"unavailable", liveState{discover: func() ([]FeedbackSender, error) { return nil, nil }, err: fmt.Errorf("ambiguous")}, "Harness: unavailable"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := testModel(nil, nil)

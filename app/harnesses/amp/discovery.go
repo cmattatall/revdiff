@@ -13,9 +13,9 @@ import (
 	"time"
 )
 
-// Discover finds a live plugin in exactly root, resolving directory symlinks.
-// No match returns nil; multiple matches require explicit --amp selection.
-func Discover(root string) (*Client, error) {
+// Discover lists live plugins in exactly root, resolving directory symlinks.
+// The caller chooses a session when more than one matches.
+func Discover(root string) ([]*Client, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("find Amp registry: %w", err)
@@ -35,8 +35,7 @@ func Discover(root string) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list Amp connections: %w", err)
 	}
-	var selected *Client
-	var matches []string
+	var matches []*Client
 	for _, entry := range entries {
 		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), "session-") {
 			continue
@@ -53,14 +52,10 @@ func Discover(root string) (*Client, error) {
 		live := client.available()
 		client.http.CloseIdleConnections()
 		if live {
-			selected = client
-			matches = append(matches, fmt.Sprintf("  %s: --amp %q", client.descriptor.Thread, path))
+			matches = append(matches, client)
 		}
 	}
-	if len(matches) > 1 {
-		return nil, fmt.Errorf("multiple Amp sessions in this directory; disconnect extras or select one explicitly:\n%s", strings.Join(matches, "\n"))
-	}
-	return selected, nil
+	return matches, nil
 }
 
 // available checks identity as well as liveness, without appending a message.

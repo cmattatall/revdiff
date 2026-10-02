@@ -110,6 +110,7 @@ type overlayManager interface {
 	OpenBlame(spec overlay.InfoSpec)
 	UpdateBlame(spec overlay.InfoSpec)
 	OpenInspection(spec overlay.InspectionSpec)
+	OpenSessions(labels []string)
 	Close()
 	HandleKey(msg tea.KeyPressMsg, action keymap.Action) overlay.Outcome
 	HandleInput(msg tea.Msg) overlay.Outcome
@@ -731,16 +732,16 @@ type ModelConfig struct {
 	// entry instead of a delete + all-add pair. Nil for non-git VCS (rename detection
 	// is git-only); only consulted in unstaged working-tree mode.
 	LoadUntrackedRenames func([]string) ([]diff.FileEntry, error)
-	Keymap               *keymap.Keymap                            // custom key bindings (nil uses defaults)
-	Editor               ExternalEditor                            // external-editor driver (nil uses app/editor.Editor{})
-	PostFlushHook        PostFlushHook                             // optional command run after an in-session output flush
-	Shell                ShellRunner                               // optional terminal handoff for :! commands
-	Inspector            CodeInspector                             // optional read-only language queries
-	LSPInstallCommands   map[string]string                         // language-owned commands, run only on explicit request
-	Feedback             FeedbackSender                            // optional harness connection; enables live refresh
-	DiscoverFeedback     func() (FeedbackSender, error)            // optional lookup until a connection is found
-	Harnesses            map[string]func() (FeedbackSender, error) // named lookups for :harness connect <type>
-	Stager               Stager                                    // optional Git index operations
+	Keymap               *keymap.Keymap                              // custom key bindings (nil uses defaults)
+	Editor               ExternalEditor                              // external-editor driver (nil uses app/editor.Editor{})
+	PostFlushHook        PostFlushHook                               // optional command run after an in-session output flush
+	Shell                ShellRunner                                 // optional terminal handoff for :! commands
+	Inspector            CodeInspector                               // optional read-only language queries
+	LSPInstallCommands   map[string]string                           // language-owned commands, run only on explicit request
+	Feedback             FeedbackSender                              // optional harness connection; enables live refresh
+	DiscoverHarnesses    func() ([]FeedbackSender, error)            // optional lookup of available harness sessions
+	Harnesses            map[string]func() ([]FeedbackSender, error) // named lookups for :harness connect <type>
+	Stager               Stager                                      // optional Git index operations
 	// CommitLog enumerates commits in the current ref range for the info popup's
 	// commit-log section. When nil, NewModel attempts to derive the source by
 	// type-asserting the Renderer against diff.CommitLogger; if the assertion
@@ -969,7 +970,7 @@ func NewModel(cfg ModelConfig) (Model, error) {
 		},
 		reviewed:             reviewedState{cache: make(map[string]string), pending: make(map[string]uint64)},
 		reload:               reloadState{applicable: cfg.ReloadApplicable},
-		live:                 liveState{sender: cfg.Feedback, discover: cfg.DiscoverFeedback, harnesses: cfg.Harnesses, stager: cfg.Stager},
+		live:                 liveState{sender: cfg.Feedback, discover: cfg.DiscoverHarnesses, harnesses: cfg.Harnesses, stager: cfg.Stager},
 		compact:              compactState{applicable: cfg.CompactApplicable},
 		annot:                annotationState{rowCache: make(map[annotCacheKey][]string)},
 		renderCache:          &diffRenderCache{},
@@ -990,18 +991,20 @@ func (m Model) Store() *annotation.Store {
 // (e.g. --stdin, standalone file, working-tree review), so tea.Batch harmlessly
 // drops it in those cases.
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.loadFiles(), m.loadCommits(), m.liveTick(), m.feedbackTick())
+	return tea.Batch(m.loadFiles(), m.loadCommits(), m.liveTick(), m.harnessDiscoveryTick())
 }
 
 // Update handles messages and updates the model state.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case feedbackTickMsg:
-		model, cmd := m.discoverFeedback(false)
-		return model, tea.Batch(cmd, m.feedbackTick())
-	case feedbackDiscoveredMsg:
-		return m.handleFeedbackDiscovered(msg)
+	case harnessDiscoveryTickMsg:
+		return m.discoverHarnesses()
+	case harnessesDiscoveredMsg:
+		return m.handleHarnessesDiscovered(msg)
 	case liveTickMsg:
+		if msg.seq != m.live.discoverySeq {
+			return m, nil
+		}
 		return m.pollLive()
 	case liveLoadedMsg:
 		return m.handleLiveLoaded(msg)
@@ -1425,6 +1428,12 @@ func (m Model) handleModalKey(msg tea.KeyPressMsg) (bool, tea.Model, tea.Cmd) {
 			return true, model, cmd
 		case overlay.OutcomeInspectionBack:
 			model, cmd := m.inspectionBack()
+			return true, model, cmd
+		case overlay.OutcomeSessionChosen:
+			model, cmd := m.chooseHarness(out.SessionIndex)
+			return true, model, cmd
+		case overlay.OutcomeSessionCanceled:
+			model, cmd := m.disconnectHarness()
 			return true, model, cmd
 		case overlay.OutcomeClosed, overlay.OutcomeNone:
 		}

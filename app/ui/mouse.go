@@ -225,6 +225,10 @@ func (m Model) handleOverlayMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m.chooseInspection(out.InspectionIndex)
 	case overlay.OutcomeInspectionBack:
 		return m.inspectionBack()
+	case overlay.OutcomeSessionChosen:
+		return m.chooseHarness(out.SessionIndex)
+	case overlay.OutcomeSessionCanceled:
+		return m.disconnectHarness()
 	case overlay.OutcomeClosed, overlay.OutcomeNone:
 	}
 	return m, nil

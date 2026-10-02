@@ -919,8 +919,8 @@ func TestBuildHelpSpec_PaletteCommands(t *testing.T) {
 	m.keymap.Unbind("O")
 	m.keymap.Bind("ctrl+f", keymap.ActionFlushOutput)
 	m.keymap.Unbind("q")
-	m.live.harnesses = map[string]func() (FeedbackSender, error){
-		"example": func() (FeedbackSender, error) { panic("help must not connect") },
+	m.live.harnesses = map[string]func() ([]FeedbackSender, error){
+		"example": func() ([]FeedbackSender, error) { panic("help must not connect") },
 	}
 	entries := map[string]overlay.HelpEntry{}
 	motions := map[string]overlay.HelpEntry{}

@@ -1,6 +1,7 @@
 package diff
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -155,6 +156,47 @@ func TestGitStageHunk(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, updated, indexed)
 		})
+	}
+}
+
+func TestGitIndexHunkWithEarlierLineShift(t *testing.T) {
+	for _, reverse := range []bool{false, true} {
+		for _, addition := range []bool{false, true} {
+			for _, earlier := range []string{"first\nearlier A\nearlier B\nalpha\n", ""} {
+				t.Run(fmt.Sprintf("reverse=%v/addition=%v/earlier=%q", reverse, addition, earlier), func(t *testing.T) {
+					root := setupTestRepo(t)
+					before := "start\nfirst\nalpha\nbeta\ngamma\ndelta\nepsilon\nzeta\neta\nend\n"
+					target := "gamma"
+					selected := strings.Replace(before, "gamma\n", "", 1)
+					if addition {
+						target = "insert target"
+						selected = strings.Replace(before, "gamma\n", "gamma\ninsert target\n", 1)
+					}
+					after := strings.Replace(selected, "first\nalpha\n", earlier, 1)
+					writeFile(t, root, "file.txt", before)
+					gitCmd(t, root, "add", ".")
+					gitCmd(t, root, "commit", "-m", "baseline")
+					writeFile(t, root, "file.txt", after)
+					g := NewGit(root)
+					update, want := g.StageHunk, selected
+					if reverse {
+						gitCmd(t, root, "add", ".")
+						update = g.UnstageHunk
+						want = strings.Replace(before, "first\nalpha\n", earlier, 1)
+					}
+					lines, err := g.FileDiff(FileDiffRequest{Path: "file.txt", Staged: reverse})
+					require.NoError(t, err)
+					cursor := slices.IndexFunc(lines, func(l DiffLine) bool { return l.Content == target })
+					require.NoError(t, update("file.txt", lines, cursor))
+					indexed, err := g.runGit("show", ":file.txt")
+					require.NoError(t, err)
+					require.Equal(t, want, indexed, "apply only the selected hunk at its original position")
+					working, err := os.ReadFile(filepath.Join(root, "file.txt"))
+					require.NoError(t, err)
+					require.Equal(t, after, string(working))
+				})
+			}
+		}
 	}
 }
 

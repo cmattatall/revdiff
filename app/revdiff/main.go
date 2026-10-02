@@ -208,8 +208,8 @@ func run(opts options) (int, error) {
 	}
 
 	var feedback ui.FeedbackSender
-	var discoverFeedback func() (ui.FeedbackSender, error)
-	var harnesses map[string]func() (ui.FeedbackSender, error)
+	var discoverHarnesses func() ([]ui.FeedbackSender, error)
+	var harnesses map[string]func() ([]ui.FeedbackSender, error)
 	if opts.Amp != "" && vcsType != diff.VCSGit {
 		return 0, errors.New("--amp requires a Git working tree")
 	}
@@ -218,19 +218,21 @@ func run(opts options) (int, error) {
 		if cwdErr != nil {
 			return 0, cwdErr
 		}
-		discoverFeedback = func() (ui.FeedbackSender, error) {
-			client, discoverErr := amp.Discover(cwd)
-			if client == nil {
-				return nil, discoverErr
+		discoverHarnesses = func() ([]ui.FeedbackSender, error) {
+			clients, discoverErr := amp.Discover(cwd)
+			if discoverErr != nil {
+				return nil, fmt.Errorf("discover Amp sessions: %w", discoverErr)
 			}
-			return client, discoverErr
+			sessions := make([]ui.FeedbackSender, 0, len(clients))
+			for _, client := range clients {
+				sessions = append(sessions, client)
+			}
+			return sessions, nil
 		}
-		harnesses = map[string]func() (ui.FeedbackSender, error){"amp": discoverFeedback}
+		harnesses = map[string]func() ([]ui.FeedbackSender, error){"amp": discoverHarnesses}
 		if opts.Amp != "" {
 			feedback, err = amp.New(opts.Amp, cwd)
-			discoverFeedback = nil // an explicit selection must never switch threads
-		} else {
-			feedback, err = discoverFeedback()
+			discoverHarnesses = nil // an explicit selection must never switch threads
 		}
 		if err != nil {
 			return 0, err
@@ -269,7 +271,7 @@ func run(opts options) (int, error) {
 		PostFlushHook:        postFlushHook,
 		Shell:                shell.Runner{},
 		Feedback:             feedback,
-		DiscoverFeedback:     discoverFeedback,
+		DiscoverHarnesses:    discoverHarnesses,
 		Harnesses:            harnesses,
 		Stager:               stager,
 		CommitLog:            commitLogger,

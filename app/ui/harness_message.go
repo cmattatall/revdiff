@@ -41,7 +41,7 @@ func (m Model) openHarnessMessage() (tea.Model, tea.Cmd) {
 	focus := input.Focus()
 	m.message = harnessMessageState{active: true, input: input, draft: m.message.draft}
 	m.layout.viewport.SetHeight(m.paneHeight() - 1)
-	model, discover := m.discoverFeedback(false)
+	model, discover := m.discoverHarnesses()
 	return model, tea.Batch(focus, discover)
 }
 

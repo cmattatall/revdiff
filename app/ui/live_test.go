@@ -10,6 +10,7 @@ import (
 	"github.com/umputun/revdiff/app/annotation"
 	"github.com/umputun/revdiff/app/diff"
 	"github.com/umputun/revdiff/app/keymap"
+	"github.com/umputun/revdiff/app/ui/overlay"
 )
 
 type feedbackStub struct {
@@ -265,8 +266,8 @@ func TestStageShortcutCapturesDisplayedHunk(t *testing.T) {
 			return stageErr
 		}}
 		sender := &feedbackStub{}
-		m.live.discover = func() (FeedbackSender, error) { return sender, nil }
-		model, lookup := m.discoverFeedback(false)
+		m.live.discover = func() ([]FeedbackSender, error) { return []FeedbackSender{sender}, nil }
+		model, lookup := m.discoverHarnesses()
 		m = model.(Model)
 		model, cmd := m.Update(tea.KeyPressMsg{Code: 's', Text: string('s')})
 		m = model.(Model)
@@ -453,10 +454,164 @@ func TestStageAnchorDoesNotLeakToOtherLoads(t *testing.T) {
 	}
 }
 
+func TestHarnessSessionSelection(t *testing.T) {
+	for _, delivery := range []string{"none", "before lookup", "after lookup"} {
+		first := &feedbackStub{harness: "amp", display: "Parser T-first"}
+		second := &feedbackStub{harness: "amp", display: "Renderer T-second"}
+		lookups := 0
+		m := testNewModel(t, plainRenderer(), annotation.NewStore(), noopHighlighter(), ModelConfig{
+			DiscoverHarnesses: func() ([]FeedbackSender, error) {
+				lookups++
+				return []FeedbackSender{first, second}, nil
+			},
+		})
+		m.store.Add(annotation.Annotation{File: "a.go", Line: 2, Comment: "review"})
+		request := m.discoverHarnesses
+		if delivery == "before lookup" {
+			request = m.sendFeedback
+		}
+		model, lookup := request()
+		m = model.(Model)
+		m.startCommand() // discovery must not replace an input opened during IO
+		model, tick := m.Update(lookup())
+		m = model.(Model)
+		require.Nil(t, m.live.sender)
+		require.NotNil(t, tick)
+		require.False(t, m.overlay.Active())
+		if delivery == "after lookup" {
+			model, cmd := m.sendFeedback()
+			m = model.(Model)
+			require.Nil(t, cmd, "queue delivery while the existing picker waits for input to close")
+		}
+		m.closeCommand()
+		model, _ = m.Update(harnessDiscoveryTickMsg{})
+		m = model.(Model)
+		require.Equal(t, overlay.KindSessions, m.overlay.Kind())
+		require.Equal(t, 1, lookups, "pending selection must not poll the harness again")
+		model, _ = m.Update(tea.PasteMsg{Content: "rndr"}) // fuzzy-filter the second item
+		m = model.(Model)
+		model, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		m = model.(Model)
+		require.Same(t, second, m.live.sender, "use the original index after filtering")
+		require.False(t, m.overlay.Active())
+		require.Empty(t, m.live.candidates, "only the selected connection remains")
+		require.Empty(t, first.content)
+		if delivery != "none" {
+			model, _ = m.Update(cmd().(tea.BatchMsg)[0]())
+			m = model.(Model)
+			require.Len(t, second.content, 1)
+			require.Zero(t, m.store.Count())
+		} else {
+			require.Empty(t, second.content, "startup connection never sends feedback")
+			require.Equal(t, 1, m.store.Count())
+		}
+	}
+}
+
+func TestHarnessSessionSelectionCancelAndReconnect(t *testing.T) {
+	first, second := &feedbackStub{display: "first"}, &feedbackStub{display: "second"}
+	m := testNewModel(t, plainRenderer(), annotation.NewStore(), noopHighlighter(), ModelConfig{
+		Harnesses: map[string]func() ([]FeedbackSender, error){"example": func() ([]FeedbackSender, error) {
+			return []FeedbackSender{first, second}, nil
+		}},
+	})
+	for attempt := range 2 {
+		m.startCommand()
+		m.command.input.SetValue("harness connect example")
+		model, lookup := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		m = model.(Model)
+		model, _ = m.Update(lookup())
+		m = model.(Model)
+		require.Equal(t, overlay.KindSessions, m.overlay.Kind())
+		if attempt == 0 {
+			model, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
+			m = model.(Model)
+			require.Equal(t, discoveryDisabled, m.live.discovery)
+			model, cmd := m.Update(harnessDiscoveryTickMsg{})
+			m = model.(Model)
+			require.Nil(t, cmd)
+			require.False(t, m.overlay.Active(), "canceled selection must not reopen")
+		} else {
+			model, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+			m = model.(Model)
+			model, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+			m = model.(Model)
+			require.Same(t, second, m.live.sender)
+		}
+	}
+}
+
+func TestHarnessDisconnectIgnoresLateDiscovery(t *testing.T) {
+	oldSender, newSender := &feedbackStub{display: "old"}, &feedbackStub{display: "new"}
+	m := testNewModel(t, plainRenderer(), annotation.NewStore(), noopHighlighter(), ModelConfig{
+		DiscoverHarnesses: func() ([]FeedbackSender, error) { return []FeedbackSender{oldSender}, nil },
+		Harnesses: map[string]func() ([]FeedbackSender, error){"example": func() ([]FeedbackSender, error) {
+			return []FeedbackSender{newSender}, nil
+		}},
+	})
+	m.store.Add(annotation.Annotation{File: "a.go", Line: 4, Comment: "keep"})
+	model, lookup := m.sendFeedback()
+	m = model.(Model)
+	model, _ = m.disconnectHarness()
+	m = model.(Model)
+	late := lookup()
+	model, cmd := m.Update(late)
+	m = model.(Model)
+	require.Nil(t, cmd)
+	require.Equal(t, discoveryDisabled, m.live.discovery)
+	require.Nil(t, m.live.sender)
+
+	model, connect := m.connectHarness("example")
+	m = model.(Model)
+	model, cmd = m.Update(late)
+	m = model.(Model)
+	require.Nil(t, cmd)
+	require.Equal(t, discoveryForConnect, m.live.discovery, "old result cannot complete the new lookup")
+	require.Nil(t, m.live.sender)
+	model, _ = m.Update(connect())
+	m = model.(Model)
+	require.Same(t, newSender, m.live.sender)
+	require.Equal(t, 1, m.store.Count())
+	require.Empty(t, oldSender.content)
+	require.Empty(t, newSender.content, "reconnecting does not send the canceled queued delivery")
+}
+
+func TestHarnessDisconnectWaitsForSendAndKeepsRetry(t *testing.T) {
+	for _, kind := range []feedbackKind{feedbackAnnotations, feedbackMessage} {
+		sender := &feedbackStub{err: errors.New("unconfirmed")}
+		m := testNewModel(t, plainRenderer(), annotation.NewStore(), noopHighlighter(), ModelConfig{Feedback: sender})
+		note := annotation.Annotation{File: "a.go", Line: 2, Comment: "keep annotation"}
+		m.store.Add(note)
+		m.message.draft = "keep message"
+		if kind == feedbackMessage {
+			m.live.content, m.live.kind = m.message.draft, kind
+		}
+		model, send := m.sendFeedback()
+		m = model.(Model)
+		model, cmd := m.disconnectHarness()
+		m = model.(Model)
+		require.Nil(t, cmd)
+		require.Same(t, sender, m.live.sender)
+		require.Equal(t, liveSending, m.live.operation)
+		require.Contains(t, m.output.hint, "Wait for feedback delivery")
+		model, _ = m.Update(send())
+		m = model.(Model)
+		content, pending := m.live.content, m.live.pending
+		model, _ = m.disconnectHarness()
+		m = model.(Model)
+		require.Nil(t, m.live.sender)
+		require.Equal(t, discoveryDisabled, m.live.discovery)
+		require.Equal(t, content, m.live.content)
+		require.Equal(t, pending, m.live.pending)
+		require.Equal(t, []annotation.Annotation{note}, m.store.Get("a.go"))
+		require.Equal(t, "keep message", m.message.draft)
+	}
+}
+
 func TestHarnessConnectFailurePreservesAnnotations(t *testing.T) {
 	for _, lookupErr := range []error{nil, errors.New("multiple Amp sessions")} {
 		m := testNewModel(t, plainRenderer(), annotation.NewStore(), noopHighlighter(), ModelConfig{
-			Harnesses: map[string]func() (FeedbackSender, error){"amp": func() (FeedbackSender, error) {
+			Harnesses: map[string]func() ([]FeedbackSender, error){"amp": func() ([]FeedbackSender, error) {
 				return nil, lookupErr
 			}},
 		})
@@ -483,9 +638,9 @@ func TestAnnotationSendJoinsManualConnect(t *testing.T) {
 	sender := &feedbackStub{harness: "amp", err: errors.New("unconfirmed")}
 	lookups := 0
 	m := testNewModel(t, plainRenderer(), annotation.NewStore(), noopHighlighter(), ModelConfig{
-		Harnesses: map[string]func() (FeedbackSender, error){"amp": func() (FeedbackSender, error) {
+		Harnesses: map[string]func() ([]FeedbackSender, error){"amp": func() ([]FeedbackSender, error) {
 			lookups++
-			return sender, nil
+			return []FeedbackSender{sender}, nil
 		}},
 	})
 	m.store.Add(annotation.Annotation{File: "review.go", Line: 8, Comment: "send once"})
@@ -518,32 +673,31 @@ func TestAnnotationSendJoinsManualConnect(t *testing.T) {
 	require.Zero(t, m.store.Count())
 }
 
-func TestFeedbackDiscoveryAfterLaunchPreservesDrafts(t *testing.T) {
-	var available FeedbackSender
+func TestHarnessDiscoveryAfterLaunchPreservesDrafts(t *testing.T) {
+	var available []FeedbackSender
 	store := annotation.NewStore()
 	store.Add(annotation.Annotation{File: "a.go", Line: 7, Comment: "keep this"})
 	m := testNewModel(t, plainRenderer(), store, noopHighlighter(), ModelConfig{
-		DiscoverFeedback: func() (FeedbackSender, error) { return available, nil },
+		DiscoverHarnesses: func() ([]FeedbackSender, error) { return available, nil },
 	})
-	require.NotNil(t, m.feedbackTick())
+	require.NotNil(t, m.harnessDiscoveryTick())
 	require.Nil(t, m.liveTick(), "do not refresh files before connecting")
 	model, cmd := m.handleFlushOutput()
 	m = model.(Model)
 	model, next := m.Update(cmd())
 	m = model.(Model)
-	require.Nil(t, next)
+	require.NotNil(t, next, "keep looking for a session after an empty lookup")
 	require.Contains(t, m.output.hint, "Harness not connected")
 	require.NotContains(t, m.output.hint, "--output")
 	require.Equal(t, 1, store.Count())
 	require.Equal(t, discoveryIdle, m.live.discovery, "a failed lookup must not leave a queued send")
 
 	sender := &feedbackStub{}
-	available = sender
+	available = []FeedbackSender{sender}
 	m.annot.annotating = true
-	model, cmd = m.Update(feedbackTickMsg{})
+	model, cmd = m.Update(harnessDiscoveryTickMsg{})
 	m = model.(Model)
-	lookup := cmd().(tea.BatchMsg)[0] // the other command schedules another discovery tick
-	model, next = m.Update(lookup())
+	model, next = m.Update(cmd())
 	m = model.(Model)
 	require.Same(t, sender, m.live.sender)
 	require.True(t, m.annot.annotating)
@@ -551,8 +705,8 @@ func TestFeedbackDiscoveryAfterLaunchPreservesDrafts(t *testing.T) {
 	require.Equal(t, "Harness connected; press O to send feedback", m.output.hint)
 	require.Empty(t, sender.content, "background connection must not send annotations")
 	require.NotNil(t, next, "start live refresh after connecting")
-	require.Nil(t, m.feedbackTick(), "stop discovery once bound")
-	_, next = m.Update(feedbackTickMsg{})
+	require.Nil(t, m.harnessDiscoveryTick(), "stop discovery once bound")
+	_, next = m.Update(harnessDiscoveryTickMsg{})
 	require.Nil(t, next, "an already scheduled discovery tick must stop too")
 }
 
@@ -562,9 +716,9 @@ func TestFlushJoinsInFlightDiscoveryAndSendsOnce(t *testing.T) {
 	store := annotation.NewStore()
 	store.Add(annotation.Annotation{File: "review.md", Line: 12, Comment: "late connection"})
 	m := testNewModel(t, plainRenderer(), store, noopHighlighter(), ModelConfig{
-		DiscoverFeedback: func() (FeedbackSender, error) { lookups++; return sender, nil },
+		DiscoverHarnesses: func() ([]FeedbackSender, error) { lookups++; return []FeedbackSender{sender}, nil },
 	})
-	model, lookup := m.discoverFeedback(false)
+	model, lookup := m.discoverHarnesses()
 	m = model.(Model)
 	require.Equal(t, discoveryBackground, m.live.discovery)
 	for range 2 {
@@ -574,7 +728,7 @@ func TestFlushJoinsInFlightDiscoveryAndSendsOnce(t *testing.T) {
 		require.Nil(t, cmd, "O joins rather than duplicates an in-flight lookup")
 		require.Equal(t, discoveryForSend, m.live.discovery)
 	}
-	model, duplicate := m.discoverFeedback(false)
+	model, duplicate := m.discoverHarnesses()
 	m = model.(Model)
 	require.Nil(t, duplicate)
 	require.Equal(t, discoveryForSend, m.live.discovery, "background tick must not downgrade a queued send")
@@ -594,17 +748,17 @@ func TestFlushJoinsInFlightDiscoveryAndSendsOnce(t *testing.T) {
 	require.Equal(t, "Feedback sent", m.output.hint)
 }
 
-func TestFeedbackDiscoveryFailureRetainsAnnotations(t *testing.T) {
+func TestHarnessDiscoveryFailureRetainsAnnotations(t *testing.T) {
 	store := annotation.NewStore()
 	store.Add(annotation.Annotation{File: "a.go", Line: 3, Comment: "keep"})
 	m := testNewModel(t, plainRenderer(), store, noopHighlighter(), ModelConfig{
-		DiscoverFeedback: func() (FeedbackSender, error) { return nil, errors.New("multiple Amp sessions") },
+		DiscoverHarnesses: func() ([]FeedbackSender, error) { return nil, errors.New("registry unavailable") },
 	})
 	model, cmd := m.handleFlushOutput()
 	m = model.(Model)
 	model, _ = m.Update(cmd())
 	m = model.(Model)
-	require.Equal(t, "multiple Amp sessions", m.output.hint)
+	require.Equal(t, "registry unavailable", m.output.hint)
 	require.Nil(t, m.live.sender)
 	require.Equal(t, liveIdle, m.live.operation)
 	require.Equal(t, discoveryIdle, m.live.discovery)
@@ -619,8 +773,8 @@ func TestFeedbackRetryPreservesNewAndEditedAnnotations(t *testing.T) {
 	store.Add(a)
 	store.Add(b)
 	m := testNewModel(t, plainRenderer(), store, noopHighlighter(), ModelConfig{
-		Feedback:         sender,
-		DiscoverFeedback: func() (FeedbackSender, error) { t.Fatal("must not switch threads on send failure"); return nil, nil },
+		Feedback:          sender,
+		DiscoverHarnesses: func() ([]FeedbackSender, error) { t.Fatal("must not switch threads on send failure"); return nil, nil },
 	})
 	model, cmd := m.handleFlushOutput()
 	m = model.(Model)
@@ -673,6 +827,19 @@ func TestLiveRefreshGuardsAndCursor(t *testing.T) {
 	stale.file.seq++
 	model, _ = m.handleLiveLoaded(stale)
 	require.Equal(t, old, model.(Model).file.lines)
+	detached, _ := m.disconnectHarness()
+	model, cmd := detached.(Model).handleLiveLoaded(msg)
+	require.Nil(t, cmd)
+	require.Equal(t, old, model.(Model).file.lines, "ignore refresh completed after disconnect")
+	reconnected := detached.(Model)
+	reconnected.bindHarness(&feedbackStub{})
+	model, cmd = reconnected.handleLiveLoaded(msg)
+	require.Nil(t, cmd, "old refresh must not start a second polling loop after reconnect")
+	require.Equal(t, old, model.(Model).file.lines)
+	_, cmd = reconnected.Update(liveTickMsg{seq: m.live.discoverySeq})
+	require.Nil(t, cmd, "old timers must not restart polling after reconnect")
+	_, cmd = reconnected.Update(liveTickMsg{seq: reconnected.live.discoverySeq})
+	require.NotNil(t, cmd, "the new connection continues polling")
 	model, _ = m.handleLiveLoaded(msg)
 	m = model.(Model)
 	require.Equal(t, updated, m.file.lines)

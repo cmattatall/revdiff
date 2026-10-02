@@ -161,6 +161,10 @@ Vim-style commands are available too: `:set number` / `:set nonumber` show/hide 
 
 Harness commands support completion too: `:harness connect amp` looks for an Amp session in the current directory without sending anything. `:harness send` (`:hs`) opens a general-message box with no file or line association. `Enter` sends the message; `Esc` closes the box and keeps the draft for this session. Sending a message leaves annotations untouched. Use `O` or `:w` to send annotations. An existing connection stays bound to its original session. Unconfirmed deliveries retain their original text for retry before another message or annotation batch can be sent.
 
+Use `:harness disconnect` to detach this review without stopping the harness session. It preserves annotations and message drafts, stops automatic connection and live refresh, and shows `Harness: disconnected`. Reconnect explicitly with `:harness connect amp`. A send already in progress must finish before disconnecting.
+
+When multiple sessions match, startup and `:harness connect amp` open a filterable picker showing titles and thread IDs. Select with arrows and Enter, or Esc to stay disconnected. Explicit `--amp` selection bypasses the picker. Currently `amp` is the only live-connect type.
+
 Annotation navigation also has typed commands: `:annotation next` and `:annotation prev`. These commands and `:w` appear in help under **Annotations**. Display settings, including `:blame on` / `:blame off` for the blame gutter, work from either tree or diff focus.
 
 Run `:! <command>` to execute a shell command, for example `:! git status`. It runs through `$SHELL` (or `/bin/sh`) in revdiff's launch directory, with normal quoting, pipes, and terminal input/output. Press Enter when finished to return to the review. Commands are kept in session history with their original case. Annotations are preserved, and `:reload` refreshes the diff after external changes.

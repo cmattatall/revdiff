@@ -655,15 +655,56 @@ func TestModel_CommandVimAliases(t *testing.T) {
 	}
 }
 
+func TestModel_CommandHarnessDisconnect(t *testing.T) {
+	for _, focus := range []pane{paneTree, paneDiff} {
+		sender := &feedbackStub{harness: "example", display: "Review session"}
+		m := testNewModel(t, plainRenderer(), annotation.NewStore(), noopHighlighter(), ModelConfig{
+			Feedback: sender,
+			DiscoverHarnesses: func() ([]FeedbackSender, error) {
+				t.Fatal("disconnect must prevent automatic discovery")
+				return nil, nil
+			},
+		})
+		m.layout.focus = focus
+		m.layout.width = 120
+		m.store.Add(annotation.Annotation{File: "a.go", Line: 7, Comment: "keep until send"})
+		m.message.draft = "keep my message"
+		m.startCommand()
+		m.command.input.SetValue("harness dis")
+		require.Equal(t, "harness disconnect", m.commandMatches()[0].name)
+		model, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		m = model.(Model)
+		require.Nil(t, cmd)
+		require.False(t, m.command.active)
+		require.Nil(t, m.live.sender)
+		require.Equal(t, discoveryDisabled, m.live.discovery)
+		require.Equal(t, focus, m.layout.focus)
+		require.Equal(t, 1, m.store.Count())
+		require.Equal(t, "keep my message", m.message.draft)
+		require.Equal(t, []string{"Harness: disconnected"}, m.sessionPanelLines())
+		require.Nil(t, m.harnessDiscoveryTick())
+		for _, msg := range []tea.Msg{harnessDiscoveryTickMsg{}, liveTickMsg{}} {
+			model, cmd = m.Update(msg)
+			m = model.(Model)
+			require.Nil(t, cmd, "queued timers must not reconnect or refresh")
+		}
+		model, cmd = m.handleFlushOutput()
+		m = model.(Model)
+		require.Nil(t, cmd)
+		require.Contains(t, m.output.hint, ":harness connect")
+		require.Empty(t, sender.content)
+	}
+}
+
 func TestModel_CommandHarnessConnect(t *testing.T) {
 	for _, name := range []string{"amp", "example"} {
 		for _, focus := range []pane{paneTree, paneDiff} {
 			sender := &feedbackStub{harness: name, display: "Selected session"}
 			calls := 0
 			m := testNewModel(t, plainRenderer(), annotation.NewStore(), noopHighlighter(), ModelConfig{
-				Harnesses: map[string]func() (FeedbackSender, error){name: func() (FeedbackSender, error) {
+				Harnesses: map[string]func() ([]FeedbackSender, error){name: func() ([]FeedbackSender, error) {
 					calls++
-					return sender, nil
+					return []FeedbackSender{sender}, nil
 				}},
 			})
 			m.layout.focus = focus
@@ -1110,8 +1151,8 @@ func TestTUICommand_RegisteredBehaviorSurvivesRename(t *testing.T) {
 			m.modes.collapsed.enabled = false
 			m.store.Add(annotation.Annotation{File: "a.go", Line: 1, Comment: "pending"})
 			sender := &feedbackStub{}
-			m.live.harnesses = map[string]func() (FeedbackSender, error){
-				"example": func() (FeedbackSender, error) { return sender, nil },
+			m.live.harnesses = map[string]func() ([]FeedbackSender, error){
+				"example": func() ([]FeedbackSender, error) { return []FeedbackSender{sender}, nil },
 			}
 			var registered tuiCommand
 			for _, entry := range m.commandEntries() {
@@ -1133,7 +1174,7 @@ func TestTUICommand_RegisteredBehaviorSurvivesRename(t *testing.T) {
 			case "harness connect example":
 				require.Equal(t, discoveryForConnect, m.live.discovery)
 				require.NotNil(t, cmd)
-				require.Same(t, sender, cmd().(feedbackDiscoveredMsg).sender)
+				require.Equal(t, []FeedbackSender{sender}, cmd().(harnessesDiscoveredMsg).sessions)
 			case "blame view":
 				require.Equal(t, "Focus the diff to inspect line blame", m.keys.hint)
 			case "focus diff":

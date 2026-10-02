@@ -268,6 +268,8 @@ func (m Model) commandEntries() []paletteCommand {
 		shellCommand{commandEntry: commandEntry{name: "git", description: "run git through the shell", section: "Miscellaneous"}, prefix: "git"},
 		tuiCommand{commandEntry: commandEntry{name: "harness send", description: "compose a message to the connected harness", aliases: []string{"hs"}, section: "Harness"},
 			run: func(m *Model, _ commandScope) (tea.Model, tea.Cmd) { return m.openHarnessMessage() }},
+		tuiCommand{commandEntry: commandEntry{name: "harness disconnect", description: "disconnect from the harness and stop automatic connection", section: "Harness"},
+			run: func(m *Model, _ commandScope) (tea.Model, tea.Cmd) { return m.disconnectHarness() }},
 		tuiCommand{commandEntry: commandEntry{name: "quit!", description: "discard unsent feedback and quit", aliases: []string{"q!"}, section: "Miscellaneous"},
 			validate: func(m *Model) string { return m.quitError(true) },
 			run:      func(m *Model, _ commandScope) (tea.Model, tea.Cmd) { return m.quitReview(true) }},

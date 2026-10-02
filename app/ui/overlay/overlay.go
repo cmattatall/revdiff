@@ -35,6 +35,7 @@ const (
 	KindInfo             // unified info popup (description + session + commits)
 	KindBlame            // attribution for the selected source line
 	KindInspection       // read-only language-server inspection
+	KindSessions         // harness session selection
 )
 
 // OutcomeKind describes what happened after a key press in an overlay.
@@ -50,6 +51,8 @@ const (
 	OutcomeFileChosen                          // user picked a file (path in Outcome.FileChoice)
 	OutcomeInspectionChosen                    // user picked a symbol or source location
 	OutcomeInspectionBack                      // return to the previous inspection page or review
+	OutcomeSessionChosen                       // user picked a harness session
+	OutcomeSessionCanceled                     // user declined to connect
 )
 
 // Outcome is the return value from HandleKey. Callers switch on Kind and read
@@ -60,6 +63,7 @@ type Outcome struct {
 	ThemeChoice      *ThemeChoice
 	FileChoice       *FileChoice
 	InspectionIndex  int
+	SessionIndex     int
 	Cmd              tea.Cmd // asynchronous input work, such as reading the clipboard
 }
 
@@ -196,6 +200,7 @@ type Manager struct {
 	annotLst annotListOverlay
 	themeSel themeSelectOverlay
 	filePick filePickerOverlay
+	sessions filePickerOverlay
 	info     infoOverlay
 	inspect  inspectionOverlay
 	// bounds is the popup rectangle on screen as of the last Compose call;
@@ -257,6 +262,30 @@ func (m *Manager) OpenFilePicker(spec FilePickerSpec) {
 	m.filePick.open(spec)
 }
 
+// OpenSessions reuses the filterable list for session labels, not file paths.
+func (m *Manager) OpenSessions(labels []string) {
+	m.Close()
+	m.kind = KindSessions
+	m.sessions.open(FilePickerSpec{Paths: labels})
+	m.sessions.heading = "Connect to harness session"
+	m.sessions.fuzzy = true
+}
+
+func (m *Manager) sessionOutcome(out Outcome) Outcome {
+	switch out.Kind {
+	case OutcomeFileChosen:
+		for index, label := range m.sessions.all {
+			if label == out.FileChoice.Path {
+				return Outcome{Kind: OutcomeSessionChosen, SessionIndex: index}
+			}
+		}
+	case OutcomeClosed:
+		return Outcome{Kind: OutcomeSessionCanceled}
+	default:
+	}
+	return out
+}
+
 // OpenInfo activates the unified info popup with the given spec.
 func (m *Manager) OpenInfo(spec InfoSpec) {
 	m.Close()
@@ -314,6 +343,8 @@ func (m *Manager) HandleKey(msg tea.KeyPressMsg, action keymap.Action) Outcome {
 		out = m.themeSel.handleKey(msg, action)
 	case KindFilePicker:
 		out = m.filePick.handleKey(msg, action)
+	case KindSessions:
+		out = m.sessionOutcome(m.sessions.handleKey(msg, action))
 	case KindInfo, KindBlame:
 		out = m.info.handleKey(msg, action)
 	case KindInspection:
@@ -323,7 +354,7 @@ func (m *Manager) HandleKey(msg tea.KeyPressMsg, action keymap.Action) Outcome {
 	}
 
 	switch out.Kind {
-	case OutcomeClosed, OutcomeAnnotationChosen, OutcomeThemeConfirmed, OutcomeThemeCanceled, OutcomeFileChosen:
+	case OutcomeClosed, OutcomeAnnotationChosen, OutcomeThemeConfirmed, OutcomeThemeCanceled, OutcomeFileChosen, OutcomeSessionChosen, OutcomeSessionCanceled:
 		m.Close()
 	case OutcomeNone, OutcomeThemePreview, OutcomeInspectionChosen, OutcomeInspectionBack: // no state change
 	}
@@ -339,6 +370,8 @@ func (m *Manager) HandleInput(msg tea.Msg) Outcome {
 		switch m.kind {
 		case KindFilePicker:
 			msg = filterInputMsg{identity: m.filePick.filter.identity, msg: paste}
+		case KindSessions:
+			msg = filterInputMsg{identity: m.sessions.filter.identity, msg: paste}
 		case KindThemeSelect:
 			msg = filterInputMsg{identity: m.themeSel.filter.identity, msg: paste}
 		case KindInspection:
@@ -352,6 +385,14 @@ func (m *Manager) HandleInput(msg tea.Msg) Outcome {
 		return Outcome{}
 	}
 	switch m.kind {
+	case KindSessions:
+		if input.identity == m.sessions.filter.identity {
+			before := m.sessions.filter.Value()
+			m.sessions.filter.Model, _ = m.sessions.filter.Update(input.msg)
+			if m.sessions.filter.Value() != before {
+				m.sessions.applyFilter()
+			}
+		}
 	case KindInspection:
 		if m.inspect.spec.Items != nil && input.identity == m.inspect.picker.filter.identity {
 			before := m.inspect.picker.filter.Value()
@@ -416,6 +457,8 @@ func (m *Manager) HandleMouse(msg tea.MouseMsg) Outcome {
 		out = m.themeSel.handleMouse(msg)
 	case KindFilePicker:
 		out = m.filePick.handleMouse(msg)
+	case KindSessions:
+		out = m.sessionOutcome(m.sessions.handleMouse(msg))
 	case KindInfo, KindBlame:
 		out = m.info.handleMouse(msg)
 	case KindInspection:
@@ -425,7 +468,7 @@ func (m *Manager) HandleMouse(msg tea.MouseMsg) Outcome {
 	}
 
 	switch out.Kind {
-	case OutcomeClosed, OutcomeAnnotationChosen, OutcomeThemeConfirmed, OutcomeThemeCanceled, OutcomeFileChosen:
+	case OutcomeClosed, OutcomeAnnotationChosen, OutcomeThemeConfirmed, OutcomeThemeCanceled, OutcomeFileChosen, OutcomeSessionChosen, OutcomeSessionCanceled:
 		m.Close()
 	case OutcomeNone, OutcomeThemePreview, OutcomeInspectionChosen, OutcomeInspectionBack: // no state change
 	}
@@ -448,6 +491,8 @@ func (m *Manager) Compose(base string, ctx RenderCtx) string {
 		fg = m.themeSel.render(ctx, m)
 	case KindFilePicker:
 		fg = m.filePick.render(ctx, m)
+	case KindSessions:
+		fg = m.sessions.render(ctx, m)
 	case KindInfo, KindBlame:
 		fg = m.info.render(ctx, m)
 	case KindInspection:

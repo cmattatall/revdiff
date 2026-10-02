@@ -56,6 +56,43 @@ func TestModel_JumpFileOpensPickerAndLoadsSelection(t *testing.T) {
 	assert.Equal(t, "b.go", loaded.file)
 }
 
+func TestModel_FilePickerPrefersChangesWithStagedFallback(t *testing.T) {
+	for _, tc := range []struct {
+		path   string
+		staged bool
+	}{
+		{path: "partial.go"},
+		{path: "staged-only.go", staged: true},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			m := splitTestModel(t)
+			w := m.tree.(*workingTree)
+			w.Rebuild([]diff.FileEntry{
+				{Path: "partial.go", Status: diff.FileModified, Staged: true},
+				{Path: "partial.go", Status: diff.FileModified},
+				{Path: "staged-only.go", Status: diff.FileModified, Staged: true},
+			})
+			require.True(t, w.SelectEntry(diff.FileEntry{Path: "partial.go", Staged: !tc.staged}))
+			model, _ := m.handleFileLoaded(m.loadFileDiff("partial.go")().(fileLoadedMsg))
+			m = model.(Model)
+			model, _ = m.Update(tea.KeyPressMsg{Code: 'P', Text: "P"})
+			model, _ = model.Update(tea.PasteMsg{Content: tc.path})
+			model, cmd := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+			m = model.(Model)
+			require.False(t, m.overlay.Active())
+			require.Equal(t, tc.path, w.SelectedFile())
+			require.Equal(t, tc.staged, w.SelectedStaged())
+			require.Equal(t, paneDiff, m.layout.focus)
+			require.NotNil(t, cmd, "switching versions of the same path must load the selected diff")
+			loaded := cmd().(fileLoadedMsg)
+			require.Equal(t, tc.path, loaded.file)
+			require.Equal(t, tc.staged, loaded.staged)
+			model, _ = m.handleFileLoaded(loaded)
+			require.Equal(t, tc.staged, model.(Model).file.staged)
+		})
+	}
+}
+
 func TestModel_JumpFilePrintableNavigationRunesFilter(t *testing.T) {
 	m := filePickerModel([]string{"a.go", "src/jk/file.go"})
 	m.openFilePicker()

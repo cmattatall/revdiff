@@ -115,10 +115,14 @@ func (m Model) sessionPanelLines() []string {
 	}
 	width := max(m.layout.width-2, 0) // status bar's horizontal padding
 	var lines []string
-	if m.live.sender != nil || m.live.discover != nil {
+	if m.hasHarnessStatus() {
 		lines = append(lines, m.feedbackStatusText(width))
 	}
 	return lines
+}
+
+func (m Model) hasHarnessStatus() bool {
+	return m.live.sender != nil || m.live.discover != nil || len(m.live.harnesses) > 0 || m.live.discovery != discoveryIdle
 }
 
 // feedbackStatusText combines identity and delivery state in one footer row.
@@ -128,6 +132,12 @@ func (m Model) feedbackStatusText(width int) string {
 		state := "waiting"
 		if m.live.err != nil {
 			state = "unavailable"
+		}
+		if m.live.discovery == discoveryDisabled {
+			state = "disconnected"
+		}
+		if m.live.discovery == discoveryChoosing || m.live.discovery == discoveryChoosingForSend {
+			state = "select a session"
 		}
 		return ansi.Truncate("Harness: "+state, width, "")
 	}
@@ -224,7 +234,7 @@ func (m Model) transientHint() string {
 
 // statusBarText keeps feedback hints on one row; identity has its own panel row.
 func (m Model) statusBarText() string {
-	if m.live.sender == nil && m.live.discover == nil {
+	if !m.hasHarnessStatus() {
 		return m.statusBarContent()
 	}
 	width := max(m.layout.width-2, 0)

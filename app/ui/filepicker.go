@@ -3,6 +3,7 @@ package ui
 import (
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/umputun/revdiff/app/diff"
 	"github.com/umputun/revdiff/app/ui/overlay"
 )
 
@@ -22,7 +23,12 @@ func (m *Model) openFilePicker() {
 func (m Model) jumpToFile(path string) (tea.Model, tea.Cmd) {
 	m.pendingAnnotJump = nil
 	m.nav.pendingHunkJump = nil
-	if !m.tree.SelectByPath(path) {
+	// Prefer Changes in a split tree, even when Staged was previously active.
+	selected := false
+	if selector, ok := m.tree.(interface{ SelectEntry(diff.FileEntry) bool }); ok {
+		selected = selector.SelectEntry(diff.FileEntry{Path: path})
+	}
+	if !selected && !m.tree.SelectByPath(path) {
 		return m, nil
 	}
 	m.tree.EnsureVisible(m.treePageSize())

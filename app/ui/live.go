@@ -11,6 +11,7 @@ import (
 	"github.com/umputun/revdiff/app/annotation"
 	"github.com/umputun/revdiff/app/diff"
 	"github.com/umputun/revdiff/app/keymap"
+	"github.com/umputun/revdiff/app/ui/overlay"
 )
 
 // FeedbackSender delivers feedback to a bound harness session.
@@ -39,6 +40,9 @@ const (
 	discoveryBackground
 	discoveryForConnect
 	discoveryForSend
+	discoveryDisabled
+	discoveryChoosing
+	discoveryChoosingForSend
 )
 
 type liveOperation int
@@ -59,17 +63,19 @@ const (
 // Discovery may overlap staging. Sending and staging are mutually exclusive;
 // a failed send returns to idle with its pending snapshot retained for retry.
 type liveState struct {
-	sender      FeedbackSender
-	discover    func() (FeedbackSender, error)
-	harnesses   map[string]func() (FeedbackSender, error)
-	discovery   discoveryState
-	stager      Stager
-	operation   liveOperation
-	err         error
-	pending     []annotation.Annotation
-	content     string
-	kind        feedbackKind
-	stageAnchor *stageAnchor
+	sender       FeedbackSender
+	discover     func() ([]FeedbackSender, error)
+	harnesses    map[string]func() ([]FeedbackSender, error)
+	discovery    discoveryState
+	discoverySeq uint64
+	candidates   []FeedbackSender
+	stager       Stager
+	operation    liveOperation
+	err          error
+	pending      []annotation.Annotation
+	content      string
+	kind         feedbackKind
+	stageAnchor  *stageAnchor
 }
 
 // stageAnchor follows the unchanged side: working-tree lines when staging,
@@ -83,11 +89,12 @@ type stageAnchor struct {
 	staged bool
 }
 
-type liveTickMsg struct{}
-type feedbackTickMsg struct{}
-type feedbackDiscoveredMsg struct {
-	sender FeedbackSender
-	err    error
+type liveTickMsg struct{ seq uint64 }
+type harnessDiscoveryTickMsg struct{}
+type harnessesDiscoveredMsg struct {
+	sessions []FeedbackSender
+	err      error
+	seq      uint64
 }
 type feedbackSentMsg struct{ err error }
 type stagedMsg struct {
@@ -98,6 +105,7 @@ type stagedMsg struct {
 type liveLoadedMsg struct {
 	files filesLoadedMsg
 	file  fileLoadedMsg
+	seq   uint64
 }
 
 // connectHarness performs a user-requested lookup without sending annotations.
@@ -107,7 +115,7 @@ func (m Model) connectHarness(name string) (tea.Model, tea.Cmd) {
 		m.output.hint = "Already connected; " + m.feedbackStatusText(m.layout.width)
 		return m, nil
 	}
-	if m.live.discovery != discoveryIdle {
+	if m.live.discovery != discoveryIdle && m.live.discovery != discoveryDisabled {
 		m.output.hint = "Harness discovery in progress; retry after it finishes"
 		return m, nil
 	}
@@ -118,70 +126,125 @@ func (m Model) connectHarness(name string) (tea.Model, tea.Cmd) {
 	}
 	m.live.discovery = discoveryForConnect
 	m.output.hint = "Looking for harness " + name + " in this directory"
+	seq := m.live.discoverySeq
 	return m, func() tea.Msg {
-		sender, err := connect()
-		return feedbackDiscoveredMsg{sender: sender, err: err}
+		sessions, err := connect()
+		return harnessesDiscoveredMsg{sessions: sessions, err: err, seq: seq}
 	}
 }
 
-// Discovery has its own timer so an O-triggered lookup cannot multiply the
-// refresh loop. It stops once a sender is bound; pending retries never switch threads.
-func (m Model) feedbackTick() tea.Cmd {
-	if m.live.sender != nil || m.live.discover == nil {
+// disconnectHarness detaches this review without stopping the harness session.
+// Keep drafts and unconfirmed feedback so reconnecting never loses user input.
+func (m Model) disconnectHarness() (tea.Model, tea.Cmd) {
+	if m.live.operation == liveSending {
+		m.output.hint = "Wait for feedback delivery to finish before disconnecting"
+		return m, nil
+	}
+	m.live.sender, m.live.err = nil, nil
+	m.live.candidates = nil
+	m.live.discovery = discoveryDisabled
+	m.live.discoverySeq++ // invalidate a lookup that may still be running
+	if m.overlay.Kind() == overlay.KindSessions {
+		m.overlay.Close()
+	}
+	m.output.hint = "Harness disconnected; use :harness connect <type> to reconnect"
+	return m, nil
+}
+
+// Schedule the next lookup only after the previous one completes. While a
+// choice is pending, ticks can show the picker after another modal closes.
+func (m Model) harnessDiscoveryTick() tea.Cmd {
+	choosing := m.live.discovery == discoveryChoosing || m.live.discovery == discoveryChoosingForSend
+	if m.live.sender != nil || (m.live.discover == nil && !choosing) || m.live.discovery == discoveryDisabled {
 		return nil
 	}
-	return tea.Tick(time.Second, func(time.Time) tea.Msg { return feedbackTickMsg{} })
+	return tea.Tick(time.Second, func(time.Time) tea.Msg { return harnessDiscoveryTickMsg{} })
 }
 
-func (m Model) discoverFeedback(send bool) (tea.Model, tea.Cmd) {
-	if m.live.sender != nil || (m.live.discover == nil && m.live.discovery == discoveryIdle) {
+// discoverHarnesses looks up live sessions without requesting feedback delivery.
+func (m Model) discoverHarnesses() (tea.Model, tea.Cmd) {
+	if m.live.discovery == discoveryChoosing || m.live.discovery == discoveryChoosingForSend {
+		m.showHarnessPicker()
+		return m, m.harnessDiscoveryTick()
+	}
+	if m.live.sender != nil || m.live.discover == nil || m.live.discovery != discoveryIdle {
 		return m, nil
 	}
-	previous := m.live.discovery
-	if send {
-		m.live.discovery = discoveryForSend
-		m.output.hint = "Looking for a harness in this directory"
-	} else if previous == discoveryIdle {
-		m.live.discovery = discoveryBackground
-	}
-	if previous != discoveryIdle {
-		return m, nil
-	}
+	m.live.discovery = discoveryBackground
 	discover := m.live.discover
+	seq := m.live.discoverySeq
 	return m, func() tea.Msg {
-		sender, err := discover()
-		return feedbackDiscoveredMsg{sender: sender, err: err}
+		sessions, err := discover()
+		return harnessesDiscoveredMsg{sessions: sessions, err: err, seq: seq}
 	}
 }
 
-func (m Model) handleFeedbackDiscovered(msg feedbackDiscoveredMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleHarnessesDiscovered(msg harnessesDiscoveredMsg) (tea.Model, tea.Cmd) {
+	if msg.seq != m.live.discoverySeq {
+		return m, nil
+	}
 	m.live.err = msg.err
-	send := m.live.discovery == discoveryForSend
-	requested := send || m.live.discovery == discoveryForConnect
-	m.live.discovery = discoveryIdle
-	if msg.err != nil || msg.sender == nil {
+	requested := m.live.discovery == discoveryForSend || m.live.discovery == discoveryForConnect
+	if msg.err != nil || len(msg.sessions) == 0 {
+		m.live.discovery = discoveryIdle
 		if requested {
 			m.output.hint = "Harness not connected; start a session in this directory, then press O"
 			if msg.err != nil {
 				m.output.hint = msg.err.Error()
 			}
 		}
+		return m, m.harnessDiscoveryTick()
+	}
+	m.live.candidates = msg.sessions
+	if len(msg.sessions) > 1 {
+		// These are alternatives. Only the selected session becomes connected.
+		if m.live.discovery == discoveryForSend {
+			m.live.discovery = discoveryChoosingForSend
+		} else {
+			m.live.discovery = discoveryChoosing
+		}
+		m.showHarnessPicker()
+		return m, m.harnessDiscoveryTick()
+	}
+	return m.chooseHarness(0)
+}
+
+func (m *Model) showHarnessPicker() {
+	if m.liveInteractionActive() {
+		return // never replace an annotation draft, command, or another popup
+	}
+	labels := make([]string, 0, len(m.live.candidates))
+	for index, session := range m.live.candidates {
+		labels = append(labels, fmt.Sprintf("%d. %s: %s", index+1, session.HarnessName(), session.DisplayName()))
+	}
+	m.overlay.OpenSessions(labels)
+}
+
+func (m Model) chooseHarness(index int) (tea.Model, tea.Cmd) {
+	if index < 0 || index >= len(m.live.candidates) {
 		return m, nil
 	}
-	m.live.sender = msg.sender
-	if send {
+	pendingSend := m.live.discovery == discoveryForSend || m.live.discovery == discoveryChoosingForSend
+	m.bindHarness(m.live.candidates[index])
+	if pendingSend {
 		model, cmd := m.sendFeedback()
 		return model, tea.Batch(cmd, m.liveTick())
 	}
-	m.output.hint = "Harness connected; press O to send feedback"
 	return m, m.liveTick()
+}
+
+func (m *Model) bindHarness(sender FeedbackSender) {
+	m.live.sender = sender
+	m.live.candidates = nil
+	m.live.discovery = discoveryIdle
+	m.output.hint = "Harness connected; press O to send feedback"
 }
 
 func (m Model) liveTick() tea.Cmd {
 	if m.live.sender == nil {
 		return nil
 	}
-	return tea.Tick(time.Second, func(time.Time) tea.Msg { return liveTickMsg{} })
+	return tea.Tick(time.Second, func(time.Time) tea.Msg { return liveTickMsg{seq: m.live.discoverySeq} })
 }
 
 func (m Model) livePaused() bool {
@@ -195,13 +258,16 @@ func (m Model) liveInteractionActive() bool {
 }
 
 func (m Model) pollLive() (tea.Model, tea.Cmd) {
+	if m.live.sender == nil {
+		return m, nil
+	}
 	if m.livePaused() {
 		return m, m.liveTick()
 	}
 	// Capture all tree-derived inputs on the UI goroutine, before starting IO.
 	files, file := m.loadFiles(), m.loadFileDiff(m.file.name)
 	return m, func() tea.Msg {
-		msg := liveLoadedMsg{files: files().(filesLoadedMsg), file: fileLoadedMsg{seq: m.file.loadSeq}}
+		msg := liveLoadedMsg{files: files().(filesLoadedMsg), file: fileLoadedMsg{seq: m.file.loadSeq}, seq: m.live.discoverySeq}
 		if m.file.name != "" {
 			msg.file = file().(fileLoadedMsg)
 		}
@@ -210,9 +276,12 @@ func (m Model) pollLive() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleLiveLoaded(msg liveLoadedMsg) (tea.Model, tea.Cmd) {
+	if msg.seq != m.live.discoverySeq {
+		return m, nil
+	}
 	tick := m.liveTick()
 	// Re-check after IO: a draft, navigation, or manual reload may have started.
-	if m.livePaused() || msg.files.seq != m.filesLoadSeq || msg.file.seq != m.file.loadSeq || msg.file.file != m.file.name {
+	if m.live.sender == nil || m.livePaused() || msg.files.seq != m.filesLoadSeq || msg.file.seq != m.file.loadSeq || msg.file.file != m.file.name {
 		return m, tick
 	}
 	if msg.files.err != nil || msg.file.err != nil {
@@ -253,6 +322,24 @@ func (m Model) handleLiveLoaded(msg liveLoadedMsg) (tea.Model, tea.Cmd) {
 func (m Model) sendFeedback() (tea.Model, tea.Cmd) {
 	if m.live.operation != liveIdle {
 		return m, nil
+	}
+	if m.live.sender == nil {
+		switch m.live.discovery {
+		case discoveryDisabled:
+			m.output.hint = "Harness disconnected; use :harness connect <type> before sending"
+			return m, nil
+		case discoveryChoosing, discoveryChoosingForSend:
+			m.live.discovery = discoveryChoosingForSend
+			return m, nil
+		default:
+			model, cmd := m.discoverHarnesses()
+			m = model.(Model)
+			if m.live.discovery != discoveryIdle {
+				m.live.discovery = discoveryForSend
+				m.output.hint = "Looking for a harness in this directory"
+			}
+			return m, cmd
+		}
 	}
 	if m.live.content == "" {
 		if m.store.Count() == 0 {

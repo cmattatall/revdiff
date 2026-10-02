@@ -42,8 +42,8 @@ func TestDiscover(t *testing.T) {
 	path := register(d)
 	client, err = Discover(root)
 	require.NoError(t, err)
-	require.NotNil(t, client)
-	require.Equal(t, "T-live", client.descriptor.Thread)
+	require.Len(t, client, 1)
+	require.Equal(t, "T-live", client[0].descriptor.Thread)
 
 	// A sibling, parent, or child directory is not the same Amp workspace.
 	child := filepath.Join(root, "child")
@@ -72,20 +72,35 @@ func TestDiscover(t *testing.T) {
 	register(stale)
 	client, err = Discover(root)
 	require.NoError(t, err)
-	require.NotNil(t, client)
-	require.Equal(t, "T-live", client.descriptor.Thread)
+	require.Len(t, client, 1)
+	require.Equal(t, "T-live", client[0].descriptor.Thread)
 
-	// Even two connections to the same thread are ambiguous: their retry caches differ.
+	// Keep separate connections to the same thread because their retry caches differ.
 	extra := register(d)
 	client, err = Discover(root)
-	require.Nil(t, client)
-	require.ErrorContains(t, err, "multiple Amp sessions")
-	require.ErrorContains(t, err, path)
-	require.ErrorContains(t, err, extra)
-	require.NotContains(t, err.Error(), "secret")
+	require.NoError(t, err)
+	require.Len(t, client, 2)
+	for _, session := range client {
+		require.Equal(t, "T-live", session.DisplayName())
+	}
 	explicit, err := New(extra, root)
 	require.NoError(t, err)
 	require.NotNil(t, explicit, "explicit selection still works")
+	require.NoError(t, os.Remove(extra))
+
+	second := descriptor{Version: 1, Root: root, Token: "other-secret", Thread: "T-second", Title: "Second review"}
+	secondServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, "Bearer other-secret", r.Header.Get("Authorization"))
+		assert.NoError(t, json.NewEncoder(w).Encode(descriptor{Version: 1, Root: root, Thread: "T-second"}))
+	}))
+	t.Cleanup(secondServer.Close)
+	second.URL = secondServer.URL + "/feedback"
+	extra = register(second)
+	client, err = Discover(root)
+	require.NoError(t, err)
+	require.Len(t, client, 2)
+	require.ElementsMatch(t, []string{"T-live", "Second review T-second"}, []string{client[0].DisplayName(), client[1].DisplayName()})
 	require.NoError(t, os.Remove(extra))
 
 	// Never follow descriptor symlinks or read credentials with public permissions.

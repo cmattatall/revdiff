@@ -25,6 +25,20 @@ func TestManager_HandleMouse_NoActiveOverlay(t *testing.T) {
 	assert.Equal(t, Outcome{}, out, "no active overlay returns zero Outcome")
 }
 
+func TestSessionPickerFilteredMouseSelection(t *testing.T) {
+	mgr := NewManager()
+	mgr.OpenSessions([]string{"1. amp: Parser T-first", "2. amp: Renderer T-second"})
+	mgr.HandleInput(tea.PasteMsg{Content: "rndr"})
+	ctx := RenderCtx{Width: 100, Height: 30, Resolver: style.PlainResolver()}
+	base := strings.Repeat(strings.Repeat(" ", ctx.Width)+"\n", ctx.Height)
+	view := mgr.Compose(base, ctx)
+	require.Contains(t, view, "Connect to harness session (1/2)")
+	out := mgr.HandleMouse(tea.MouseClickMsg{Button: tea.MouseLeft, X: mgr.bounds.x + 4, Y: mgr.bounds.y + 4})
+	require.Equal(t, OutcomeSessionChosen, out.Kind)
+	require.Equal(t, 1, out.SessionIndex)
+	require.False(t, mgr.Active())
+}
+
 func TestManager_Close_ClearsBounds(t *testing.T) {
 	mgr := NewManager()
 	mgr.OpenHelp(HelpSpec{})
