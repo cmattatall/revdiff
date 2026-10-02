@@ -14,7 +14,26 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
+
+func TestHoverContentFormat(t *testing.T) {
+	for _, tc := range []struct {
+		contents string
+		text     string
+		markdown bool
+	}{
+		{`{"kind":"markdown","value":"` + "```go\\nvar x int\\n```" + `"}`, "```go\nvar x int\n```", true},
+		{`{"kind":"plaintext","value":"` + "```go\\nvar x int\\n```" + `"}`, "```go\nvar x int\n```", false},
+		{`[{"language":"python","value":"def f(): pass"},"Docs"]`, "```python\ndef f(): pass\n```\n\nDocs", true},
+	} {
+		result, err := decodeHover(json.RawMessage(`{"contents":` + tc.contents + `}`))
+		require.NoError(t, err)
+		require.Equal(t, tc.text, result.Text)
+		require.Equal(t, tc.markdown, result.Markdown)
+	}
+}
 
 func TestClientLifecycleUnicodeAndReadOnly(t *testing.T) {
 	root := t.TempDir()
@@ -137,6 +156,87 @@ func TestLanguageSelectionAndIndependentSessions(t *testing.T) {
 	}
 }
 
+func TestCloseCancelsActiveQuery(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "main.go")
+	require.NoError(t, os.WriteFile(path, []byte("package main\n"), 0o600))
+	marker := filepath.Join(root, "query-started")
+	t.Setenv("LSP_READY_FILE", marker)
+	useFakeServer(t, "hang")
+	c := New(root, Server{Command: "fake", LanguageIDs: map[string]string{".go": "go"}})
+	defer c.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	result := make(chan error, 1)
+	go func() {
+		_, err := c.Query(ctx, Hover, Position{Path: path, Line: 1}, "package main")
+		result <- err
+	}()
+	require.Eventually(t, func() bool { _, err := os.Stat(marker); return err == nil }, 3*time.Second, 10*time.Millisecond)
+	closed := make(chan struct{})
+	go func() { _ = c.Close(); close(closed) }()
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		t.Fatal("Close must cancel active requests without waiting for their deadline")
+	}
+	require.Error(t, <-result)
+}
+
+func TestQueuedQueryCancellation(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n"), 0o600))
+	c := New(root, Server{Command: "fake", LanguageIDs: map[string]string{".go": "go"}})
+	defer c.Close()
+	s, err := c.session(0, c.root)
+	require.NoError(t, err)
+	s.gate <- struct{}{}
+	defer func() { <-s.gate }()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	_, err = c.Query(ctx, Hover, Position{Path: "main.go", Line: 1}, "package main")
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+}
+
+func TestWorkspaceRootsAndReuse(t *testing.T) {
+	root := t.TempDir()
+	useFakeServer(t, "root")
+	c := New(root, Server{Command: "fake", LanguageIDs: map[string]string{".go": "go"}, RootMarkers: []string{"go.work", "go.mod"}})
+	defer c.Close()
+	for _, project := range []string{"one", "two"} {
+		dir := filepath.Join(c.root, project)
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, "nested"), 0o700))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), nil, 0o600))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "nested", "go.mod"), nil, 0o600))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "nested", "main.go"), []byte("😀symbol\n"), 0o600))
+	}
+	for _, project := range []string{"one", "two", "one"} {
+		result, err := c.Query(context.Background(), Hover, Position{Path: project + "/nested/main.go", Line: 1, Column: 4}, "😀symbol")
+		require.NoError(t, err)
+		require.Equal(t, filepath.Join(c.root, project), result.Text, "the outermost marker inside the review root wins")
+	}
+	require.Len(t, c.sessions, 2, "independent roots have separate sessions, repeated queries reuse them")
+	require.NoError(t, os.WriteFile(filepath.Join(c.root, "go.work"), nil, 0o600))
+	result, err := c.Query(context.Background(), Hover, Position{Path: "one/nested/main.go", Line: 1, Column: 4}, "😀symbol")
+	require.NoError(t, err)
+	require.Equal(t, c.root, result.Text, "a review-root workspace manifest covers nested projects")
+}
+
+func TestServerDiscoveryAndInstallCommands(t *testing.T) {
+	root := t.TempDir()
+	executable := filepath.Join(root, "example-server")
+	require.NoError(t, os.WriteFile(executable, []byte("#!/bin/sh\nexit 1\n"), 0o700))
+	t.Setenv("PATH", root)
+	c := New(root,
+		Server{Name: "example", Command: "example-server", InstallCommand: "install example"},
+		Server{Name: "other", Command: "other-server", InstallCommand: "install other"},
+	)
+	defer c.Close()
+	require.Equal(t, []ServerStatus{{Name: "example", Command: "example-server", Path: executable}, {Name: "other", Command: "other-server"}}, c.Servers())
+	require.Equal(t, map[string]string{"example": "install example", "other": "install other"}, c.InstallCommands())
+	require.Empty(t, c.sessions, "discovery must not start a server")
+}
+
 func useFakeServer(t *testing.T, mode string) {
 	t.Helper()
 	old := commandContext
@@ -162,6 +262,10 @@ func TestLSPHelperProcess(t *testing.T) {
 		id, hasID := msg["id"]
 		switch method {
 		case "initialize":
+			cwd, _ := os.Getwd()
+			if msg["params"].(map[string]any)["rootUri"] != pathURI(cwd) {
+				os.Exit(25)
+			}
 			writeTestMessage(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"capabilities": map[string]any{"positionEncoding": "utf-16"}}})
 		case "textDocument/didOpen":
 			params := msg["params"].(map[string]any)
@@ -171,6 +275,9 @@ func TestLSPHelperProcess(t *testing.T) {
 			}
 		case "textDocument/hover", "textDocument/definition":
 			if os.Getenv("LSP_HELPER_MODE") == "hang" {
+				if marker := os.Getenv("LSP_READY_FILE"); marker != "" {
+					_ = os.WriteFile(marker, nil, 0o600)
+				}
 				continue
 			}
 			params := msg["params"].(map[string]any)
@@ -193,7 +300,11 @@ func TestLSPHelperProcess(t *testing.T) {
 				}
 			}
 			if method == "textDocument/hover" {
-				writeTestMessage(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"contents": map[string]any{"kind": "markdown", "value": "write-rejected"}}})
+				text := "write-rejected"
+				if os.Getenv("LSP_HELPER_MODE") == "root" {
+					text, _ = os.Getwd()
+				}
+				writeTestMessage(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"contents": map[string]any{"kind": "markdown", "value": text}}})
 			} else {
 				uri := params["textDocument"].(map[string]any)["uri"]
 				writeTestMessage(map[string]any{"jsonrpc": "2.0", "id": id, "result": []any{map[string]any{"targetUri": uri, "targetRange": testRange(0, 2), "targetSelectionRange": testRange(0, 2)}}})

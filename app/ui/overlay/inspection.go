@@ -20,6 +20,8 @@ type InspectionSpec struct {
 	Items []string
 	Text  string
 	Line  int
+	// Highlighted contains trusted ANSI produced from sanitized Text by the UI highlighter.
+	Highlighted string
 }
 
 type inspectionOverlay struct {
@@ -35,12 +37,19 @@ func (i *inspectionOverlay) open(spec InspectionSpec) {
 	i.spec = spec
 	i.offset = max(0, spec.Line-5)
 	i.width = 0
-	i.lines = strings.Split(strings.ReplaceAll(diff.SanitizeCommitText(spec.Text), "\t", "    "), "\n")
+	i.lines = strings.Split(i.text(), "\n")
 	if spec.Items != nil {
 		i.spec.Items = slices.Clone(spec.Items)
 		i.picker.open(FilePickerSpec{Paths: spec.Items})
 		i.picker.heading = spec.Title
 	}
+}
+
+func (i *inspectionOverlay) text() string {
+	if i.spec.Highlighted != "" {
+		return i.spec.Highlighted
+	}
+	return strings.ReplaceAll(diff.SanitizeCommitText(i.spec.Text), "\t", "    ")
 }
 
 func (i *inspectionOverlay) render(ctx RenderCtx, mgr *Manager) string {
@@ -51,8 +60,7 @@ func (i *inspectionOverlay) render(ctx RenderCtx, mgr *Manager) string {
 	width := max(1, min(120, ctx.Width-4))
 	inner := max(1, width-4)
 	if i.spec.Line == 0 && i.width != inner {
-		text := strings.ReplaceAll(diff.SanitizeCommitText(i.spec.Text), "\t", "    ")
-		i.lines = strings.Split(ansi.Hardwrap(text, inner, true), "\n")
+		i.lines = strings.Split(ansi.Hardwrap(i.text(), inner, true), "\n")
 		i.width = inner
 	}
 	i.offset = max(0, min(i.offset, len(i.lines)-i.height))

@@ -103,7 +103,13 @@ func decodeHover(raw json.RawMessage) (Result, error) {
 		return Result{}, fmt.Errorf("lsp: decode hover: %w", err)
 	}
 	text, err := hoverText(hover.Contents)
-	return Result{Text: text}, err
+	// MarkedString and MarkedString[] are Markdown. Only MarkupContent can
+	// explicitly request literal plaintext instead.
+	var markup struct {
+		Kind string `json:"kind"`
+	}
+	_ = json.Unmarshal(hover.Contents, &markup)
+	return Result{Text: text, Markdown: markup.Kind != "plaintext"}, err
 }
 
 func hoverText(raw json.RawMessage) (string, error) {
@@ -119,7 +125,7 @@ func hoverText(raw json.RawMessage) (string, error) {
 		Value    string `json:"value"`
 		Kind     string `json:"kind"`
 	}
-	if json.Unmarshal(raw, &marked) == nil && marked.Value != "" {
+	if json.Unmarshal(raw, &marked) == nil && (marked.Kind != "" || marked.Language != "" || marked.Value != "") {
 		if marked.Language != "" {
 			return "```" + marked.Language + "\n" + marked.Value + "\n```", nil
 		}

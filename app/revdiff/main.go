@@ -253,6 +253,14 @@ func run(opts options) (int, error) {
 		stager = diff.NewGit(gitRoot)
 	}
 
+	var inspector ui.CodeInspector
+	var lspInstallCommands map[string]string
+	if client := newCodeInspector(opts, workDir); client != nil {
+		inspector = client
+		lspInstallCommands = client.InstallCommands()
+		defer client.Close()
+	}
+
 	model, err := ui.NewModel(ui.ModelConfig{
 		Renderer:             renderer,
 		Store:                store,
@@ -264,6 +272,8 @@ func run(opts options) (int, error) {
 		Overlay:              overlay.NewManager(),
 		Themes:               themes,
 		Blamer:               blamer,
+		Inspector:            inspector,
+		LSPInstallCommands:   lspInstallCommands,
 		LoadUntracked:        untrackedFn,
 		LoadUntrackedRenames: untrackedRenamesFn,
 		Keymap:               km,

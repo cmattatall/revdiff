@@ -431,6 +431,34 @@ Single stateless type `Editor` bundling all behavior as methods (no standalone f
 Consumed by `app/ui` via the `ExternalEditor` interface (defined in `app/ui/editor.go`, consumer
 side). The default wiring is `editor.Editor{}` injected through `ModelConfig.Editor`.
 
+### app/lsp/ — read-only code inspection
+
+The shared `Client` owns stdio JSON-RPC, lazy per-server/workspace sessions, document synchronization,
+UTF-8/UTF-16 position conversion, cancellation, shutdown, and bounded local source reads.
+`golang/`, `typescript/`, `python/`, and `rust/` each supply a `Server` descriptor with executable,
+arguments, file extensions, root markers, language IDs, and an explicit install command. No language is a
+transport default. Hover, definition, and references are the only semantic requests. Server
+requests to apply edits are rejected.
+
+Root selection follows Helix's outermost-marker approach, bounded by the review root. For example,
+`go.work` can group nested Go modules, while sibling projects without a shared marker receive
+separate sessions. The selected root is used for both the process working directory and LSP initialization.
+
+`app/revdiff/inspection.go` adapts this to the UI's `CodeInspector` contract and gates inspection
+to current working files. The UI selects an identifier on the current line, then displays a
+filterable location list or read-only text/source preview through `overlay.KindInspection`.
+Query commands sanitize content before applying the injected syntax highlighter. Hover code
+fences supply language names, while source previews use filenames. The overlay preserves
+the generated ANSI during wrapping and scrolling. Plaintext hover responses stay literal.
+Generation-tagged asynchronous results cannot reopen canceled views. A page stack restores the
+inspection path without changing the review file, cursor, annotations, or scroll position.
+Esc cancels pending queries, which otherwise time out after 30 seconds. Cancellation terminates
+that server connection, and the next query starts a fresh one.
+
+`:lsp list` checks executable PATH availability without launching servers. Language-owned
+install commands are registered as ordinary `shellCommand` entries (`:lsp install go`, etc.),
+not special cases in the command parser. Inspection never invokes installers automatically.
+
 ### app/shell/ — interactive shell commands
 
 `Runner.Prepare(command)` runs user-entered text through `$SHELL` (falling back to `/bin/sh`)

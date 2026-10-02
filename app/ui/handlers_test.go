@@ -948,7 +948,7 @@ func TestBuildHelpSpec_PaletteCommands(t *testing.T) {
 			}
 		}
 	}
-	require.Equal(t, []string{"Navigation", "Annotations", "Harness", "File/Hunk", "Pane", "Markdown TOC (single-file full-context mode)", "Search", "View", "Miscellaneous"}, sectionNames)
+	require.Equal(t, []string{"Navigation", "Annotations", "Harness", "File/Hunk", "Pane", "Markdown TOC (single-file full-context mode)", "Search", "View", "Miscellaneous", "Inspection"}, sectionNames)
 	for _, description := range []string{"scroll left", "scroll right / focus diff", "scroll diff down", "scroll diff up", "next file / search match", "prev file / search match"} {
 		require.NotEmpty(t, motions[description].Keys, "motion help keeps its keybindings: %s", description)
 	}

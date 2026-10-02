@@ -106,7 +106,7 @@ func (h *Highlighter) CachedLines(filename string, lines []diff.DiffLine) ([]str
 	return h.cached(filename, h.StyleName(), lines)
 }
 
-// HighlightLines takes a filename (for lexer detection) and a slice of diff.DiffLine,
+// HighlightLines takes a filename or language name and a slice of diff.DiffLine,
 // reconstructs the file content, tokenizes it with Chroma, and returns a parallel []string
 // where each entry contains the ANSI-formatted (foreground-only) version of that line's content.
 // returns nil if highlighting is disabled or no lexer matches the filename.
@@ -120,6 +120,9 @@ func (h *Highlighter) HighlightLines(filename string, lines []diff.DiffLine) []s
 	}
 
 	lexer := lexers.Match(filename)
+	if lexer == nil {
+		lexer = lexers.Get(filename)
+	}
 	if lexer == nil {
 		return nil
 	}

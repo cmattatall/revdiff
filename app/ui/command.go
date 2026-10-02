@@ -261,6 +261,8 @@ func (m Model) commandEntries() []paletteCommand {
 			run: func(m *Model, _ commandScope) (tea.Model, tea.Cmd) { return m.openInspection(InspectDefinition) }},
 		tuiCommand{commandEntry: commandEntry{name: "inspect references", description: "find and preview a symbol's references", section: "Inspection"},
 			run: func(m *Model, _ commandScope) (tea.Model, tea.Cmd) { return m.openInspection(InspectReferences) }},
+		tuiCommand{commandEntry: commandEntry{name: "lsp list", description: "list language servers and PATH availability", section: "Inspection"},
+			run: func(m *Model, _ commandScope) (tea.Model, tea.Cmd) { return m.listLanguageServers() }},
 		shellCommand{commandEntry: commandEntry{name: "git", description: "run git through the shell", section: "Miscellaneous"}, prefix: "git"},
 		tuiCommand{commandEntry: commandEntry{name: "harness send", description: "compose a message to the connected harness", aliases: []string{"hs"}, section: "Harness"},
 			run: func(m *Model, _ commandScope) (tea.Model, tea.Cmd) { return m.openHarnessMessage() }},

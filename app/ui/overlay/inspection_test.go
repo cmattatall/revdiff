@@ -62,3 +62,23 @@ func TestInspectionHoverWrapAndSanitization(t *testing.T) {
 	_ = m.inspect.render(ctx, m)
 	require.Less(t, len(m.inspect.lines), 5, "resizing reflows the text")
 }
+
+func TestInspectionPreservesTokenColors(t *testing.T) {
+	for _, line := range []int{0, 2} {
+		m := NewManager()
+		code := "\x1b[38;2;249;38;114mreturn\x1b[39m value + 2"
+		m.OpenInspection(InspectionSpec{Title: "source", Text: "raw fallback", Highlighted: "header\n" + code + "\nfooter", Line: line})
+		ctx := RenderCtx{Width: 80, Height: 20, Resolver: style.PlainResolver()}
+		view := m.inspect.render(ctx, m)
+		require.Contains(t, view, code, "rendering must not sanitize away generated ANSI")
+		if line > 0 {
+			require.Contains(t, ansi.Strip(view), "    2  return value + 2")
+		}
+		ctx.Width = 24
+		view = m.inspect.render(ctx, m)
+		require.Contains(t, view, "\x1b[38;2;249;38;114m")
+		require.LessOrEqual(t, lipgloss.Width(view), ctx.Width)
+		ctx.Width = 80
+		require.Contains(t, m.inspect.render(ctx, m), code, "resize must reflow the highlighted text")
+	}
+}

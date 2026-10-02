@@ -40,10 +40,15 @@ func TestInstalledServers(t *testing.T) {
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 			defer cancel()
-			if output, err := exec.CommandContext(ctx, tc.server.Command, "--version").CombinedOutput(); err != nil {
-				t.Skipf("server unavailable: %s (%v)", output, err)
-			}
 			root := t.TempDir()
+			if tc.name == "typescript" {
+				compiler, err := exec.LookPath("tsc")
+				require.NoError(t, err)
+				compiler, err = filepath.EvalSymlinks(compiler)
+				require.NoError(t, err)
+				require.NoError(t, os.Mkdir(filepath.Join(root, "node_modules"), 0o700))
+				require.NoError(t, os.Symlink(filepath.Dir(filepath.Dir(compiler)), filepath.Join(root, "node_modules/typescript")))
+			}
 			require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(root, tc.path)), 0o700))
 			require.NoError(t, os.WriteFile(filepath.Join(root, tc.path), []byte(tc.source), 0o600))
 			for path, text := range tc.files {

@@ -801,7 +801,7 @@ Thread and status information remain visible while you type. `Esc` cancels; runn
 
 Help (`?` or `:help`) lists each command once in its functional section, with aliases inline, for example `:focus changed (:fc)`. Commands stay in their sections even without keybindings. **Harness** groups connection and message commands; **Miscellaneous** holds shell commands and other ungrouped operations. Keyboard navigation (`n`/`N`, arrows, `J`/`K`, paging, and hunk jumps) stays in help without typed commands.
 
-Use `:annotation next` and `:annotation prev` to jump between annotations. These commands and `:w` appear in help under **Annotations**. Display settings, including `:blame on` / `:blame off` for the blame gutter, work from either tree or diff focus.
+Use `:annotation next` and `:annotation prev` to jump between annotations, and `:annotation delete` to remove the annotation under the cursor. These commands and `:w` appear in help under **Annotations**. Display settings, including `:blame on` / `:blame off` for the blame gutter, work from either tree or diff focus.
 
 Run `:! <command>` to execute a shell command, for example `:! git status`. It runs through `$SHELL` (or `/bin/sh`) in revdiff's launch directory, with normal quoting, pipes, and terminal input/output. Press Enter when finished to return to the review. Commands are kept in session history with their original case. Annotations are preserved, and `:reload` refreshes the diff after external changes.
 
@@ -810,6 +810,21 @@ Use `:git <args>` as shorthand for `:! git <args>`, for example `:git status` or
 Each command opens a clean screen without exposing or clearing your shell's scrollback. Use `:!!` to rerun the last shell command in this session, even after other palette commands.
 
 With the diff focused, `:blame view` (or `:bv`) opens attribution for the selected line: commit, author, date, and summary. Removed lines use the old side of the diff. This opens details without changing the gutter. For a github.com `origin`, it also shows a commit URL and looks up associated merged PRs using authenticated `gh` (optional, five-second timeout). Local blame still works when PR lookup is unavailable. Uncommitted lines have no commit or PR link.
+
+**Code inspection (LSP):** Focus a current source line and run `:inspect hover`, `:inspect definition`, or `:inspect references`. Pick an identifier on that line (type to filter, arrows to select, Enter to query). Hover shows its type/documentation. Definitions and references open a location list, then a read-only source preview. Esc returns through those pages to the unchanged review. Press `:` from a text/result popup to open the command palette directly.
+
+Hover code blocks and source previews use the active syntax-highlighting theme. Hover hides code fences and preserves the surrounding documentation. Unknown languages remain readable as plain text.
+
+Servers start on demand and must be on PATH. `:lsp list` shows supported languages, executables, PATH availability, and install commands without starting servers. Use `:lsp install <language>` to run the corresponding installer in the shell-command view:
+
+| Language | Server | Install command |
+|----------|--------|-----------------|
+| Go | `gopls` | `:lsp install go` (requires Go) |
+| TypeScript / JavaScript | `typescript-language-server --stdio` | `:lsp install typescript` (requires npm, installs TypeScript 5 too) |
+| Python | `pyright-langserver --stdio` | `:lsp install python` (requires npm) |
+| Rust | `rust-analyzer` | `:lsp install rust` (requires rustup) |
+
+Inspection never installs tools automatically or applies server-requested edits. Installation is an explicit shell command that changes your toolchain. Add its binary directory to PATH before starting revdiff (for Go, commonly `$HOME/go/bin`). TypeScript projects need a compatible `typescript` installation. Inspection uses current files in working-tree, all-files, and standalone-file reviews. Staged, historical, stdin, compare, and removed lines are excluded. A changed source line reports a stale-view error rather than inspecting the wrong position. Esc cancels a pending query; requests time out after 30 seconds. Language-server indexing can make the first query slower.
 
 Single-line annotation, search, command, file-picker, and theme-picker inputs use revdiff's built-in Bubbles text-input bindings, not your shell's keymap: arrows and `Ctrl+B`/`Ctrl+F` move by character, `Ctrl+A`/`Ctrl+E` move to the start/end, `Backspace`/`Ctrl+H` delete backward, `Ctrl+W` (or `Alt+Backspace`) deletes the previous word, and `Ctrl+U`/`Ctrl+K` delete from the cursor to the start/end. Existing `Enter`, `Esc`, search-history, and list-navigation behavior is unchanged. The terminal sends key sequences; revdiff cannot inherit zsh/readline bindings or Command-key shortcuts. Configure Option/Alt to send Meta for Alt bindings.
 
@@ -840,10 +855,9 @@ The `/` prompt and search-history help appear above the footer, including with `
 | `O` | Send feedback to connected Amp, or export via `--output` / `--post-flush-command` |
 | `s` | Stage/unstage change under cursor (modified tracked text, Git working tree) |
 | `S` (Shift+S) | Stage/unstage entire selected file (Git working tree, `stage_file` — rebindable) |
-| `Alt+E` (during annotation input) | Open `$EDITOR` for multi-line annotation (`open_editor` — rebindable) |
 | `Esc` | Cancel annotation input |
 
-While the annotation input is active, press `Alt+E` (or whatever key is bound to `open_editor`) to hand off the current text to an external editor for multi-line comments. `Ctrl+E` now retains its standard end-of-line behavior; users who prefer the old shortcut can add `map ctrl+e open_editor`. Editor resolution: `$EDITOR` → `$VISUAL` → `vi`. Values with arguments work (e.g. `EDITOR="code --wait"`). On editor save and quit, the full file contents (including newlines) become the annotation. Quitting the editor with an empty file cancels the annotation and preserves any previously stored note on that line. Multi-line annotations are rendered line-by-line in the diff view, shown flattened in the annotation list popup (`@`), and emitted with embedded newlines in the structured output.
+The optional `open_editor` action hands annotation text to an external editor for multi-line comments. It has no default shortcut; bind it explicitly in the keybindings file if desired. Text inputs retain their normal editing bindings. Editor resolution: `$EDITOR` → `$VISUAL` → `vi`. Values with arguments work (e.g. `EDITOR="code --wait"`). On editor save and quit, the full file contents (including newlines) become the annotation. Quitting the editor with an empty file cancels the annotation and preserves any previously stored note on that line. Multi-line annotations are rendered line-by-line in the diff view, shown flattened in the annotation list popup (`@`), and emitted with embedded newlines in the structured output.
 
 Run `:edit` to open the focused file in `$EDITOR` (`open_file_in_editor` — optionally bindable, with no default key) when revdiff has a stable source path. From the file tree, this opens the selected file without a line target; from the diff, it uses the focused source line. Editing from the **Staged** tree or a staged diff reports an error; select the file in **Changes** instead. Editor resolution is the same `$EDITOR` → `$VISUAL` → `vi` chain. Known editors receive either `$EDITOR +N path` or `$EDITOR --goto path:N` as appropriate; unknown editors receive only the file path. File lines are resolved on a best-effort basis. For working tree changes, a clean editor exit reloads the selected file. For refs, a clean editor exit returns to revdiff without reloading the displayed diff. In compare mode, `:edit` opens the `--compare-new` side. Working tree files with line annotations cannot be opened for editing because edits can orphan those annotations. Diffs read with `--stdin` do not support opening files. Unsupported rows or files and editor errors show a status hint instead of launching an editor or changing the diff.
 

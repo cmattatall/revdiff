@@ -35,6 +35,7 @@ type Position struct {
 
 type Result struct {
 	Text      string
+	Markdown  bool
 	Locations []Position
 }
 
@@ -45,7 +46,14 @@ type Server struct {
 	Command        string
 	Args           []string
 	LanguageIDs    map[string]string
+	RootMarkers    []string
 	InstallCommand string
+}
+
+type ServerStatus struct {
+	Name    string
+	Command string
+	Path    string
 }
 
 const maxSourceSize = 16 << 20
@@ -59,7 +67,12 @@ type Client struct {
 	closed   bool
 	ctx      context.Context
 	cancel   context.CancelFunc
-	sessions map[int]*session
+	sessions map[sessionKey]*session
+}
+
+type sessionKey struct {
+	server int
+	root   string
 }
 
 type document struct {
@@ -68,6 +81,7 @@ type document struct {
 }
 type session struct {
 	gate chan struct{}
+	root string
 	conn *connection
 	docs map[string]document
 }
@@ -81,7 +95,7 @@ func New(root string, servers ...Server) *Client {
 		abs = resolved
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Client{root: abs, servers: append([]Server(nil), servers...), ctx: ctx, cancel: cancel, sessions: make(map[int]*session)}
+	return &Client{root: abs, servers: append([]Server(nil), servers...), ctx: ctx, cancel: cancel, sessions: make(map[sessionKey]*session)}
 }
 
 func (c *Client) Query(ctx context.Context, operation Operation, position Position, expectedLine string) (Result, error) {
@@ -102,7 +116,7 @@ func (c *Client) Query(ctx context.Context, operation Operation, position Positi
 	if err != nil {
 		return Result{}, err
 	}
-	s, err := c.session(serverIndex)
+	s, err := c.session(serverIndex, c.workspaceRoot(path, serverIndex))
 	if err != nil {
 		return Result{}, err
 	}
@@ -184,6 +198,16 @@ func (c *Client) InstallCommands() map[string]string {
 	return commands
 }
 
+// Servers reports executable discovery without starting any processes.
+func (c *Client) Servers() []ServerStatus {
+	statuses := make([]ServerStatus, 0, len(c.servers))
+	for _, server := range c.servers {
+		path, _ := exec.LookPath(server.Command)
+		statuses = append(statuses, ServerStatus{Name: server.Name, Command: server.Command, Path: path})
+	}
+	return statuses
+}
+
 func (c *Client) ReadSource(ctx context.Context, path string) (string, error) {
 	if ctx == nil {
 		return "", errors.New("lsp: nil context")
@@ -233,16 +257,17 @@ func (c *Client) Close() error {
 	return nil
 }
 
-func (c *Client) session(index int) (*session, error) {
+func (c *Client) session(index int, root string) (*session, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.closed {
 		return nil, errors.New("lsp: client is closed")
 	}
-	s := c.sessions[index]
+	key := sessionKey{server: index, root: root}
+	s := c.sessions[key]
 	if s == nil {
-		s = &session{gate: make(chan struct{}, 1), docs: make(map[string]document)}
-		c.sessions[index] = s
+		s = &session{gate: make(chan struct{}, 1), root: root, docs: make(map[string]document)}
+		c.sessions[key] = s
 	}
 	return s, nil
 }
@@ -261,7 +286,7 @@ func (c *Client) connection(ctx context.Context, index int, s *session) (*connec
 
 	procCtx, procCancel := context.WithCancel(context.Background())
 	cmd := commandContext(procCtx, server.Command, server.Args...)
-	cmd.Dir = c.root
+	cmd.Dir = s.root
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		procCancel()
@@ -275,7 +300,7 @@ func (c *Client) connection(ctx context.Context, index int, s *session) (*connec
 	if err = cmd.Start(); err != nil {
 		procCancel()
 		if errors.Is(err, exec.ErrNotFound) {
-			return nil, fmt.Errorf("lsp: %s is not installed; %s", server.Command, server.InstallHint)
+			return nil, fmt.Errorf("lsp: %s is not on PATH\n\nRun :lsp install %s in the command palette, or run in your shell:\n%s\n\nEnsure the server's install directory is on PATH before starting revdiff.", server.Command, server.Name, server.InstallCommand)
 		}
 		return nil, fmt.Errorf("lsp: start %s: %w", server.Command, err)
 	}
@@ -290,8 +315,8 @@ func (c *Client) connection(ctx context.Context, index int, s *session) (*connec
 	s.docs = make(map[string]document)
 	c.mu.Unlock()
 	initParams := map[string]any{
-		"processId": os.Getpid(), "rootUri": pathURI(c.root),
-		"workspaceFolders": []any{map[string]any{"uri": pathURI(c.root), "name": filepath.Base(c.root)}},
+		"processId": os.Getpid(), "rootUri": pathURI(s.root),
+		"workspaceFolders": []any{map[string]any{"uri": pathURI(s.root), "name": filepath.Base(s.root)}},
 		"capabilities": map[string]any{
 			"general":   map[string]any{"positionEncodings": []string{"utf-16"}},
 			"workspace": map[string]any{"applyEdit": false, "workspaceFolders": true},
@@ -362,6 +387,24 @@ func (c *Client) queryPath(path string) (string, int, string, error) {
 		return "", 0, "", errors.New("lsp: query path is outside workspace")
 	}
 	return path, index, language, nil
+}
+
+// workspaceRoot chooses the outermost language marker within the review root,
+// so workspace manifests cover their nested projects without crossing repositories.
+// path has already been resolved and checked by queryPath.
+func (c *Client) workspaceRoot(path string, index int) string {
+	root := c.root
+	for dir := filepath.Dir(path); ; dir = filepath.Dir(dir) {
+		for _, marker := range c.servers[index].RootMarkers {
+			if _, err := os.Stat(filepath.Join(dir, marker)); err == nil {
+				root = dir
+				break
+			}
+		}
+		if dir == c.root || filepath.Dir(dir) == dir {
+			return root
+		}
+	}
 }
 
 func (c *Client) dropConnection(s *session, conn *connection) {

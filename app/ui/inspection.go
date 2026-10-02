@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -31,13 +32,21 @@ type InspectionPosition struct {
 
 type InspectionResult struct {
 	Text      string
+	Markdown  bool
 	Locations []InspectionPosition
+}
+
+type InspectionServer struct {
+	Name    string
+	Command string
+	Path    string
 }
 
 // CodeInspector owns language servers and filesystem access outside the UI.
 type CodeInspector interface {
 	Query(context.Context, InspectionOperation, InspectionPosition, string) (InspectionResult, error)
 	ReadSource(context.Context, string) (string, error)
+	Servers() []InspectionServer
 }
 
 type inspectionPageKind int
@@ -74,6 +83,30 @@ type inspectionLoadedMsg struct {
 // Servers decide meaning. The picker only finds identifier-shaped spans and
 // preserves byte offsets, including repeated names and non-ASCII identifiers.
 var inspectionIdentifier = regexp.MustCompile(`[\pL_$][\pL\pN\pM_$]*`)
+
+func (m Model) listLanguageServers() (tea.Model, tea.Cmd) {
+	if m.inspection.provider == nil {
+		m.keys.hint = "Code inspection requires a working-tree or all-files review"
+		return m, nil
+	}
+	m.cancelInspection()
+	m.inspection.history = nil
+	m.showInspection(inspectionPage{kind: inspectionText, spec: overlay.InspectionSpec{Title: "Language servers", Text: "Loading…"}})
+	seq, provider := m.inspection.seq, m.inspection.provider
+	return m, func() tea.Msg {
+		var rows []string
+		for _, server := range provider.Servers() {
+			status := "not on PATH"
+			if server.Path != "" {
+				status = server.Path
+			}
+			rows = append(rows, fmt.Sprintf("%s — %s (%s)\n  :lsp install %s", server.Name, server.Command, status, server.Name))
+		}
+		rows = append(rows, "Servers start only when you inspect a symbol. PATH discovery does not check server health.")
+		return inspectionLoadedMsg{seq: seq, page: inspectionPage{kind: inspectionText,
+			spec: overlay.InspectionSpec{Title: "Language servers", Text: strings.Join(rows, "\n\n")}}}
+	}
+}
 
 func (m Model) openInspection(op InspectionOperation) (tea.Model, tea.Cmd) {
 	if m.inspection.provider == nil {
@@ -159,6 +192,7 @@ func (m Model) chooseInspection(index int) (tea.Model, tea.Cmd) {
 		if page.kind == inspectionLocations {
 			source, err := provider.ReadSource(ctx, position.Path)
 			result.spec.Text, result.spec.Line = source, position.Line
+			result.spec.Highlighted = m.inspectionCode(position.Path, source)
 			return inspectionLoadedMsg{seq: seq, page: result, err: err}
 		}
 		response, err := provider.Query(ctx, op, position, page.sourceLine)
@@ -166,6 +200,9 @@ func (m Model) chooseInspection(index int) (tea.Model, tea.Cmd) {
 			return inspectionLoadedMsg{seq: seq, err: err}
 		}
 		result.spec.Text = response.Text
+		if response.Markdown {
+			result.spec.Highlighted = m.inspectionMarkdown(position.Path, response.Text)
+		}
 		if op != InspectHover && len(response.Locations) > 0 {
 			result.kind, result.targets = inspectionLocations, response.Locations
 			result.spec.Items = make([]string, 0, len(response.Locations))
@@ -190,4 +227,51 @@ func (m Model) handleInspectionLoaded(msg inspectionLoadedMsg) (tea.Model, tea.C
 		m.showInspection(msg.page)
 	}
 	return m, nil
+}
+
+// inspectionCode sanitizes server/file content before adding our own ANSI colors.
+// It runs in the query command, not in the render or keyboard event loop.
+func (m Model) inspectionCode(language, source string) string {
+	source = strings.ReplaceAll(diff.SanitizeCommitText(source), "\t", "    ")
+	lines := strings.Split(source, "\n")
+	diffLines := make([]diff.DiffLine, len(lines))
+	for n, line := range lines {
+		diffLines[n] = diff.DiffLine{Content: line, ChangeType: diff.ChangeContext}
+	}
+	if m.highlighter != nil {
+		if highlighted := m.highlighter.HighlightLines(language, diffLines); highlighted != nil {
+			return strings.Join(highlighted, "\n")
+		}
+	}
+	return source
+}
+
+var inspectionFence = regexp.MustCompile("^ {0,3}(`{3,}|~{3,})(.*)$")
+
+// inspectionMarkdown replaces fenced blocks with highlighted source while
+// keeping the surrounding documentation. Unlabelled blocks use the source file's language.
+func (m Model) inspectionMarkdown(path, text string) string {
+	lines := strings.Split(strings.ReplaceAll(diff.SanitizeCommitText(text), "\t", "    "), "\n")
+	var rendered []string
+	for n := 0; n < len(lines); n++ {
+		fence := inspectionFence.FindStringSubmatch(lines[n])
+		if fence == nil {
+			rendered = append(rendered, lines[n])
+			continue
+		}
+		language := path
+		if info := strings.Fields(fence[2]); len(info) > 0 {
+			language = info[0]
+		}
+		end := n + 1
+		for ; end < len(lines); end++ {
+			closeFence := inspectionFence.FindStringSubmatch(lines[end])
+			if closeFence != nil && closeFence[1][0] == fence[1][0] && len(closeFence[1]) >= len(fence[1]) && strings.TrimSpace(closeFence[2]) == "" {
+				break
+			}
+		}
+		rendered = append(rendered, m.inspectionCode(language, strings.Join(lines[n+1:end], "\n")))
+		n = end
+	}
+	return strings.Join(rendered, "\n")
 }
