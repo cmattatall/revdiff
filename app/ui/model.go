@@ -75,6 +75,7 @@ type styleResolver interface {
 type styleRenderer interface {
 	AnnotationInline(text string) string
 	DiffCursor(noColors bool) string
+	DiffHunkMarker(noColors bool) string
 	StatusBarSeparator() string
 	StatusBarDiffStats(adds, removes int) string
 	FileStatusMark(status diff.FileStatus) string
@@ -1472,7 +1473,7 @@ func (m Model) treePaneHidden() bool {
 
 // isCursorLine returns true when the diff line at idx is the active cursor line.
 func (m Model) isCursorLine(idx int) bool {
-	return idx == m.nav.diffCursor && m.layout.focus == paneDiff && !m.annot.cursorOnAnnotation
+	return idx == m.nav.diffCursor && !m.annot.cursorOnAnnotation
 }
 
 // togglePane switches focus between tree and diff panes.

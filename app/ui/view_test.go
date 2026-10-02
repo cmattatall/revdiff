@@ -34,6 +34,26 @@ func TestModel_DiffHeadingMatchesTreeSectionColor(t *testing.T) {
 	}
 }
 
+func TestModel_StageReloadKeepsDisplayedDiff(t *testing.T) {
+	for _, action := range []keymap.Action{keymap.ActionStageHunk, keymap.ActionStageFile} {
+		for _, unstage := range []bool{false, true} {
+			m := splitTestModel(t)
+			m.layout.focus = paneDiff
+			before := m.layout.viewport.View()
+			model, cmd := m.Update(stagedMsg{action: action, unstage: unstage})
+			m = model.(Model)
+			require.NotNil(t, cmd)
+			require.False(t, m.filesLoaded, "staging stays blocked while refreshing")
+			require.Equal(t, before, m.layout.viewport.View())
+			view := ansi.Strip(m.View().Content)
+			require.Contains(t, view, "partial.go")
+			require.Contains(t, view, "needle")
+			require.Contains(t, view, "┌", "keep the panes instead of flashing a loading screen")
+			require.NotContains(t, view, "loading files...")
+		}
+	}
+}
+
 func TestModel_ReviewStatsBottomRight(t *testing.T) {
 	m := testModel([]string{"a.go", "b.go", "c.go"}, nil)
 	m.review.cfg = &ReviewInfoConfig{VCS: "git"}

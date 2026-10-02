@@ -29,11 +29,8 @@ func (m Model) viewContent() string {
 	if !m.ready {
 		return "loading..."
 	}
-	// ready but the first filesLoadedMsg hasn't landed yet — the file tree is still
-	// nil-populated and the diff pane has no file selected. Showing the empty two-pane
-	// layout here would flash a misleading "no changes" state for as long as ChangedFiles
-	// takes to return (can be 100-500ms on large repos).
-	if !m.filesLoaded && !m.command.active && !m.message.active && !m.overlay.Active() {
+	// Keep the displayed diff during reloads. Only startup needs a loading screen.
+	if !m.filesLoaded && m.file.name == "" && !m.command.active && !m.message.active && !m.overlay.Active() {
 		return "loading files..."
 	}
 
@@ -54,7 +51,7 @@ func (m Model) viewContent() string {
 	// diff pane title
 	diffTitle := "no file selected"
 	section := ""
-	if !m.filesLoaded {
+	if !m.filesLoaded && m.file.name == "" {
 		diffTitle = "loading files..."
 	} else if m.file.name != "" {
 		diffTitle = m.file.name

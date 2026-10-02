@@ -21,6 +21,9 @@ import (
 //			DiffCursorFunc: func(noColors bool) string {
 //				panic("mock out the DiffCursor method")
 //			},
+//			DiffHunkMarkerFunc: func(noColors bool) string {
+//				panic("mock out the DiffHunkMarker method")
+//			},
 //			FileAnnotationMarkFunc: func() string {
 //				panic("mock out the FileAnnotationMark method")
 //			},
@@ -49,6 +52,9 @@ type styleRendererMock struct {
 	// DiffCursorFunc mocks the DiffCursor method.
 	DiffCursorFunc func(noColors bool) string
 
+	// DiffHunkMarkerFunc mocks the DiffHunkMarker method.
+	DiffHunkMarkerFunc func(noColors bool) string
+
 	// FileAnnotationMarkFunc mocks the FileAnnotationMark method.
 	FileAnnotationMarkFunc func() string
 
@@ -76,6 +82,11 @@ type styleRendererMock struct {
 			// NoColors is the noColors argument value.
 			NoColors bool
 		}
+		// DiffHunkMarker holds details about calls to the DiffHunkMarker method.
+		DiffHunkMarker []struct {
+			// NoColors is the noColors argument value.
+			NoColors bool
+		}
 		// FileAnnotationMark holds details about calls to the FileAnnotationMark method.
 		FileAnnotationMark []struct {
 		}
@@ -100,6 +111,7 @@ type styleRendererMock struct {
 	}
 	lockAnnotationInline   sync.RWMutex
 	lockDiffCursor         sync.RWMutex
+	lockDiffHunkMarker     sync.RWMutex
 	lockFileAnnotationMark sync.RWMutex
 	lockFileReviewedMark   sync.RWMutex
 	lockFileStatusMark     sync.RWMutex
@@ -168,6 +180,38 @@ func (mock *styleRendererMock) DiffCursorCalls() []struct {
 	mock.lockDiffCursor.RLock()
 	calls = mock.calls.DiffCursor
 	mock.lockDiffCursor.RUnlock()
+	return calls
+}
+
+// DiffHunkMarker calls DiffHunkMarkerFunc.
+func (mock *styleRendererMock) DiffHunkMarker(noColors bool) string {
+	if mock.DiffHunkMarkerFunc == nil {
+		panic("styleRendererMock.DiffHunkMarkerFunc: method is nil but styleRenderer.DiffHunkMarker was just called")
+	}
+	callInfo := struct {
+		NoColors bool
+	}{
+		NoColors: noColors,
+	}
+	mock.lockDiffHunkMarker.Lock()
+	mock.calls.DiffHunkMarker = append(mock.calls.DiffHunkMarker, callInfo)
+	mock.lockDiffHunkMarker.Unlock()
+	return mock.DiffHunkMarkerFunc(noColors)
+}
+
+// DiffHunkMarkerCalls gets all the calls that were made to DiffHunkMarker.
+// Check the length with:
+//
+//	len(mockedstyleRenderer.DiffHunkMarkerCalls())
+func (mock *styleRendererMock) DiffHunkMarkerCalls() []struct {
+	NoColors bool
+} {
+	var calls []struct {
+		NoColors bool
+	}
+	mock.lockDiffHunkMarker.RLock()
+	calls = mock.calls.DiffHunkMarker
+	mock.lockDiffHunkMarker.RUnlock()
 	return calls
 }
 

@@ -15,6 +15,57 @@ import (
 	"github.com/umputun/revdiff/app/ui/worddiff"
 )
 
+// A struct key avoids allocating a formatted string per line.
+type annotLineKey struct {
+	line       int
+	changeType diff.ChangeType
+}
+
+// Non-comparable inputs, such as styles and highlighted text, invalidate the cache explicitly.
+type globalRenderKey struct {
+	// Resolved width catches layout changes even when terminal dimensions stay fixed.
+	contentWidth int
+	scrollX      int
+	wrap         bool
+	lineNumbers  bool
+	showBlame    bool
+	wordDiff     bool
+	noColors     bool
+	annotating   bool
+	// Different terms can match the same lines but highlight different spans.
+	searchTerm       string
+	fileAnnotating   bool
+	singleColLineNum bool
+	lineNumWidth     int
+	blameAuthorLen   int
+	blameMinute      int64
+	loadSeq          uint64
+	tabSpaces        string
+	annotPrefix      string
+	annotFilePrefix  string
+	fileName         string
+}
+
+// Per-line keys let cursor and selection changes reuse unaffected rows.
+type lineRenderFlags struct {
+	selectedHunk bool
+	cursor       bool
+	searchMatch  bool
+	annotCursor  bool
+	hasComment   bool // an empty annotation still occupies a row
+	liveInput    bool
+	comment      string
+}
+
+// Shared by Model copies. State keys prevent stale rows when those copies diverge.
+type diffRenderCache struct {
+	key     globalRenderKey
+	blocks  []string
+	flags   []lineRenderFlags
+	filled  []bool
+	lastLen int // pre-size the next render to avoid reallocations
+}
+
 // lineNumGutterWidth returns the total character width of the line number gutter.
 // two-column layout: " " + oldNum(W) + " " + newNum(W) = 2*W + 2
 // single-column layout: " " + num(W) = W + 1
@@ -295,14 +346,16 @@ func (m Model) renderDiff() string {
 	if n := m.renderCache.lastLen; n > 0 {
 		b.Grow(n)
 	}
+	start, end := m.selectedHunkRange()
 	for i, dl := range m.file.lines {
 		flags := m.lineRenderFlags(i, annotationMap)
+		flags.selectedHunk = i >= start && i < end
 		if block, ok := m.renderCache.get(i, flags); ok {
 			b.WriteString(block)
 			continue
 		}
 		var lb strings.Builder
-		m.renderDiffLine(&lb, i, dl)
+		m.renderDiffLine(&lb, i, dl, flags.selectedHunk)
 		m.renderAnnotationOrInput(&lb, i, annotationMap)
 		block := lb.String()
 		m.renderCache.put(i, flags, block)
@@ -416,9 +469,39 @@ func (m Model) renderFileAnnotationHeader(b *strings.Builder, fileComment string
 	}
 }
 
+// selectedHunkRange returns the changed block containing the cursor, with an exclusive end.
+// Compute it once per render, not once per line.
+func (m Model) selectedHunkRange() (int, int) {
+	changed := func(i int) bool {
+		return i >= 0 && i < len(m.file.lines) &&
+			(m.file.lines[i].ChangeType == diff.ChangeAdd || m.file.lines[i].ChangeType == diff.ChangeRemove)
+	}
+	if !changed(m.nav.diffCursor) {
+		return -1, -1
+	}
+	start, end := m.nav.diffCursor, m.nav.diffCursor+1
+	for changed(start - 1) {
+		start--
+	}
+	for changed(end) {
+		end++
+	}
+	return start, end
+}
+
+func (m Model) diffSelectionMarker(cursor, selectedHunk bool) string {
+	if cursor {
+		return m.renderer.DiffCursor(m.cfg.noColors)
+	}
+	if selectedHunk {
+		return m.renderer.DiffHunkMarker(m.cfg.noColors)
+	}
+	return " "
+}
+
 // renderDiffLine writes a single styled diff line (with cursor highlight) to the builder.
 // when wrap mode is active, long lines are broken at word boundaries with ↪ continuation markers.
-func (m Model) renderDiffLine(b *strings.Builder, idx int, dl diff.DiffLine) {
+func (m Model) renderDiffLine(b *strings.Builder, idx int, dl diff.DiffLine, selectedHunk bool) {
 	lineContent, textContent, hasHighlight := m.prepareLineContent(idx, dl)
 	textContent = m.applyIntraLineHighlight(idx, dl.ChangeType, textContent)
 	isSearchMatch := m.search.matchSet[idx]
@@ -427,7 +510,7 @@ func (m Model) renderDiffLine(b *strings.Builder, idx int, dl diff.DiffLine) {
 
 	// wrap mode: break long lines at word boundaries (dividers are short, skip them)
 	if m.modes.wrap && dl.ChangeType != diff.ChangeDivider {
-		m.renderWrappedDiffLine(b, dl, textContent, hasHighlight, isCursor, isSearchMatch)
+		m.renderWrappedDiffLine(b, dl, textContent, hasHighlight, isCursor, isSearchMatch, selectedHunk)
 		return
 	}
 
@@ -450,15 +533,12 @@ func (m Model) renderDiffLine(b *strings.Builder, idx int, dl diff.DiffLine) {
 	}
 	content = m.extendLineBg(content, lineBg)
 
-	cursor := " "
-	if isCursor {
-		cursor = m.renderer.DiffCursor(m.cfg.noColors)
-	}
+	cursor := m.diffSelectionMarker(isCursor, selectedHunk)
 	b.WriteString(cursor + numGutter + blGutter + content + "\n")
 }
 
 // renderWrappedDiffLine renders a diff line with word wrapping, producing continuation lines with ↪ markers.
-func (m Model) renderWrappedDiffLine(b *strings.Builder, dl diff.DiffLine, textContent string, hasHighlight, isCursor, isSearchMatch bool) {
+func (m Model) renderWrappedDiffLine(b *strings.Builder, dl diff.DiffLine, textContent string, hasHighlight, isCursor, isSearchMatch, selectedHunk bool) {
 	numGutter, blGutter := m.lineGutters(dl)
 	numBlank, blBlank := m.gutterBlanks()
 
@@ -483,10 +563,7 @@ func (m Model) renderWrappedDiffLine(b *strings.Builder, dl diff.DiffLine, textC
 		}
 		styled = m.extendLineBg(styled, m.resolver.LineBg(dl.ChangeType))
 
-		cursor := " "
-		if i == 0 && isCursor {
-			cursor = m.renderer.DiffCursor(m.cfg.noColors)
-		}
+		cursor := m.diffSelectionMarker(i == 0 && isCursor, selectedHunk)
 		b.WriteString(cursor + ng + bg + styled + "\n")
 	}
 }
@@ -845,88 +922,6 @@ func (m Model) diffContentWidth() int {
 	}
 	// multi-file or single-file with TOC: diff pane width minus borders (4) minus tree width, minus bar (1), minus right padding (1)
 	return max(10, m.layout.width-m.layout.treeWidth-4-2)
-}
-
-// annotLineKey identifies a line annotation for render-path lookups. Comparable on
-// purpose: lineRenderFlags builds one per line on every render, including renders that
-// are entirely cache hits, so the string form (annotationKey's Sprintf) allocated per
-// line for any file carrying at least one annotation.
-type annotLineKey struct {
-	line       int
-	changeType diff.ChangeType
-}
-
-// globalRenderKey is the comparable fingerprint of non-per-line render state.
-// It is compared by value, so every field must stay comparable.
-type globalRenderKey struct {
-	// contentWidth is the resolved diffContentWidth(), not the raw layout.width and
-	// treeWidth it is computed from. Every width consumer in the render path
-	// (applyHorizontalScroll, plainHorizontalCut, extendLineBg, wrapWidth,
-	// annotationVisualRows) goes through diffContentWidth, and that branches on
-	// treePaneHidden() = treeHidden || (singleFile && mdTOC == nil). Keying the raw
-	// inputs missed those three: with treeWidth already 0 while the pane is shown —
-	// reachable after a single-file diff becomes multi-file without treeWidth being
-	// recomputed — pressing `t` moves no key field yet changes the width every line is
-	// cut and padded to. Keying the resolved value cannot drift from what is consumed,
-	// and matches how annotCacheKey already keys on the resolved wrapW.
-	contentWidth int
-	scrollX      int
-	// layout.focus is deliberately NOT here. Every focus read inside the cached loop is the
-	// `focus == paneDiff` term of isCursorLine and of the annotCursor condition, both captured
-	// per line by lineRenderFlags, and both can only differ on the cursor line — so a focus
-	// change dirties one line, not the file. Having it here made Tab and every click into the
-	// tree drop the whole cache and pay a cold rebuild. The one remaining read, in
-	// renderFileAnnotationHeader, is outside the loop and never cached.
-	// layout.viewport.Width is likewise absent: nothing in the render path reads it at all.
-	wrap        bool
-	lineNumbers bool
-	showBlame   bool
-	wordDiff    bool
-	noColors    bool
-	annotating  bool
-	// searchTerm, not just the per-line match bool: highlightSearchMatches locates the
-	// highlighted byte range from the term, so two different terms matching the same set
-	// of lines still paint differently.
-	searchTerm       string
-	fileAnnotating   bool
-	singleColLineNum bool
-	lineNumWidth     int
-	blameAuthorLen   int
-	blameMinute      int64
-	loadSeq          uint64
-	tabSpaces        string
-	annotPrefix      string
-	annotFilePrefix  string
-	fileName         string
-}
-
-// lineRenderFlags is the per-line state a cached block was rendered under.
-// hasComment distinguishes "no annotation" from "annotation with an empty body",
-// which render differently.
-type lineRenderFlags struct {
-	cursor      bool
-	searchMatch bool
-	annotCursor bool
-	hasComment  bool
-	liveInput   bool
-	comment     string
-}
-
-// diffRenderCache memoizes each diff line's rendered block (the line plus any
-// annotation rows below it). renderDiff has a value receiver, so the cache is
-// held behind a pointer: every Model copy shares one instance, which is what
-// lets a render populated by one copy serve the next.
-//
-// Sharing across copies is safe because entries are keyed by the state they were
-// rendered under — identical inputs produce identical bytes, so a block written
-// by a Model copy that was later discarded is still correct for any copy whose
-// key matches.
-type diffRenderCache struct {
-	key     globalRenderKey
-	blocks  []string
-	flags   []lineRenderFlags
-	filled  []bool
-	lastLen int // byte length of the previous assembled render, used to pre-size the builder
 }
 
 // rebase drops everything when the global state or the line count changed, so a

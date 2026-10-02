@@ -34,7 +34,9 @@ func (m Model) renderCollapsedDiff() string {
 
 	hasVisibleContent := false
 	hunkIdx := 0
+	start, end := m.selectedHunkRange()
 	for i, dl := range m.file.lines {
+		selectedHunk := i >= start && i < end
 		// advance hunk tracker to the last hunk that starts at or before i
 		for hunkIdx+1 < len(hunks) && hunks[hunkIdx+1] <= i {
 			hunkIdx++
@@ -50,9 +52,9 @@ func (m Model) renderCollapsedDiff() string {
 		case diff.ChangeRemove:
 			switch {
 			case expanded:
-				m.renderDiffLine(&b, i, dl)
+				m.renderDiffLine(&b, i, dl, selectedHunk)
 			case i == hunkStart && hunkStart >= 0 && m.isDeleteOnlyHunk(hunkStart):
-				m.renderDeletePlaceholder(&b, i, hunkStart)
+				m.renderDeletePlaceholder(&b, i, hunkStart, selectedHunk)
 				hasVisibleContent = true
 				continue // placeholder is synthetic, skip annotation rendering
 			default:
@@ -61,13 +63,13 @@ func (m Model) renderCollapsedDiff() string {
 
 		case diff.ChangeAdd:
 			if expanded {
-				m.renderDiffLine(&b, i, dl) // use standard add styling when hunk is expanded
+				m.renderDiffLine(&b, i, dl, selectedHunk) // use standard add styling when hunk is expanded
 			} else {
-				m.renderCollapsedAddLine(&b, i, dl, modifiedSet[i])
+				m.renderCollapsedAddLine(&b, i, dl, modifiedSet[i], selectedHunk)
 			}
 
 		default: // context and divider lines render normally
-			m.renderDiffLine(&b, i, dl)
+			m.renderDiffLine(&b, i, dl, selectedHunk)
 		}
 		hasVisibleContent = true
 
@@ -126,7 +128,7 @@ func (m Model) maxRenderedContentWidth() int {
 
 // renderCollapsedAddLine renders an add line in collapsed mode with modify or add styling.
 // Search styling overrides diff colors only within the matching text.
-func (m Model) renderCollapsedAddLine(b *strings.Builder, idx int, dl diff.DiffLine, modified bool) {
+func (m Model) renderCollapsedAddLine(b *strings.Builder, idx int, dl diff.DiffLine, modified, selectedHunk bool) {
 	lineContent, textContent, hasHighlight := m.prepareLineContent(idx, dl)
 	isSearchMatch := m.search.matchSet[idx]
 
@@ -164,7 +166,8 @@ func (m Model) renderCollapsedAddLine(b *strings.Builder, idx int, dl diff.DiffL
 		m.renderWrappedCollapsedLine(b, textContent, wrappedLineCtx{
 			gutter: gutter, numGutter: numGutter, blGutter: blGutter,
 			isCursor: isCursor, hasHighlight: hasHighlight,
-			lineStyle: lineStyle, hlStyle: lineHlStyle, bgColor: bgColor,
+			selectedHunk: selectedHunk,
+			lineStyle:    lineStyle, hlStyle: lineHlStyle, bgColor: bgColor,
 			prefixFg: prefixFg,
 		})
 		return
@@ -177,10 +180,7 @@ func (m Model) renderCollapsedAddLine(b *strings.Builder, idx int, dl diff.DiffL
 	content = m.applyHorizontalScroll(content, bgColor)
 	content = m.extendLineBg(content, bgColor)
 
-	cursor := " "
-	if isCursor {
-		cursor = m.renderer.DiffCursor(m.cfg.noColors)
-	}
+	cursor := m.diffSelectionMarker(isCursor, selectedHunk)
 	b.WriteString(cursor + numGutter + blGutter + content + "\n")
 }
 
@@ -189,6 +189,7 @@ func (m Model) renderCollapsedAddLine(b *strings.Builder, idx int, dl diff.DiffL
 type wrappedLineCtx struct {
 	gutter, numGutter, blGutter string
 	isCursor, hasHighlight      bool
+	selectedHunk                bool
 	lineStyle, hlStyle          lipgloss.Style
 	bgColor, prefixFg           style.Color
 }
@@ -211,10 +212,7 @@ func (m Model) renderWrappedCollapsedLine(b *strings.Builder, textContent string
 		styled := m.styleCollapsedWrapVisual(ctx, vl, isFirst)
 		styled = m.extendLineBg(styled, ctx.bgColor)
 
-		cursor := " "
-		if isFirst && ctx.isCursor {
-			cursor = m.renderer.DiffCursor(m.cfg.noColors)
-		}
+		cursor := m.diffSelectionMarker(isFirst && ctx.isCursor, ctx.selectedHunk)
 		b.WriteString(cursor + ng + bg + styled + "\n")
 	}
 }
@@ -268,7 +266,7 @@ func (m Model) deletePlaceholderVisualHeight(hunkStart int) int {
 // renderDeletePlaceholder renders a placeholder line for a delete-only hunk in collapsed mode.
 // shows "⋯ N lines deleted" with remove styling so users know deletions exist and can expand with '.'.
 // when search is active, matching placeholders use search highlight instead of remove styling.
-func (m Model) renderDeletePlaceholder(b *strings.Builder, idx, hunkStart int) {
+func (m Model) renderDeletePlaceholder(b *strings.Builder, idx, hunkStart int, selectedHunk bool) {
 	text := m.deletePlaceholderText(hunkStart)
 
 	lineStyle := m.resolver.Style(style.StyleKeyLineRemove)
@@ -305,10 +303,7 @@ func (m Model) renderDeletePlaceholder(b *strings.Builder, idx, hunkStart int) {
 			}
 			styled = m.extendLineBg(styled, bgColor)
 
-			cursor := " "
-			if i == 0 && isCursor {
-				cursor = m.renderer.DiffCursor(m.cfg.noColors)
-			}
+			cursor := m.diffSelectionMarker(i == 0 && isCursor, selectedHunk)
 			b.WriteString(cursor + ng + bg + styled + "\n")
 		}
 		return
@@ -318,10 +313,7 @@ func (m Model) renderDeletePlaceholder(b *strings.Builder, idx, hunkStart int) {
 	content = m.applyHorizontalScroll(content, bgColor)
 	content = m.extendLineBg(content, bgColor)
 
-	cursor := " "
-	if isCursor {
-		cursor = m.renderer.DiffCursor(m.cfg.noColors)
-	}
+	cursor := m.diffSelectionMarker(isCursor, selectedHunk)
 	b.WriteString(cursor + numGutter + blGutter + content + "\n")
 }
 

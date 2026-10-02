@@ -769,6 +769,8 @@ In Git working-tree reviews, the sidebar has two fixed-height regions separated 
 | `[` / `]` | Cycle through previous/next hunks in the current file (diff focus) or across the tree (tree focus) |
 | `:edit` | Open focused file in `$EDITOR` |
 
+Hunk navigation moves the diff cursor to the selected change without switching pane focus. The cursor arrow and a gutter bar mark the selected hunk from either pane, including wrapped and collapsed views. Staging keeps the displayed diff visible while refreshing instead of replacing it with a loading screen.
+
 The file picker lists visible Changes paths in split working-tree reviews, never staged versions or staged-only files. Other review modes use their visible sidebar paths. Annotated-only and unreviewed-only filters remain active. Printable keys always filter full relative paths; use the arrow keys or mouse wheel to move, and press `Enter` or left-click to jump. `Backspace` edits the filter. The first `Esc` clears a non-empty filter and keeps the picker open; the second closes it. Because printable keys always filter, `P` typed inside the picker adds to the filter rather than closing it; a `jump_file` binding with a modifier (e.g. `map alt+f jump_file`) closes the picker when pressed again.
 
 Press `L` in the file viewer to show line numbers, or launch with `--line-numbers`. Type `:123` and press `Enter` to jump to source line 123; no Vim preset is required. Diff jumps use the new-file line numbers, or old-file numbers when the file is entirely deleted. A line omitted by compact mode or outside the file reports "not shown" and leaves the prompt open for correction. The `:` shortcut is rebindable as `command`.

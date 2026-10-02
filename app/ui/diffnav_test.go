@@ -1782,7 +1782,7 @@ func TestModel_RenderDiffLineWithWrap(t *testing.T) {
 	t.Run("short line no continuation", func(t *testing.T) {
 		var b strings.Builder
 		dl := diff.DiffLine{Content: "short", ChangeType: diff.ChangeAdd, NewNum: 1}
-		m.renderDiffLine(&b, 0, dl)
+		m.renderDiffLine(&b, 0, dl, false)
 		output := b.String()
 		assert.Contains(t, output, " + short")
 		assert.NotContains(t, output, "↪", "short line should not have continuation")
@@ -1793,7 +1793,7 @@ func TestModel_RenderDiffLineWithWrap(t *testing.T) {
 		var b strings.Builder
 		longContent := "this is a very long line that should definitely be wrapped at word boundaries to fit the viewport"
 		dl := diff.DiffLine{Content: longContent, ChangeType: diff.ChangeAdd, NewNum: 1}
-		m.renderDiffLine(&b, 0, dl)
+		m.renderDiffLine(&b, 0, dl, false)
 		output := b.String()
 
 		lines := strings.Split(strings.TrimSuffix(output, "\n"), "\n")
@@ -1812,7 +1812,7 @@ func TestModel_RenderDiffLineWithWrap(t *testing.T) {
 		var b strings.Builder
 		longContent := "this is a removed line that is very long and should be wrapped at word boundaries to fit the viewport width"
 		dl := diff.DiffLine{Content: longContent, ChangeType: diff.ChangeRemove, OldNum: 5}
-		m.renderDiffLine(&b, 0, dl)
+		m.renderDiffLine(&b, 0, dl, false)
 		output := b.String()
 
 		lines := strings.Split(strings.TrimSuffix(output, "\n"), "\n")
@@ -1827,7 +1827,7 @@ func TestModel_RenderDiffLineWithWrap(t *testing.T) {
 		var b strings.Builder
 		longContent := "this is a context line that is very long and should be wrapped at word boundaries for readability"
 		dl := diff.DiffLine{Content: longContent, ChangeType: diff.ChangeContext, NewNum: 10}
-		m.renderDiffLine(&b, 0, dl)
+		m.renderDiffLine(&b, 0, dl, false)
 		output := b.String()
 
 		lines := strings.Split(strings.TrimSuffix(output, "\n"), "\n")
@@ -1840,7 +1840,7 @@ func TestModel_RenderDiffLineWithWrap(t *testing.T) {
 	t.Run("divider lines are not wrapped", func(t *testing.T) {
 		var b strings.Builder
 		dl := diff.DiffLine{Content: "@@ -1,5 +1,7 @@", ChangeType: diff.ChangeDivider}
-		m.renderDiffLine(&b, 0, dl)
+		m.renderDiffLine(&b, 0, dl, false)
 		output := b.String()
 		assert.NotContains(t, output, "↪", "dividers should not be wrapped")
 		assert.Equal(t, 1, strings.Count(output, "\n"), "divider should be a single line")
@@ -1854,7 +1854,7 @@ func TestModel_RenderDiffLineWithWrap(t *testing.T) {
 		var b strings.Builder
 		longContent := "this is a very long line that should definitely be wrapped at word boundaries to test cursor placement"
 		dl := diff.DiffLine{Content: longContent, ChangeType: diff.ChangeAdd, NewNum: 1}
-		m.renderDiffLine(&b, 0, dl)
+		m.renderDiffLine(&b, 0, dl, false)
 		output := b.String()
 
 		lines := strings.Split(strings.TrimSuffix(output, "\n"), "\n")
@@ -1871,7 +1871,7 @@ func TestModel_RenderDiffLineWithWrap(t *testing.T) {
 
 		var b strings.Builder
 		dl := diff.DiffLine{Content: "@@ -1,3 +1,3 @@", ChangeType: diff.ChangeDivider}
-		m.renderDiffLine(&b, 0, dl)
+		m.renderDiffLine(&b, 0, dl, false)
 
 		// divider falls through to non-wrap path but ansi.Cut should be skipped
 		output := b.String()
@@ -2577,9 +2577,14 @@ func TestModel_HunkNav_NextCrossesFileForward(t *testing.T) {
 	// Tree-focused ] at the last hunk of a.go navigates to b.go.
 	diffs := map[string][]diff.DiffLine{
 		"a.go": {{ChangeType: diff.ChangeAdd, Content: "add", NewNum: 1}},
-		"b.go": {{ChangeType: diff.ChangeAdd, Content: "add", NewNum: 1}},
+		"b.go": {
+			{ChangeType: diff.ChangeContext, Content: "context", NewNum: 1},
+			{ChangeType: diff.ChangeAdd, Content: "first addition", NewNum: 2},
+			{ChangeType: diff.ChangeAdd, Content: "second addition", NewNum: 3},
+		},
 	}
 	m := loadFileIntoModel(t, []string{"a.go", "b.go"}, diffs)
+	m.layout.viewport.SetWidth(80)
 	m.layout.focus = paneTree
 	m.nav.diffCursor = 0 // at the only (last) hunk
 
@@ -2591,6 +2596,14 @@ func TestModel_HunkNav_NextCrossesFileForward(t *testing.T) {
 	model = result.(Model)
 	assert.Equal(t, "b.go", model.tree.SelectedFile(), "tree should have advanced to b.go")
 	assert.Equal(t, "b.go", model.file.name)
+	require.Equal(t, 1, model.nav.diffCursor)
+	require.Equal(t, paneTree, model.layout.focus)
+	view := ansi.Strip(model.layout.viewport.View())
+	require.Contains(t, view, "▶ + first addition")
+	require.Contains(t, view, "┃ + second addition")
+	model.togglePane()
+	require.Equal(t, paneDiff, model.layout.focus)
+	require.Equal(t, 1, model.nav.diffCursor, "entering the diff preserves the hunk target")
 }
 func TestModel_HunkNav_PrevCrossesFileBackward(t *testing.T) {
 	// Tree-focused [ at the first hunk of b.go navigates to a.go.

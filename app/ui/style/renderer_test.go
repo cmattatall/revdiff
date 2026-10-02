@@ -43,6 +43,12 @@ func TestRenderer_AnnotationInline_emptyText(t *testing.T) {
 	assert.Contains(t, got, "\033[3m\033[23m", "empty text should still have italic on/off")
 }
 
+func TestRenderer_DiffHunkMarker(t *testing.T) {
+	rnd := NewRenderer(NewResolver(Colors{Accent: "#f5a97f"}))
+	assert.Equal(t, "\033[38;2;245;169;127m┃\033[39m", rnd.DiffHunkMarker(false))
+	assert.Equal(t, "┃", rnd.DiffHunkMarker(true))
+}
+
 func TestRenderer_DiffCursor(t *testing.T) {
 	t.Run("no colors", func(t *testing.T) {
 		rnd := NewRenderer(PlainResolver())

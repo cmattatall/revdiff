@@ -75,6 +75,14 @@ func (r Renderer) DiffCursor(noColors bool) string {
 	return b.String()
 }
 
+// DiffHunkMarker marks the selected hunk without covering diff or search colors.
+func (r Renderer) DiffHunkMarker(noColors bool) string {
+	if noColors {
+		return "┃"
+	}
+	return ansiColor(r.res.colors.Accent, 38) + "┃" + string(ResetFg)
+}
+
 // StatusBarSeparator returns a separator string for the status bar, styled with
 // muted foreground for the pipe and status foreground for the surrounding spaces.
 func (r Renderer) StatusBarSeparator() string {

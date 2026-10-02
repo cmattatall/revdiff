@@ -237,11 +237,7 @@ func TestStageHunkReportsActualBlocker(t *testing.T) {
 			require.Nil(t, cmd)
 			require.NotEqual(t, liveStaging, m.live.operation)
 			require.Equal(t, tc.want, m.output.hint)
-			if m.filesLoaded {
-				require.Contains(t, m.View().Content, tc.want, "render the actual reason in the status bar")
-			} else {
-				require.Equal(t, "loading files...", m.View().Content)
-			}
+			require.Contains(t, m.View().Content, tc.want, "render the actual reason in the status bar")
 			require.Equal(t, count, m.store.Count(), "refusing to stage must preserve annotations")
 		})
 	}

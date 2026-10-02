@@ -1300,7 +1300,7 @@ func TestModel_DeletePlaceholderSearchHighlight(t *testing.T) {
 	t.Run("with search match", func(t *testing.T) {
 		model.search.matchSet = map[int]bool{1: true}
 		var b strings.Builder
-		model.renderDeletePlaceholder(&b, 1, 1)
+		model.renderDeletePlaceholder(&b, 1, 1, true)
 		rendered := b.String()
 		assert.Contains(t, rendered, "2 lines deleted")
 		assert.Contains(t, rendered, "▶", "cursor indicator should be present")
@@ -1309,7 +1309,7 @@ func TestModel_DeletePlaceholderSearchHighlight(t *testing.T) {
 	t.Run("without search match", func(t *testing.T) {
 		model.search.matchSet = nil
 		var b strings.Builder
-		model.renderDeletePlaceholder(&b, 1, 1)
+		model.renderDeletePlaceholder(&b, 1, 1, true)
 		rendered := b.String()
 		assert.Contains(t, rendered, "2 lines deleted")
 		assert.Contains(t, rendered, "▶")
@@ -1321,7 +1321,7 @@ func TestModel_DeletePlaceholderSearchHighlight(t *testing.T) {
 		model.layout.width = 120
 		model.layout.treeWidth = 30
 		var b strings.Builder
-		model.renderDeletePlaceholder(&b, 1, 1)
+		model.renderDeletePlaceholder(&b, 1, 1, true)
 		rendered := b.String()
 		assert.Contains(t, rendered, "2 lines deleted")
 		model.modes.wrap = false

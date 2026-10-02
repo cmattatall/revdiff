@@ -347,6 +347,73 @@ func TestModel_RenderDiffLineCursorHighlight(t *testing.T) {
 	assert.Contains(t, output, "line one", "cursor line content should appear")
 }
 
+func TestModel_SelectedHunkMarkers(t *testing.T) {
+	lines := []diff.DiffLine{
+		{NewNum: 1, Content: "before", ChangeType: diff.ChangeContext},
+		{OldNum: 2, Content: "old first", ChangeType: diff.ChangeRemove},
+		{OldNum: 3, Content: "old second", ChangeType: diff.ChangeRemove},
+		{NewNum: 2, Content: "new first", ChangeType: diff.ChangeAdd},
+		{NewNum: 3, Content: "new second", ChangeType: diff.ChangeAdd},
+		{NewNum: 4, Content: "between", ChangeType: diff.ChangeContext},
+		{NewNum: 5, Content: "later first", ChangeType: diff.ChangeAdd},
+		{NewNum: 6, Content: "later second", ChangeType: diff.ChangeAdd},
+	}
+	for _, focus := range []pane{paneTree, paneDiff} {
+		for _, collapsed := range []bool{false, true} {
+			for _, wrap := range []bool{false, true} {
+				m := testModel([]string{"a.go"}, nil)
+				m.file.lines = lines
+				m.layout.focus = focus
+				m.modes.collapsed.enabled, m.modes.wrap = collapsed, wrap
+				m.nav.diffCursor = 3
+				marker := func(rendered, text string) string {
+					for _, row := range strings.Split(ansi.Strip(rendered), "\n") {
+						if strings.Contains(row, text) {
+							return string([]rune(row)[0])
+						}
+					}
+					t.Fatalf("missing row %q in %s", text, rendered)
+					return ""
+				}
+				first := m.renderDiff()
+				require.Equal(t, "▶", marker(first, "new first"))
+				require.Equal(t, "┃", marker(first, "new second"))
+				require.Equal(t, " ", marker(first, "between"))
+				require.Equal(t, " ", marker(first, "later second"))
+				if !collapsed {
+					require.Equal(t, "┃", marker(first, "old first"), "selection includes changes before the cursor")
+				}
+				m.nav.diffCursor = 6
+				second := m.renderDiff() // warm cache must clear the previous hunk's markers
+				require.Equal(t, " ", marker(second, "new first"))
+				require.Equal(t, " ", marker(second, "new second"))
+				require.Equal(t, "▶", marker(second, "later first"))
+				require.Equal(t, "┃", marker(second, "later second"))
+				m.nav.diffCursor = 5
+				context := m.renderDiff()
+				require.Equal(t, "▶", marker(context, "between"))
+				require.NotContains(t, context, "┃", "context lines select no hunk")
+			}
+		}
+	}
+}
+
+func TestModel_SelectedHunkWrappedRows(t *testing.T) {
+	for _, collapsed := range []bool{false, true} {
+		m := testModel(nil, nil)
+		m.file.lines = []diff.DiffLine{{NewNum: 1, Content: strings.Repeat("long added text ", 12), ChangeType: diff.ChangeAdd}}
+		m.modes.wrap, m.modes.collapsed.enabled = true, collapsed
+		m.layout.width, m.layout.treeWidth = 45, 12
+		m.layout.focus, m.nav.diffCursor = paneTree, 0
+		rows := strings.Split(strings.TrimSuffix(ansi.Strip(m.renderDiff()), "\n"), "\n")
+		require.Greater(t, len(rows), 1)
+		require.True(t, strings.HasPrefix(rows[0], "▶"))
+		for _, row := range rows[1:] {
+			require.True(t, strings.HasPrefix(row, "┃"), row)
+		}
+	}
+}
+
 func TestModel_RenderDiffLineTabReplacement(t *testing.T) {
 	lines := []diff.DiffLine{
 		{OldNum: 1, NewNum: 1, Content: "\tfoo", ChangeType: diff.ChangeContext},
