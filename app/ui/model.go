@@ -109,6 +109,7 @@ type overlayManager interface {
 	UpdateInfo(spec overlay.InfoSpec)
 	OpenBlame(spec overlay.InfoSpec)
 	UpdateBlame(spec overlay.InfoSpec)
+	OpenInspection(spec overlay.InspectionSpec)
 	Close()
 	HandleKey(msg tea.KeyMsg, action keymap.Action) overlay.Outcome
 	HandleInput(msg tea.Msg) overlay.Outcome
@@ -578,11 +579,12 @@ type Model struct {
 	shell         ShellRunner
 
 	// grouped state
-	live   liveState        // harness feedback, automatic refresh, and index staging
-	cfg    modelConfigState // immutable session config
-	layout layoutState      // viewport and layout
-	modes  modeState        // user-togglable view modes
-	nav    navigationState  // cursor and navigation
+	inspection inspectionState  // read-only language queries and preview navigation
+	live       liveState        // harness feedback, automatic refresh, and index staging
+	cfg        modelConfigState // immutable session config
+	layout     layoutState      // viewport and layout
+	modes      modeState        // user-togglable view modes
+	nav        navigationState  // cursor and navigation
 
 	highlighter SyntaxHighlighter   // syntax highlighter
 	file        loadedFileState     // current file's loaded state (lines, highlights, blame, etc.)
@@ -733,6 +735,7 @@ type ModelConfig struct {
 	Editor               ExternalEditor                            // external-editor driver (nil uses app/editor.Editor{})
 	PostFlushHook        PostFlushHook                             // optional command run after an in-session output flush
 	Shell                ShellRunner                               // optional terminal handoff for :! commands
+	Inspector            CodeInspector                             // optional read-only language queries
 	Feedback             FeedbackSender                            // optional harness connection; enables live refresh
 	DiscoverFeedback     func() (FeedbackSender, error)            // optional lookup until a connection is found
 	Harnesses            map[string]func() (FeedbackSender, error) // named lookups for :harness connect <type>
@@ -903,6 +906,7 @@ func NewModel(cfg ModelConfig) (Model, error) {
 	}
 
 	return Model{
+		inspection:    inspectionState{provider: cfg.Inspector},
 		resolver:      cfg.StyleResolver,
 		renderer:      cfg.StyleRenderer,
 		sgr:           cfg.SGR,
@@ -1061,6 +1065,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleBlameLoaded(msg)
 	case blameDetailsMsg:
 		return m.handleBlameDetails(msg)
+	case inspectionLoadedMsg:
+		return m.handleInspectionLoaded(msg)
 	case editorFinishedMsg:
 		return m.handleEditorFinished(msg)
 	case sourceEditorFinishedMsg:
@@ -1403,6 +1409,12 @@ func (m Model) handleModalKey(msg tea.KeyMsg) (bool, tea.Model, tea.Cmd) {
 			m.cancelThemeSelect()
 		case overlay.OutcomeFileChosen:
 			model, cmd := m.jumpToFile(out.FileChoice.Path)
+			return true, model, cmd
+		case overlay.OutcomeInspectionChosen:
+			model, cmd := m.chooseInspection(out.InspectionIndex)
+			return true, model, cmd
+		case overlay.OutcomeInspectionBack:
+			model, cmd := m.inspectionBack()
 			return true, model, cmd
 		case overlay.OutcomeClosed, overlay.OutcomeNone:
 		}

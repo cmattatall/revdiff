@@ -34,6 +34,7 @@ const (
 	KindFilePicker       // filterable file-jump popup
 	KindInfo             // unified info popup (description + session + commits)
 	KindBlame            // attribution for the selected source line
+	KindInspection       // read-only language-server inspection
 )
 
 // OutcomeKind describes what happened after a key press in an overlay.
@@ -47,6 +48,8 @@ const (
 	OutcomeThemeConfirmed                      // user confirmed a theme (name in Outcome.ThemeChoice)
 	OutcomeThemeCanceled                       // user canceled theme selection
 	OutcomeFileChosen                          // user picked a file (path in Outcome.FileChoice)
+	OutcomeInspectionChosen                    // user picked a symbol or source location
+	OutcomeInspectionBack                      // return to the previous inspection page or review
 )
 
 // Outcome is the return value from HandleKey. Callers switch on Kind and read
@@ -56,6 +59,7 @@ type Outcome struct {
 	AnnotationTarget *AnnotationTarget
 	ThemeChoice      *ThemeChoice
 	FileChoice       *FileChoice
+	InspectionIndex  int
 	Cmd              tea.Cmd // asynchronous input work, such as reading the clipboard
 }
 
@@ -193,6 +197,7 @@ type Manager struct {
 	themeSel themeSelectOverlay
 	filePick filePickerOverlay
 	info     infoOverlay
+	inspect  inspectionOverlay
 	// bounds is the popup rectangle on screen as of the last Compose call;
 	// used by HandleMouse to hit-test clicks and translate to popup-local coords.
 	bounds popupBounds
@@ -266,6 +271,13 @@ func (m *Manager) OpenBlame(spec InfoSpec) {
 	m.info.open(spec)
 }
 
+// OpenInspection replaces the current inspection page without touching the review.
+func (m *Manager) OpenInspection(spec InspectionSpec) {
+	m.Close()
+	m.kind = KindInspection
+	m.inspect.open(spec)
+}
+
 // UpdateBlame replaces the active blame popup without reopening a dismissed one.
 func (m *Manager) UpdateBlame(spec InfoSpec) {
 	if m.kind == KindBlame {
@@ -304,6 +316,8 @@ func (m *Manager) HandleKey(msg tea.KeyMsg, action keymap.Action) Outcome {
 		out = m.filePick.handleKey(msg, action)
 	case KindInfo, KindBlame:
 		out = m.info.handleKey(msg, action)
+	case KindInspection:
+		out = m.inspect.handleKey(msg, action)
 	default:
 		return Outcome{}
 	}
@@ -311,7 +325,7 @@ func (m *Manager) HandleKey(msg tea.KeyMsg, action keymap.Action) Outcome {
 	switch out.Kind {
 	case OutcomeClosed, OutcomeAnnotationChosen, OutcomeThemeConfirmed, OutcomeThemeCanceled, OutcomeFileChosen:
 		m.Close()
-	case OutcomeNone, OutcomeThemePreview: // no state change
+	case OutcomeNone, OutcomeThemePreview, OutcomeInspectionChosen, OutcomeInspectionBack: // no state change
 	}
 
 	return out
@@ -325,6 +339,14 @@ func (m *Manager) HandleInput(msg tea.Msg) Outcome {
 		return Outcome{}
 	}
 	switch m.kind {
+	case KindInspection:
+		if m.inspect.spec.Items != nil && input.identity == m.inspect.picker.filter.identity {
+			before := m.inspect.picker.filter.Value()
+			m.inspect.picker.filter.Model, _ = m.inspect.picker.filter.Update(input.msg)
+			if m.inspect.picker.filter.Value() != before {
+				m.inspect.picker.applyFilter()
+			}
+		}
 	case KindFilePicker:
 		if input.identity == m.filePick.filter.identity {
 			before := m.filePick.filter.Value()
@@ -382,6 +404,8 @@ func (m *Manager) HandleMouse(msg tea.MouseMsg) Outcome {
 		out = m.filePick.handleMouse(msg)
 	case KindInfo, KindBlame:
 		out = m.info.handleMouse(msg)
+	case KindInspection:
+		out = m.inspect.handleMouse(msg)
 	default: // KindNone handled by the early return above
 		return Outcome{}
 	}
@@ -389,7 +413,7 @@ func (m *Manager) HandleMouse(msg tea.MouseMsg) Outcome {
 	switch out.Kind {
 	case OutcomeClosed, OutcomeAnnotationChosen, OutcomeThemeConfirmed, OutcomeThemeCanceled, OutcomeFileChosen:
 		m.Close()
-	case OutcomeNone, OutcomeThemePreview: // no state change
+	case OutcomeNone, OutcomeThemePreview, OutcomeInspectionChosen, OutcomeInspectionBack: // no state change
 	}
 
 	return out
@@ -412,6 +436,8 @@ func (m *Manager) Compose(base string, ctx RenderCtx) string {
 		fg = m.filePick.render(ctx, m)
 	case KindInfo, KindBlame:
 		fg = m.info.render(ctx, m)
+	case KindInspection:
+		fg = m.inspect.render(ctx, m)
 	}
 	return m.overlayCenter(base, fg, ctx.Width)
 }
