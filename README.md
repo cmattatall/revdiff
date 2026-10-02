@@ -974,21 +974,27 @@ The file uses a simple `map`/`unmap` format (blank lines and `#` comments are ig
 # ~/.config/revdiff/keybindings
 map ctrl+d half_page_down
 map ctrl+u half_page_up
-map x quit
-unmap q
+map alt+e :edit
+map alt+s :harness send
+map ctrl+w>d :fd
+unmap L
 ```
 
 - `map <key> <action>` — binds a key to an action (additive, defaults are kept unless explicitly unmapped)
+- `map <key> :<command>` — executes a palette command or alias, including commands with arguments
 - `unmap <key>` — removes a default binding
 
-Generate a template with all current bindings:
+Generate a template with effective bindings, unbound actions, descriptions, and command aliases:
 
 ```bash
 mkdir -p ~/.config/revdiff
-revdiff --dump-keys > ~/.config/revdiff/keybindings
+revdiff --dump-keys > ~/.config/revdiff/keybindings.new
+mv ~/.config/revdiff/keybindings.new ~/.config/revdiff/keybindings
 ```
 
-Then edit to taste. Fixed modal keys (Enter and Esc in annotation/search input) are not remappable. Keymap-resolved actions like `open_editor` work during annotation input and can be rebound.
+The temporary file avoids truncating the configuration before revdiff reads it. Explicit unbindings survive a dump/reload. Uncomment a `# map <key> ...` template and replace `<key>` to add a binding. Restart revdiff to load edits. Help shows custom command bindings beside their canonical command and aliases. Command bindings keep the same scope checks as typed commands; unknown commands open the palette with an error.
+
+Fixed modal keys (Enter and Esc in annotation/search input) are not remappable. Text input and popup controls take precedence over review bindings. Keymap-resolved actions like `open_editor` work during annotation input and can be rebound.
 
 **Paging the diff from the file tree:** `J`/`K` scroll the diff viewport from either pane, but only by a few lines, while `PgDown`/`PgUp` and `Ctrl+d`/`Ctrl+u` stay pane-relative and page whichever pane has focus. The `scroll_diff_page_*` and `scroll_diff_half_page_*` actions are the page-sized versions of `J`/`K` — they ship with no default key, so bind them to get lazygit-style paging that always targets the diff:
 
@@ -999,7 +1005,7 @@ map ctrl+d scroll_diff_half_page_down
 map ctrl+u scroll_diff_half_page_up
 ```
 
-Three consequences worth knowing. This also replaces cursor paging while the diff pane has focus: the keys scroll the viewport and pin the cursor back into view instead of walking the cursor a page at a time. The file tree and markdown TOC lose their own page-sized traversal on those keys. And because `page_down`, `page_up`, `half_page_down` and `half_page_up` have no other default key, rebinding all four lines leaves them unbound everywhere, including the `?` help and `i` info overlays, which page through the same actions. Omit one pair of mapping lines to keep its default paging. Navigation actions require keybindings; they are not palette commands. `--dump-keys` lists only bindings.
+Three consequences worth knowing. This also replaces cursor paging while the diff pane has focus: the keys scroll the viewport and pin the cursor back into view instead of walking the cursor a page at a time. The file tree and markdown TOC lose their own page-sized traversal on those keys. And because `page_down`, `page_up`, `half_page_down` and `half_page_up` have no other default key, rebinding all four lines leaves them unbound everywhere, including the `?` help and `i` info overlays, which page through the same actions. Omit one pair of mapping lines to keep its default paging. Navigation actions require keybindings; they are not palette commands. `--dump-keys` includes templates for these unbound actions.
 
 **Chord bindings (ctrl/alt leader):** bind a two-stage chord by joining the leader and second key with `>`. The leader must be a `ctrl+*` or `alt+*` combo; the second stage is any single key. Only two stages are supported.
 

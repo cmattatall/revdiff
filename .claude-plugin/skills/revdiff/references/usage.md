@@ -311,7 +311,9 @@ unmap q
 map ctrl+d half_page_down
 ```
 
-Generate a template with all defaults: `revdiff --dump-keys > ~/.config/revdiff/keybindings`
+Bind palette commands or aliases with `map <key> :<command>`, for example `map alt+e :edit`, `map alt+s :harness send`, or `map ctrl+w>d :fd`. These run the same scope checks as typed commands. Text input and popup controls retain priority.
+
+`revdiff --dump-keys` includes effective bindings, unbound-action templates, descriptions, and command aliases. To save it, write to `~/.config/revdiff/keybindings.new`, then move that file to `~/.config/revdiff/keybindings`. Do not redirect directly over an existing configuration: the shell truncates it before revdiff can read it. Explicit unbindings survive dump/reload. Edit the template and restart revdiff to load it.
 
 **Chord bindings (ctrl/alt leader):** bind a two-stage chord by joining the leader and second key with `>`. The leader must be a `ctrl+*` or `alt+*` combo; the second stage is any single key. Only two stages are supported.
 

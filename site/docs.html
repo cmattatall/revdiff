@@ -689,17 +689,24 @@ printf '\033]52;c;%s\007' "$data" > /dev/tty</code></div>
         <div class="code-block"><code><span class="code-comment"># ~/.config/revdiff/keybindings</span>
 map ctrl+d half_page_down
 map ctrl+u half_page_up
-map x quit
-unmap q</code></div>
-        <p>Generate a template: <code>revdiff --dump-keys > ~/.config/revdiff/keybindings</code></p>
-        <p>Fixed modal keys (Enter and Esc in annotation/search input) are not remappable. Keymap-resolved actions like <code>open_editor</code> work during annotation input and can be rebound.</p>
+map alt+e :edit
+map alt+s :harness send
+map ctrl+w&gt;d :fd
+unmap L</code></div>
+        <p>Use <code>map &lt;key&gt; &lt;action&gt;</code> for an action or <code>map &lt;key&gt; :&lt;command&gt;</code> for a palette command or alias, including commands with arguments. Defaults remain unless removed with <code>unmap &lt;key&gt;</code>.</p>
+        <p>Generate a template with effective bindings, unbound actions, descriptions, and command aliases:</p>
+        <div class="code-block"><code>mkdir -p ~/.config/revdiff
+revdiff --dump-keys &gt; ~/.config/revdiff/keybindings.new
+mv ~/.config/revdiff/keybindings.new ~/.config/revdiff/keybindings</code></div>
+        <p>The temporary file avoids truncating the configuration before revdiff reads it. Explicit unbindings survive a dump/reload. Uncomment a <code># map &lt;key&gt; ...</code> template and replace <code>&lt;key&gt;</code> to add a binding. Restart revdiff to load edits. Help shows custom command bindings beside their canonical command and aliases. Command bindings keep the same scope checks as typed commands; unknown commands open the palette with an error.</p>
+        <p>Fixed modal keys (Enter and Esc in annotation/search input) are not remappable. Text input and popup controls take precedence over review bindings. Keymap-resolved actions like <code>open_editor</code> work during annotation input and can be rebound.</p>
         <h3>Paging the diff from the file tree</h3>
         <p><code>J</code>/<code>K</code> scroll the diff viewport from either pane, but only by a few lines, while <code>PgDown</code>/<code>PgUp</code> and <code>Ctrl+d</code>/<code>Ctrl+u</code> stay pane-relative and page whichever pane has focus. The <code>scroll_diff_page_*</code> and <code>scroll_diff_half_page_*</code> actions are the page-sized versions of <code>J</code>/<code>K</code> &mdash; they ship with no default key, so bind them to get lazygit-style paging that always targets the diff:</p>
         <div class="code-block"><code>map pgdown scroll_diff_page_down
 map pgup scroll_diff_page_up
 map ctrl+d scroll_diff_half_page_down
 map ctrl+u scroll_diff_half_page_up</code></div>
-        <p>Three consequences worth knowing. This also replaces cursor paging while the diff pane has focus: the keys scroll the viewport and pin the cursor back into view instead of walking the cursor a page at a time. The file tree and markdown TOC lose their own page-sized traversal on those keys. And because <code>page_down</code>, <code>page_up</code>, <code>half_page_down</code> and <code>half_page_up</code> have no other default key, rebinding all four lines leaves them unbound everywhere, including the <code>?</code> help and <code>i</code> info overlays, which page through the same actions. Omit one pair of mapping lines to keep its default paging. Navigation actions require keybindings; they are not palette commands. <code>--dump-keys</code> lists only bindings.</p>
+        <p>Three consequences worth knowing. This also replaces cursor paging while the diff pane has focus: the keys scroll the viewport and pin the cursor back into view instead of walking the cursor a page at a time. The file tree and markdown TOC lose their own page-sized traversal on those keys. And because <code>page_down</code>, <code>page_up</code>, <code>half_page_down</code> and <code>half_page_up</code> have no other default key, rebinding all four lines leaves them unbound everywhere, including the <code>?</code> help and <code>i</code> info overlays, which page through the same actions. Omit one pair of mapping lines to keep its default paging. Navigation actions require keybindings; they are not palette commands. <code>--dump-keys</code> includes templates for these unbound actions.</p>
         <h3>Chord bindings (ctrl/alt leader)</h3>
         <p>Bind a two-stage chord by joining the leader and second key with <code>&gt;</code>. The leader must be a <code>ctrl+*</code> or <code>alt+*</code> combo; the second stage is any single key. Only two stages are supported.</p>
         <div class="code-block"><code>map ctrl+w&gt;x mark_reviewed

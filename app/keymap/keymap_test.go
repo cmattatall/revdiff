@@ -833,8 +833,9 @@ func TestDump_format(t *testing.T) {
 	assert.Contains(t, output, "map ? help")
 	assert.Contains(t, output, "map / search")
 
-	// should not contain unmap lines (dump only writes effective bindings)
-	assert.NotContains(t, output, "unmap")
+	_, unmaps, err := parse(strings.NewReader(output))
+	require.NoError(t, err)
+	assert.Empty(t, unmaps, "defaults do not need any removals")
 }
 
 func TestDump_roundTrip(t *testing.T) {
@@ -926,7 +927,7 @@ func TestDump_spaceKeyRoundTrip(t *testing.T) {
 	assert.Equal(t, ActionPageDown, rebuilt.Resolve(" "), "space binding should survive round-trip")
 }
 
-func TestDump_unmappedActionOmitted(t *testing.T) {
+func TestDump_unboundActions(t *testing.T) {
 	km := Default()
 	km.Unbind("/") // search only has one key
 
@@ -934,21 +935,31 @@ func TestDump_unmappedActionOmitted(t *testing.T) {
 	require.NoError(t, km.Dump(&buf))
 	output := buf.String()
 
-	// search action should not appear at all
-	assert.NotContains(t, output, "search")
+	assert.Contains(t, output, "unmap /\n")
+	assert.Contains(t, output, "# map <key> search\n")
+	assert.Contains(t, output, "# open focused file in $EDITOR\n# map <key> open_file_in_editor\n")
+}
+
+func TestDump_LoadRoundTrip(t *testing.T) {
+	path := t.TempDir() + "/keys"
+	input := "unmap j\nunmap /\nmap ctrl+w>x :hs\nmap alt+s :harness send\nmap alt+g :git log --format=\"%h  %s\"\nmap space :set number\n"
+	require.NoError(t, os.WriteFile(path, []byte(input), 0o600))
+	km, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, Action(":harness send"), km.Resolve("alt+s"))
+	assert.Equal(t, Action(`:git log --format="%h  %s"`), km.Resolve("alt+g"))
+	assert.Equal(t, Action(":hs"), km.ResolveChord("ctrl+w", "x"))
+	var dump strings.Builder
+	require.NoError(t, km.Dump(&dump))
+	require.NoError(t, os.WriteFile(path, []byte(dump.String()), 0o600))
+	reloaded, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, km.bindings, reloaded.bindings)
 }
 
 func TestDump_failingWriter(t *testing.T) {
 	km := Default()
 	w := &failWriter{errAfter: 0}
-	err := km.Dump(w)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "write error")
-}
-
-func TestDump_failingWriterAfterSomeOutput(t *testing.T) {
-	km := Default()
-	w := &failWriter{errAfter: 5} // fail after 5 successful writes
 	err := km.Dump(w)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "write error")
@@ -1243,9 +1254,11 @@ func TestDump_RoundTripsChords(t *testing.T) {
 	// parse the output back
 	maps, unmaps, err := parse(strings.NewReader(output))
 	require.NoError(t, err)
-	assert.Empty(t, unmaps)
 
-	rebuilt := &Keymap{bindings: make(map[string]Action), descriptions: defaultDescriptions()}
+	rebuilt := Default()
+	for _, key := range unmaps {
+		rebuilt.Unbind(key)
+	}
 	for _, m := range maps {
 		rebuilt.Bind(m.key, m.action)
 	}

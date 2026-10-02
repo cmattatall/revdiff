@@ -148,9 +148,9 @@ Set via `--chroma-style=<name>`, env var `REVDIFF_CHROMA_STYLE`, or config file 
 
 Location: `~/.config/revdiff/keybindings`. Override with `--keys` flag or `REVDIFF_KEYS` env var.
 
-Format: `map <key> <action>` to bind, `unmap <key>` to remove a default binding. `#` comments and blank lines are ignored. Defaults are preserved unless explicitly unmapped.
+Format: `map <key> <action>` to bind an action, `map <key> :<command>` to bind a palette command or alias, `unmap <key>` to remove a default binding. `#` comment lines and blank lines are ignored. Defaults are preserved unless explicitly unmapped. For example, `map alt+s :harness send` opens the harness composer and `map ctrl+w>d :fd` focuses the diff. Command arguments and shell quoting are preserved.
 
-Generate a template: `revdiff --dump-keys > ~/.config/revdiff/keybindings`
+`revdiff --dump-keys` includes effective bindings, unbound-action templates, descriptions, and command aliases. Write it to `~/.config/revdiff/keybindings.new`, then move that file over `~/.config/revdiff/keybindings` to avoid truncating the configuration before it is read. Explicit unbindings survive dump/reload. Restart revdiff to load edits.
 
 Example:
 ```
@@ -161,7 +161,7 @@ map ctrl+d half_page_down
 
 Available actions: `down`, `up`, `page_down`, `page_up`, `half_page_down`, `half_page_up`, `home`, `end`, `scroll_left`, `scroll_right`, `scroll_center`, `scroll_top`, `scroll_bottom`, `scroll_diff_down`, `scroll_diff_up`, `scroll_diff_page_down`, `scroll_diff_page_up`, `scroll_diff_half_page_down`, `scroll_diff_half_page_up`, `next_item`, `prev_item`, `jump_file`, `next_hunk`, `prev_hunk`, `open_file_in_editor`, `toggle_pane`, `focus_tree`, `focus_diff`, `search`, `confirm`, `annotate_file`, `delete_annotation`, `annot_list`, `open_editor`, `next_annotation`, `prev_annotation`, `flush_output`, `toggle_collapsed`, `toggle_compact`, `toggle_wrap`, `toggle_tree`, `toggle_line_numbers`, `toggle_blame`, `toggle_word_diff`, `toggle_hunk`, `toggle_untracked`, `mark_reviewed`, `filter_unreviewed`, `theme_select`, `filter`, `info`, `reload`, `quit`, `help`, `dismiss`
 
-The `scroll_diff_page_*` and `scroll_diff_half_page_*` actions are the page-sized versions of `J`/`K`: they scroll the diff viewport from either pane. They ship with no default key, so they appear in neither the help overlay nor `--dump-keys` until bound. Binding them to `pgdown`/`pgup`/`ctrl+d`/`ctrl+u` gives lazygit-style paging that always targets the diff. Doing so takes those keys away from tree and markdown TOC paging, replaces cursor paging in the diff pane, and — since `page_down`, `page_up`, `half_page_down` and `half_page_up` have no other default key — leaves them unbound everywhere, including the help and info overlays.
+The `scroll_diff_page_*` and `scroll_diff_half_page_*` actions are the page-sized versions of `J`/`K`: they scroll the diff viewport from either pane. They ship with no default key. `--dump-keys` includes templates for them; help shows them once bound. Binding them to `pgdown`/`pgup`/`ctrl+d`/`ctrl+u` gives lazygit-style paging that always targets the diff. Doing so takes those keys away from tree and markdown TOC paging, replaces cursor paging in the diff pane, and — since `page_down`, `page_up`, `half_page_down` and `half_page_up` have no other default key — leaves them unbound everywhere, including the help and info overlays.
 
 Fixed modal keys (Enter and Esc in annotation/search input) are not remappable. Keymap-resolved actions like `open_editor` work during annotation input and can be rebound. Chord bindings do not fire during text input — use single-key `ctrl+*` bindings for actions that need to work during annotation input.
 
