@@ -11,11 +11,15 @@ import (
 // hint is a status-bar message cleared on the next key press, mirroring
 // reloadState.hint.
 type outputState struct {
-	hint string // transient status-bar message; cleared on next key press
+	hint string // transient status-bar message, cleared on next key press
+	// saved tracks successful file/hook flushes for the quit guard.
+	// Harness delivery removes acknowledged annotations instead.
+	saved string
 }
 
 type postFlushFinishedMsg struct {
 	err          error
+	content      string
 	successHint  string
 	failureHint  string
 	restoreMouse bool
@@ -61,6 +65,7 @@ func (m Model) handleFlushOutput() (tea.Model, tea.Cmd) {
 	}
 
 	if m.postFlushHook == nil {
+		m.output.saved = content
 		m.output.hint = writtenHint
 		return m, nil
 	}
@@ -78,6 +83,7 @@ func (m Model) handleFlushOutput() (tea.Model, tea.Cmd) {
 	return m, tea.ExecProcess(cmd, func(runErr error) tea.Msg {
 		return postFlushFinishedMsg{
 			err:          runErr,
+			content:      content,
 			successHint:  successHint,
 			failureHint:  failureHint,
 			restoreMouse: m.cfg.mouseTracking,
@@ -95,6 +101,38 @@ func (m Model) handlePostFlushFinished(msg postFlushFinishedMsg) (tea.Model, tea
 		m.output.hint = msg.failureHint
 		return m, cmd
 	}
+	m.output.saved = msg.content
 	m.output.hint = msg.successHint
 	return m, cmd
+}
+
+func (m Model) quitError(force bool) string {
+	unsent := m.store.Count() > 0 && m.store.FormatOutput() != m.output.saved
+	hint := ""
+	if m.live.operation != liveIdle || m.live.discovery == discoveryForSend {
+		hint = "Wait for the current review operation to finish"
+	} else if !force && (unsent || m.live.content != "" || m.message.draft != "") {
+		hint = "Unsent annotations: :w to send, :q! to discard and quit"
+		if m.message.draft != "" || m.live.kind == feedbackMessage {
+			hint = "Unsent message: :hs to send, :q! to discard and quit"
+		}
+	}
+	return hint
+}
+
+func (m Model) quitReview(force bool) (tea.Model, tea.Cmd) {
+	if hint := m.quitError(force); hint != "" {
+		var cmd tea.Cmd
+		if !m.command.active {
+			cmd = m.startCommand()
+			m.command.input.SetValue("q")
+		}
+		m.command.err = hint
+		return m, cmd
+	}
+	if force {
+		m.store.Clear()
+	}
+	m.closeCommand()
+	return m, tea.Quit
 }

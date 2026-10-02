@@ -186,7 +186,10 @@ across files by concern to keep files under ~500 lines:
   `commandEntry` metadata and implement `paletteCommand` for matching and execution.
   TUI commands declare review, file, hunk, or inferred-selection scope. Scope validation
   runs before execution and passes the resolved scope to command handlers, including
-  annotation creation. Shell commands carry a prefix, such as `git`,
+  annotation creation. Registrations own handlers and optional validation, including
+  explicit settings and quit guards. The executor records canonical names in command
+  history and closes the palette before calling the registered handler or keymap action.
+  Shell commands carry a prefix, such as `git`,
   and forward arguments unchanged through `ShellRunner`. The palette
   pauses live refresh and renders a four-row bordered command pane above the footer,
   with separate input and help/error rows, even with the status bar hidden. Search uses the

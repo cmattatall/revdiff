@@ -633,6 +633,8 @@ func TestModel_CommandVimAliases(t *testing.T) {
 			require.Nil(t, cmd)
 			require.True(t, m.command.active)
 			require.Contains(t, m.command.err, "Unsent")
+			require.Equal(t, "q", m.command.input.Value())
+			require.Empty(t, m.command.history, "a rejected quit must not enter history")
 			require.Equal(t, 1, m.store.Count())
 			m.command.input.SetValue("q!")
 			model, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -1083,6 +1085,8 @@ func TestTUICommand_Scope(t *testing.T) {
 				run: func(model *Model, scope commandScope) (tea.Model, tea.Cmd) {
 					called = true
 					require.Equal(t, tc.want, scope)
+					require.False(t, model.command.active, "close the palette before invoking handlers")
+					require.Equal(t, []string{"inspect"}, model.command.history)
 					return *model, nil
 				}}
 			model, _ := command.execute(&m, "inspect")
@@ -1090,8 +1094,78 @@ func TestTUICommand_Scope(t *testing.T) {
 			require.Equal(t, tc.blocked, model.(Model).command.active)
 			if tc.blocked {
 				require.NotEmpty(t, model.(Model).command.err)
+				require.Empty(t, model.(Model).command.history)
 			}
 		})
+	}
+}
+
+func TestTUICommand_RegisteredBehaviorSurvivesRename(t *testing.T) {
+	for _, name := range []string{"harness send", "harness connect example", "blame view", "focus diff", "focus staged", "focus changed", "diff removed hide", "quit!"} {
+		t.Run(name, func(t *testing.T) {
+			m := splitTestModel(t)
+			m.layout.focus = paneTree
+			m.tree.(*workingTree).activeStaged = name == "focus changed"
+			m.modes.collapsed.enabled = false
+			m.store.Add(annotation.Annotation{File: "a.go", Line: 1, Comment: "pending"})
+			sender := &feedbackStub{}
+			m.live.harnesses = map[string]func() (FeedbackSender, error){
+				"example": func() (FeedbackSender, error) { return sender, nil },
+			}
+			var registered tuiCommand
+			for _, entry := range m.commandEntries() {
+				if entry.metadata().name == name {
+					registered = entry.(tuiCommand)
+					break
+				}
+			}
+			require.Equal(t, name, registered.name)
+			registered.name = "renamed"
+			m.startCommand()
+			model, cmd := registered.execute(&m, "renamed")
+			m = model.(Model)
+			require.False(t, m.command.active)
+			require.Equal(t, []string{"renamed"}, m.command.history)
+			switch name {
+			case "harness send":
+				require.True(t, m.message.active)
+			case "harness connect example":
+				require.Equal(t, discoveryForConnect, m.live.discovery)
+				require.NotNil(t, cmd)
+				require.Same(t, sender, cmd().(feedbackDiscoveredMsg).sender)
+			case "blame view":
+				require.Equal(t, "Focus the diff to inspect line blame", m.keys.hint)
+			case "focus diff":
+				require.Equal(t, paneDiff, m.layout.focus)
+			case "focus staged", "focus changed":
+				require.Equal(t, paneTree, m.layout.focus)
+				require.Equal(t, name == "focus staged", m.selectedTreeStaged())
+			case "diff removed hide":
+				require.True(t, m.modes.collapsed.enabled)
+			case "quit!":
+				require.NotNil(t, cmd)
+				require.IsType(t, tea.QuitMsg{}, cmd())
+				require.Zero(t, m.store.Count())
+			}
+		})
+	}
+}
+
+func TestModel_CommandQuitDuringOperation(t *testing.T) {
+	for _, command := range []string{"q", "q!"} {
+		m := testModel(nil, nil)
+		m.live.operation = liveSending
+		m.store.Add(annotation.Annotation{File: "a.go", Line: 1, Comment: "pending"})
+		m.startCommand()
+		m.command.input.SetValue(command)
+		model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		m = model.(Model)
+		require.Nil(t, cmd)
+		require.True(t, m.command.active)
+		require.Equal(t, command, m.command.input.Value())
+		require.Equal(t, "Wait for the current review operation to finish", m.command.err)
+		require.Empty(t, m.command.history)
+		require.Equal(t, 1, m.store.Count())
 	}
 }
 

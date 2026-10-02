@@ -758,6 +758,7 @@ func TestVimMotion_CountThenUnrelatedKey(t *testing.T) {
 	// drops the count silently and falls through — q then dispatches ActionQuit
 	// through normal keymap resolution.
 	m := vimTestModel(t, 100)
+	m.keymap.Bind("q", keymap.ActionQuit)
 
 	result, _ := m.Update(keyMsg('5'))
 	model := result.(Model)

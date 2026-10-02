@@ -235,15 +235,15 @@ func TestNewModel_OptionalDefaults(t *testing.T) {
 		m := testNewModel(t, renderer, annotation.NewStore(), noopHighlighter(), ModelConfig{})
 		require.NotNil(t, m.keymap)
 		// verify a known default binding works
-		action := m.keymap.Resolve("q")
-		assert.Equal(t, keymap.ActionQuit, action)
+		action := m.keymap.Resolve("?")
+		assert.Equal(t, keymap.ActionHelp, action)
 	})
 
 	t.Run("custom keymap is used when provided", func(t *testing.T) {
 		km := keymap.Default()
-		km.Unbind("q")
+		km.Unbind("?")
 		m := testNewModel(t, renderer, annotation.NewStore(), noopHighlighter(), ModelConfig{Keymap: km})
-		action := m.keymap.Resolve("q")
+		action := m.keymap.Resolve("?")
 		assert.Equal(t, keymap.Action(""), action)
 	})
 
@@ -647,6 +647,7 @@ func TestModel_CustomKeymapTreeFocusDiff(t *testing.T) {
 func TestModel_AcceptanceAdditiveQuitBinding(t *testing.T) {
 	// map x quit (additive) — both x and q should quit
 	km := keymap.Default()
+	km.Bind("q", keymap.ActionQuit)
 	km.Bind("x", keymap.ActionQuit)
 
 	m := testModel([]string{"a.go"}, nil)
@@ -672,12 +673,14 @@ func TestModel_AcceptanceDefaultBehaviorNoKeybindingsFile(t *testing.T) {
 	m := testModel([]string{"a.go"}, nil)
 	// m.keymap is set to Default() in testModel via NewModel
 
-	// q should quit
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	// :q should quit
+	m.startCommand()
+	m.command.input.SetValue("q")
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	require.NotNil(t, cmd)
 	msg := cmd()
 	_, ok := msg.(tea.QuitMsg)
-	assert.True(t, ok, "q should quit with default keymap")
+	assert.True(t, ok, ":q should quit with default keymap")
 
 	// ? should open help
 	m2 := testModel([]string{"a.go"}, nil)
@@ -1664,6 +1667,7 @@ func TestHandleKey_VimMotionOn_OverlayActiveModalWins(t *testing.T) {
 func TestHandleKey_VimMotionOn_NonVimKeyFallsThrough(t *testing.T) {
 	m := testModel([]string{"a.go"}, nil)
 	m.modes.vimMotion = true
+	m.keymap.Bind("q", keymap.ActionQuit)
 
 	// 'q' is not a vim key and has no pending vim state — interceptor returns
 	// handled=false, keymap.Resolve routes it to ActionQuit.

@@ -76,6 +76,7 @@ type styleRenderer interface {
 	AnnotationInline(text string) string
 	DiffCursor(noColors bool) string
 	StatusBarSeparator() string
+	StatusBarDiffStats(adds, removes int) string
 	FileStatusMark(status diff.FileStatus) string
 	FileReviewedMark() string
 	FileAnnotationMark() string
@@ -390,7 +391,7 @@ type searchState struct {
 // eagerly at startup (and on R reload) via loadCommits under tea.Batch. loaded
 // flips to true once the first commitsLoadedMsg lands (success or failure).
 // handleInfo always opens the popup and reads cached state; if the user
-// presses `i` before the fetch resolves, the commits section renders an
+// opens it before the fetch resolves, the commits section renders an
 // inline "loading commits…" placeholder that flips to the rendered list as
 // soon as commitsLoadedMsg arrives (refreshInfoOverlay pushes the new spec
 // into the open overlay). loadSeq is bumped before each new load;
@@ -438,17 +439,10 @@ type ReviewInfoConfig struct {
 	CompactContext int
 }
 
-// reviewInfoState stores the review-info overlay summary and whole-review
-// aggregate counts. The status histogram is populated synchronously with
-// filesLoadedMsg; aggregate adds/removes are fetched asynchronously the FIRST
-// time the user opens the review-info overlay (lazy load) via
-// reviewStatsLoadedMsg, then cached until the next reload. statsLoadSeq
-// invalidates in-flight stats fetches across reloads (mirrors filesLoadSeq /
-// commits.loadSeq). partial is true when one or more per-file fallback paths
-// failed; the overlay surfaces it next to the count rather than silently
-// treating those files as zero. The cached entries slice is what the lazy
-// fetch iterates over — copied at file-load time so the fetch is independent
-// of any later mutation to the file tree.
+// reviewInfoState stores the review summary and cached whole-review counts.
+// Each file-list refresh snapshots entries and schedules asynchronous line totals.
+// statsLoadSeq rejects results from earlier refreshes. partial marks totals
+// that could not include every file, so failed reads are not reported as zero.
 type reviewInfoState struct {
 	cfg                    *ReviewInfoConfig
 	entries                []diff.FileEntry
@@ -590,21 +584,22 @@ type Model struct {
 	modes  modeState        // user-togglable view modes
 	nav    navigationState  // cursor and navigation
 
-	highlighter SyntaxHighlighter // syntax highlighter
-	file        loadedFileState   // current file's loaded state (lines, highlights, blame, etc.)
-	search      searchState       // search lifecycle state
-	command     commandState      // source-line command prompt
-	annot       annotationState   // annotation input lifecycle state
-	commits     commitsState      // eagerly loaded commit log for the info popup
-	review      reviewInfoState   // invocation summary + whole-review aggregate stats for the review-info overlay
-	reviewed    reviewedState     // semantic fingerprints for mark_reviewed
-	reload      reloadState       // pending-confirmation state and applicability for R reload
-	compact     compactState      // applicability + transient hint for compact diff mode
-	editorState editorState       // transient hint state for source-file editor launches
-	output      outputState       // transient hint state for the O in-session output flush
-	keys        keyState          // chord-pending state and transient hint for leader-chord keybindings
-	vim         vimState          // count accumulator, pending letter leader, and transient hint for vim-motion preset
-	wheel       wheelState        // diff-pane mouse wheel coalescing (debounced render via wheelDebounceMsg)
+	highlighter SyntaxHighlighter   // syntax highlighter
+	file        loadedFileState     // current file's loaded state (lines, highlights, blame, etc.)
+	search      searchState         // search lifecycle state
+	command     commandState        // source-line command prompt
+	message     harnessMessageState // general harness message input
+	annot       annotationState     // annotation input lifecycle state
+	commits     commitsState        // eagerly loaded commit log for the info popup
+	review      reviewInfoState     // invocation summary + whole-review aggregate stats for the review-info overlay
+	reviewed    reviewedState       // semantic fingerprints for mark_reviewed
+	reload      reloadState         // pending-confirmation state and applicability for R reload
+	compact     compactState        // applicability + transient hint for compact diff mode
+	editorState editorState         // transient hint state for source-file editor launches
+	output      outputState         // transient hint state for the O in-session output flush
+	keys        keyState            // chord-pending state and transient hint for leader-chord keybindings
+	vim         vimState            // count accumulator, pending letter leader, and transient hint for vim-motion preset
+	wheel       wheelState          // diff-pane mouse wheel coalescing (debounced render via wheelDebounceMsg)
 
 	highlightWork *highlightWork // serialized, latest-only background highlighting
 
@@ -1109,6 +1104,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd := m.updateCommandInput(msg)
 		return m, cmd
 	}
+	if m.message.active {
+		cmd := m.updateHarnessMessageInput(msg)
+		return m, cmd
+	}
 
 	return m, nil
 }
@@ -1187,7 +1186,7 @@ func (m Model) dispatchAction(action keymap.Action) (tea.Model, tea.Cmd) {
 	case keymap.ActionDismiss:
 		return m.handleEscKey()
 	case keymap.ActionQuit:
-		return m, tea.Quit
+		return m.quitReview(false)
 	case keymap.ActionCommand:
 		cmd := m.startCommand()
 		return m, cmd
@@ -1288,14 +1287,9 @@ func (m *Model) clearPendingInputState() {
 	m.vim = vimState{}
 }
 
-// handleInfo opens the unified info popup. The popup is always shown
-// (no more "no commits in this mode" dead-end) — the session section
-// describes the mode, and the commits section is hidden via
-// CommitsApplicable=false when the current mode (stdin/staged/all-files/
-// no-ref/file-only without VCS) cannot enumerate commits. On the first open
-// since the last reload, kicks off the lazy aggregate-stats fetch; the
-// session section's "lines" row shows "loading…" until reviewStatsLoadedMsg
-// arrives. Subsequent opens read from cache and return nil.
+// handleInfo opens the optional info popup using cached review statistics.
+// Pending counts show a loading placeholder. Modes without a commit list
+// omit that section but still show the session description.
 func (m *Model) handleInfo() tea.Cmd {
 	cmd := m.triggerReviewStats()
 	m.overlay.OpenInfo(m.buildInfoSpec())
@@ -1350,7 +1344,7 @@ func (m Model) handleChordSecond(keyStr string) (tea.Model, tea.Cmd) {
 // exist, enters pending-confirmation state (waiting for y/other key in
 // handlePendingReload).
 func (m Model) handleReload() (tea.Model, tea.Cmd) {
-	if m.live.operation != liveIdle || len(m.live.pending) > 0 {
+	if m.live.operation != liveIdle || m.live.content != "" {
 		m.output.hint = "Finish the pending feedback send or stage first"
 		return m, nil
 	}
@@ -1372,6 +1366,10 @@ func (m Model) handleReload() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleModalKey(msg tea.KeyMsg) (bool, tea.Model, tea.Cmd) {
+	if m.message.active {
+		model, cmd := m.handleHarnessMessageKey(msg)
+		return true, model, cmd
+	}
 	if m.command.active {
 		model, cmd := m.handleCommandKey(msg)
 		return true, model, cmd
@@ -1599,8 +1597,12 @@ func (m Model) handleResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.layout.width = msg.Width
 	m.layout.height = msg.Height
 	if m.command.active {
-		m.command.input.Width = max(1, m.layout.width-5)
+		m.command.input.Width = max(1, m.layout.width-4-len(m.command.input.Prompt))
 		m.command.input.SetCursor(m.command.input.Position())
+	}
+	if m.message.active {
+		m.message.input.Width = max(1, m.layout.width-4-len(m.message.input.Prompt))
+		m.message.input.SetCursor(m.message.input.Position())
 	}
 	if m.search.active {
 		m.search.input.Width = max(1, m.layout.width-5)
