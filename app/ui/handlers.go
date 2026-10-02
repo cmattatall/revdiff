@@ -67,9 +67,13 @@ func (m Model) buildHelpSpec() overlay.HelpSpec {
 			if m.cfg.workingTree && e.Action == keymap.ActionToggleUntracked {
 				continue
 			}
+			command := m.paletteCommand(e.Action)
+			if command != "" {
+				command = ":" + command
+			}
 			entries = append(entries, overlay.HelpEntry{
 				Keys:        m.formatKeysForHelp(e.Action),
-				Command:     ":" + m.paletteCommand(e.Action),
+				Command:     command,
 				Description: m.helpDescriptionWithIcon(e, pad),
 			})
 		}

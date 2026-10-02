@@ -59,6 +59,7 @@ func mockSourceEditor(err error) *mocks.ExternalEditorMock {
 }
 
 func enableSourceEditor(m *Model, root string, reload bool) {
+	m.layout.focus = paneDiff
 	m.cfg.sourceEditorPolicy = SourceEditorPolicy{
 		Available:                    true,
 		Root:                         root,
@@ -397,6 +398,7 @@ func TestSourceEditorTarget_CompareFileUsesExactNewPath(t *testing.T) {
 		Root:      compareDir,
 		ExactPath: compareNew,
 	}
+	m.layout.focus = paneDiff
 	m.tree = testNewFileTree([]string{"same-name.go"})
 	m.file.name = "same-name.go"
 	m.file.lines = lines
@@ -432,7 +434,7 @@ func TestSourceEditorTarget_RelativeSymlinkEscapeRejected(t *testing.T) {
 	assert.EqualError(t, err, "file path escapes worktree")
 }
 
-func TestSourceEditorTarget_StagedReviewOpensWithFocusedLine(t *testing.T) {
+func TestSourceEditorTarget_StagedReviewRejectsEditing(t *testing.T) {
 	workDir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(workDir, "a.go"), []byte("worktree\ncontents\n"), 0o600))
 	lines := []diff.DiffLine{{OldNum: 0, NewNum: 2, Content: "staged", ChangeType: diff.ChangeAdd}}
@@ -447,10 +449,8 @@ func TestSourceEditorTarget_StagedReviewOpensWithFocusedLine(t *testing.T) {
 
 	got, err := m.sourceEditorTarget()
 
-	require.NoError(t, err)
-	assert.Equal(t, filepath.Join(workDir, "a.go"), got.sourcePath)
-	assert.Equal(t, 2, got.sourceLine)
-	assert.False(t, got.reloadAfterCleanExit)
+	require.EqualError(t, err, "cannot edit staged files; select the file in Changes")
+	assert.Empty(t, got.sourcePath)
 }
 
 func TestSourceEditorTarget_RefReviewOpensWithFocusedLine(t *testing.T) {
@@ -491,7 +491,7 @@ func TestSourceEditorTarget_StagedReviewStillRejectsRowsWithoutSource(t *testing
 
 	assert.Empty(t, got.sourcePath)
 	assert.Zero(t, got.sourceLine)
-	assert.EqualError(t, err, "no source line")
+	assert.EqualError(t, err, "cannot edit staged files; select the file in Changes")
 }
 
 func TestSourceEditorTarget_SelectionErrorCases(t *testing.T) {
@@ -577,6 +577,7 @@ func TestSourceEditorTarget_SelectionErrorCases(t *testing.T) {
 			if tt.workDir != "" {
 				enableSourceEditor(&m, tt.workDir, true)
 			}
+			m.layout.focus = paneDiff
 			m.tree = tt.tree
 			m.file.name = tt.file
 			m.file.lines = tt.lines
@@ -676,7 +677,7 @@ func TestOpenSourceEditor_WorktreeReviewFileAnnotationAllows(t *testing.T) {
 	assert.Equal(t, 1, fake.SourceCommandCalls()[0].Line)
 }
 
-func TestSourceEditorTarget_NonWorktreeReviewLineAnnotationAllows(t *testing.T) {
+func TestSourceEditorTarget_NonWorktreeReviewLineAnnotations(t *testing.T) {
 	tests := []struct {
 		name   string
 		staged bool
@@ -703,6 +704,10 @@ func TestSourceEditorTarget_NonWorktreeReviewLineAnnotationAllows(t *testing.T) 
 
 			got, err := m.sourceEditorTarget()
 
+			if tt.staged {
+				require.EqualError(t, err, "cannot edit staged files; select the file in Changes")
+				return
+			}
 			require.NoError(t, err)
 			assert.Equal(t, filepath.Join(workDir, "a.go"), got.sourcePath)
 			assert.Equal(t, 1, got.sourceLine)
@@ -845,7 +850,73 @@ func TestHandleSourceEditorFinished_SkipsReloadWhenTreeSelectionChanged(t *testi
 	assert.Nil(t, model.nav.pendingHunkJump)
 }
 
-func TestHandleDiffAction_OpenFileInEditor(t *testing.T) {
+func TestModel_EditUsesFocusedContext(t *testing.T) {
+	root := t.TempDir()
+	for _, path := range []string{"a.go", "b.go"} {
+		require.NoError(t, os.WriteFile(filepath.Join(root, path), []byte("source\n"), 0o600))
+	}
+	for _, focus := range []pane{paneTree, paneDiff} {
+		for _, staged := range []bool{false, true} {
+			for _, palette := range []bool{false, true} {
+				m := testModel([]string{"a.go", "b.go"}, nil)
+				enableSourceEditor(&m, root, true)
+				m.cfg.workingTree = true
+				w := newWorkingTree(testFileTreeFactory())
+				w.Rebuild([]diff.FileEntry{
+					{Path: "a.go", Status: diff.FileModified}, {Path: "a.go", Status: diff.FileModified, Staged: true},
+					{Path: "b.go", Status: diff.FileModified}, {Path: "b.go", Status: diff.FileModified, Staged: true},
+				})
+				m.tree, m.layout.focus = w, focus
+				m.file.name = "a.go"
+				m.file.lines = []diff.DiffLine{{NewNum: 7, ChangeType: diff.ChangeAdd}}
+				wantPath, other, wantLine := "a.go", "b.go", 7
+				if focus == paneTree {
+					w.SelectEntry(diff.FileEntry{Path: "b.go", Staged: staged})
+					m.file.staged = !staged // displayed diff intentionally lags the selection
+					wantPath, other, wantLine = "b.go", "a.go", 0
+					m.requestFileDiff("b.go")
+				} else {
+					w.SelectEntry(diff.FileEntry{Path: "b.go", Staged: !staged})
+					m.file.staged = staged
+				}
+				m.store.Add(annotation.Annotation{File: other, Line: 1, Comment: "unrelated note"})
+				fake := mockSourceEditor(nil)
+				m.editor = fake
+				key := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")}
+				if palette {
+					m.startCommand()
+					m.command.input.SetValue("edit")
+					key = tea.KeyMsg{Type: tea.KeyEnter}
+				}
+				model, cmd := m.Update(key)
+				m = model.(Model)
+				if staged {
+					require.Nil(t, cmd)
+					require.Empty(t, fake.SourceCommandCalls())
+					require.Contains(t, m.editorState.hint, "cannot edit staged files")
+					continue
+				}
+				require.NotNil(t, cmd)
+				require.Len(t, fake.SourceCommandCalls(), 1)
+				require.Equal(t, filepath.Join(root, wantPath), fake.SourceCommandCalls()[0].Path)
+				require.Equal(t, wantLine, fake.SourceCommandCalls()[0].Line)
+				if focus == paneTree {
+					before := m.file.loadSeq
+					model, reload := m.handleSourceEditorFinished(sourceEditorFinishedMsg{fileName: wantPath, reloadAfterCleanExit: true})
+					m = model.(Model)
+					require.NotNil(t, reload)
+					require.Greater(t, m.file.loadSeq, before, "invalidate the pre-edit pending load")
+					require.Equal(t, wantPath, reload().(fileLoadedMsg).file)
+					m.store.Add(annotation.Annotation{File: wantPath, Line: 1, Comment: "protect the selected file"})
+					require.Nil(t, m.openSourceEditor())
+					require.Contains(t, m.editorState.hint, "file has line annotations")
+				}
+			}
+		}
+	}
+}
+
+func TestDispatchAction_OpenFileInEditor(t *testing.T) {
 	workDir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(workDir, "a.go"), []byte("one\ntwo\n"), 0o600))
 	lines := []diff.DiffLine{{NewNum: 2, Content: "two", ChangeType: diff.ChangeContext}}
@@ -860,7 +931,7 @@ func TestHandleDiffAction_OpenFileInEditor(t *testing.T) {
 	fake := mockSourceEditor(nil)
 	m.editor = fake
 
-	model, cmd := m.handleDiffAction(keymap.ActionOpenFileInEditor)
+	model, cmd := m.dispatchAction(keymap.ActionOpenFileInEditor)
 
 	require.NotNil(t, cmd)
 	assert.IsType(t, Model{}, model)
@@ -869,7 +940,7 @@ func TestHandleDiffAction_OpenFileInEditor(t *testing.T) {
 	assert.Equal(t, 2, fake.SourceCommandCalls()[0].Line)
 }
 
-func TestHandleDiffAction_OpenFileInEditorNoopKeepsHint(t *testing.T) {
+func TestDispatchAction_OpenFileInEditorNoopKeepsHint(t *testing.T) {
 	lines := []diff.DiffLine{{NewNum: 1, Content: "one", ChangeType: diff.ChangeContext}}
 	m := testModel([]string{"a.go"}, map[string][]diff.DiffLine{"a.go": lines})
 	m.cfg.workDir = ""
@@ -881,7 +952,7 @@ func TestHandleDiffAction_OpenFileInEditorNoopKeepsHint(t *testing.T) {
 	fake := mockSourceEditor(nil)
 	m.editor = fake
 
-	result, cmd := m.handleDiffAction(keymap.ActionOpenFileInEditor)
+	result, cmd := m.dispatchAction(keymap.ActionOpenFileInEditor)
 	model := result.(Model)
 
 	assert.Nil(t, cmd)

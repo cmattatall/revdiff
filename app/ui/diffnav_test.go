@@ -2288,7 +2288,7 @@ func TestModel_WrapToggleNoOpWithoutFile(t *testing.T) {
 	model := result.(Model)
 	assert.False(t, model.modes.wrap)
 }
-func TestModel_WrapToggleNoOpInTreePane(t *testing.T) {
+func TestModel_WrapToggleInTreePane(t *testing.T) {
 	lines := []diff.DiffLine{{ChangeType: diff.ChangeContext, Content: "x", NewNum: 1}}
 	m := testModel([]string{"a.go"}, map[string][]diff.DiffLine{"a.go": lines})
 	m.file.name = "a.go"
@@ -2298,7 +2298,8 @@ func TestModel_WrapToggleNoOpInTreePane(t *testing.T) {
 
 	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
 	model := result.(Model)
-	assert.False(t, model.modes.wrap)
+	assert.True(t, model.modes.wrap)
+	assert.Equal(t, paneTree, model.layout.focus)
 }
 func TestModel_ScrollBlockedInWrapMode(t *testing.T) {
 	lines := []diff.DiffLine{{ChangeType: diff.ChangeContext, Content: "x", NewNum: 1}}

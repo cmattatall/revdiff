@@ -176,26 +176,37 @@ func (m *Model) openSourceEditor() tea.Cmd {
 // editor launches.
 func (m Model) sourceEditorTarget() (sourceEditorTargetResult, error) {
 	policy := m.cfg.sourceEditorPolicy
+	if m.cfg.staged || m.stagedContext() {
+		return sourceEditorTargetResult{}, errors.New("cannot edit staged files; select the file in Changes")
+	}
 	if !policy.Available {
 		return sourceEditorTargetResult{}, errors.New("source editor disabled")
 	}
-	if m.file.name == "" {
+	fileName := m.file.name
+	fromTree := m.layout.focus == paneTree && m.file.mdTOC == nil
+	if fromTree {
+		fileName = m.tree.SelectedFile()
+	}
+	if fileName == "" {
 		return sourceEditorTargetResult{}, errors.New("no file loaded")
 	}
-	if m.tree.FileStatus(m.file.name) == diff.FileDeleted {
+	if m.tree.FileStatus(fileName) == diff.FileDeleted {
 		return sourceEditorTargetResult{}, errors.New("file was deleted")
 	}
-	targetLine, ok, err := m.sourceEditorLine()
-	if err != nil {
-		return sourceEditorTargetResult{}, err
+	targetLine := 0
+	if !fromTree {
+		line, ok, err := m.sourceEditorLine()
+		if err != nil {
+			return sourceEditorTargetResult{}, err
+		}
+		if ok {
+			targetLine = line
+		}
 	}
-	if !ok {
-		targetLine = 0
-	}
-	if policy.DisallowAnnotatedFileEditing && m.hasCurrentFileLineAnnotations() {
+	if policy.DisallowAnnotatedFileEditing && m.hasFileLineAnnotations(fileName) {
 		return sourceEditorTargetResult{}, errors.New("file has line annotations")
 	}
-	targetPath := cmp.Or(policy.ExactPath, m.file.name)
+	targetPath := cmp.Or(policy.ExactPath, fileName)
 	if !filepath.IsAbs(targetPath) {
 		// Relative displayed paths come from VCS diff data,
 		// so confine them to the source root.
@@ -219,15 +230,15 @@ func (m Model) sourceEditorTarget() (sourceEditorTargetResult, error) {
 		targetPath = filepath.Join(policy.Root, targetPath)
 	}
 	return sourceEditorTargetResult{
-		fileName:             m.file.name,
+		fileName:             fileName,
 		sourcePath:           targetPath,
 		sourceLine:           targetLine,
 		reloadAfterCleanExit: policy.ReloadAfterCleanExit,
 	}, nil
 }
 
-func (m Model) hasCurrentFileLineAnnotations() bool {
-	for _, a := range m.store.Get(m.file.name) {
+func (m Model) hasFileLineAnnotations(fileName string) bool {
+	for _, a := range m.store.Get(fileName) {
 		if a.Line > 0 {
 			return true
 		}
@@ -363,10 +374,9 @@ func (m Model) handleSourceEditorFinished(msg sourceEditorFinishedMsg) (tea.Mode
 		m.nav.pendingHunkJump = nil
 		return m, restoreMouseCmd
 	}
-	if msg.fileName != m.file.name {
-		return m, restoreMouseCmd
-	}
-	reloadCmd := m.reloadCurrentFile()
+	// Tree editing may precede the selected diff's load. Supersede that load
+	// so an outstanding pre-edit snapshot cannot hide the saved changes.
+	reloadCmd := m.requestFileDiff(msg.fileName)
 	if restoreMouseCmd == nil {
 		return m, reloadCmd
 	}

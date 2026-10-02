@@ -13,6 +13,7 @@ import (
 	"github.com/umputun/revdiff/app/annotation"
 	"github.com/umputun/revdiff/app/diff"
 	"github.com/umputun/revdiff/app/keymap"
+	"github.com/umputun/revdiff/app/ui/mocks"
 	"github.com/umputun/revdiff/app/ui/sidepane"
 )
 
@@ -347,6 +348,8 @@ func TestModel_CommandSemanticNames(t *testing.T) {
 		"hunk toggle": keymap.ActionToggleHunk, "review mark": keymap.ActionMarkReviewed,
 		"filter unreviewed": keymap.ActionFilterUnreviewed, "filter annotated": keymap.ActionFilter,
 		"theme select": keymap.ActionThemeSelect, "review info": keymap.ActionInfo,
+		"annotation next": keymap.ActionNextAnnotation, "annotation prev": keymap.ActionPrevAnnotation,
+		"w": keymap.ActionFlushOutput,
 	} {
 		m.startCommand()
 		m.command.input.SetValue(name)
@@ -367,26 +370,103 @@ func TestModel_CommandSemanticNames(t *testing.T) {
 }
 
 func TestModel_CommandViewToggles(t *testing.T) {
-	for _, command := range []string{"view wrap", "view word diff", "view word d", "toggle_wrap", "toggle_word_diff"} {
-		m := testModel([]string{"a.go"}, nil)
-		m.file.name, m.layout.focus = "a.go", paneDiff
-		m.file.lines = []diff.DiffLine{{NewNum: 1, Content: "line", ChangeType: diff.ChangeContext}}
-		m.modes.wrap, m.modes.wordDiff = false, false
-		for _, enabled := range []bool{true, false} {
-			m.startCommand()
-			m.command.input.SetValue(command)
-			model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-			m = model.(Model)
-			require.False(t, m.command.active, command)
-			if strings.Contains(command, "wrap") {
-				require.Equal(t, enabled, m.modes.wrap, command)
-				require.False(t, m.modes.wordDiff)
-			} else {
-				require.Equal(t, enabled, m.modes.wordDiff, command)
-				require.False(t, m.modes.wrap)
+	for _, focus := range []pane{paneTree, paneDiff} {
+		for _, command := range []string{"view wrap", "view word diff", "view word d", "toggle_wrap", "toggle_word_diff"} {
+			m := testModel([]string{"a.go"}, nil)
+			m.file.name, m.layout.focus = "a.go", focus
+			m.file.lines = []diff.DiffLine{{NewNum: 1, Content: "line", ChangeType: diff.ChangeContext}}
+			m.modes.wrap, m.modes.wordDiff = false, false
+			for _, enabled := range []bool{true, false} {
+				m.startCommand()
+				m.command.input.SetValue(command)
+				model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+				m = model.(Model)
+				require.False(t, m.command.active, command)
+				require.Equal(t, focus, m.layout.focus)
+				if strings.Contains(command, "wrap") {
+					require.Equal(t, enabled, m.modes.wrap, command)
+					require.False(t, m.modes.wordDiff)
+				} else {
+					require.Equal(t, enabled, m.modes.wordDiff, command)
+					require.False(t, m.modes.wrap)
+				}
 			}
 		}
 	}
+}
+
+func TestModel_CommandBlameFromEitherPane(t *testing.T) {
+	for _, focus := range []pane{paneTree, paneDiff} {
+		for _, staged := range []bool{false, true} {
+			m := testModel([]string{"a.go", "b.go"}, nil)
+			m.cfg.workingTree = true
+			w := newWorkingTree(testFileTreeFactory())
+			w.Rebuild([]diff.FileEntry{{Path: "b.go", Staged: !staged}})
+			m.tree, m.layout.focus = w, focus
+			m.file.name, m.file.staged = "a.go", staged
+			m.file.lines = []diff.DiffLine{{OldNum: 1, NewNum: 1, Content: "source", ChangeType: diff.ChangeContext}}
+			m.blamer = &mocks.BlamerMock{FileBlameFunc: func(_ string, file string, index bool) (map[int]diff.BlameLine, error) {
+				require.Equal(t, "a.go", file, "blame belongs to the displayed diff, not a pending tree selection")
+				require.Equal(t, staged, index)
+				return map[int]diff.BlameLine{1: {Author: "Reviewer"}}, nil
+			}}
+			m.startCommand()
+			m.command.input.SetValue("view blame")
+			model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			m = model.(Model)
+			require.NotNil(t, cmd)
+			model, _ = m.Update(cmd())
+			m = model.(Model)
+			require.Equal(t, focus, m.layout.focus)
+			require.True(t, m.modes.showBlame)
+			require.Contains(t, ansi.Strip(m.renderDiff()), "Reviewer")
+			m.startCommand()
+			m.command.input.SetValue("view blame")
+			model, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			m = model.(Model)
+			require.Nil(t, cmd)
+			require.False(t, m.modes.showBlame)
+			require.Equal(t, focus, m.layout.focus)
+			require.NotContains(t, ansi.Strip(m.renderDiff()), "Reviewer")
+		}
+	}
+}
+
+func TestModel_CommandAnnotationNavigationAndWrite(t *testing.T) {
+	m := testModel([]string{"a.go"}, nil)
+	m.file.name, m.layout.focus = "a.go", paneDiff
+	m.file.lines = []diff.DiffLine{
+		{NewNum: 2, ChangeType: diff.ChangeAdd},
+		{NewNum: 7, ChangeType: diff.ChangeAdd},
+		{NewNum: 10, ChangeType: diff.ChangeAdd},
+	}
+	m.nav.diffCursor = 1
+	m.store.Add(annotation.Annotation{File: "a.go", Line: 2, Type: "+", Comment: "first note"})
+	m.store.Add(annotation.Annotation{File: "a.go", Line: 10, Type: "+", Comment: "last note"})
+	for _, step := range []struct {
+		command string
+		cursor  int
+	}{{"annotation next", 2}, {"annotation prev", 0}} {
+		m.startCommand()
+		m.command.input.SetValue(step.command)
+		model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		m = model.(Model)
+		require.False(t, m.command.active)
+		require.Equal(t, step.cursor, m.nav.diffCursor)
+	}
+	sender := &feedbackStub{}
+	m.live.sender = sender
+	m.startCommand()
+	m.command.input.SetValue("w")
+	model, send := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(Model)
+	require.NotNil(t, send)
+	model, _ = m.Update(send())
+	m = model.(Model)
+	require.Zero(t, m.store.Count())
+	require.Len(t, sender.content, 1)
+	require.Contains(t, sender.content[0], "first note")
+	require.Contains(t, sender.content[0], "last note")
 }
 
 func TestModel_CommandUniqueCompletionOnEnter(t *testing.T) {
@@ -421,17 +501,17 @@ func TestModel_CommandGhostCompletion(t *testing.T) {
 	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
 	m = model.(Model)
 	inputRow := func() string { return strings.Split(ansi.Strip(m.commandPaneView()), "\n")[1] }
-	require.Contains(t, inputRow(), ":help", "short prefixes prefer help over half_page_down")
+	require.Contains(t, inputRow(), ":help", "the help alias is the first suggestion")
 	require.Equal(t, "h", m.command.input.Value(), "rendering must not accept the suggestion")
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	m = model.(Model)
-	require.Contains(t, inputRow(), ":home", "ghost text follows the browsed candidate")
+	require.Contains(t, inputRow(), ":hunk toggle", "ghost text follows the browsed candidate")
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyLeft})
 	m = model.(Model)
-	require.NotContains(t, inputRow(), ":home", "hide the suffix while editing inside the query")
+	require.NotContains(t, inputRow(), ":hunk toggle", "hide the suffix while editing inside the query")
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlE})
 	m = model.(Model)
-	require.Contains(t, inputRow(), ":home")
+	require.Contains(t, inputRow(), ":hunk toggle")
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
 	m = model.(Model)
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
@@ -552,7 +632,7 @@ func TestModel_CommandHarnessConnect(t *testing.T) {
 
 func TestModel_CommandDispatch(t *testing.T) {
 	for _, action := range []keymap.Action{keymap.ActionHelp, keymap.ActionSearch, keymap.ActionConfirm,
-		keymap.ActionTogglePane, keymap.ActionQuit, keymap.ActionCommand, keymap.ActionScrollDiffHalfPageDown} {
+		keymap.ActionTogglePane, keymap.ActionQuit, keymap.ActionCommand} {
 		t.Run(string(action), func(t *testing.T) {
 			m := testModel([]string{"a.go"}, nil)
 			m.file.name, m.layout.focus = "a.go", paneDiff
@@ -585,8 +665,6 @@ func TestModel_CommandDispatch(t *testing.T) {
 				require.IsType(t, tea.QuitMsg{}, cmd())
 			case keymap.ActionCommand:
 				require.Empty(t, m.command.input.Value())
-			case keymap.ActionScrollDiffHalfPageDown:
-				require.Positive(t, m.layout.viewport.YOffset)
 			}
 		})
 	}
@@ -933,7 +1011,7 @@ func TestModel_CommandAnnotateCompletionAndValidation(t *testing.T) {
 			family = append(family, entry.name)
 		}
 	}
-	require.Equal(t, []string{"annotate", "annotate file", "annotate hunk", "annotate list"}, family)
+	require.Equal(t, []string{"annotate", "annotate file", "annotate hunk", "annotate list", "annotation next", "annotation prev"}, family)
 	m.startCommand()
 	m.command.input.SetValue("a")
 	require.Equal(t, "annotate", m.commandMatches()[0].name)

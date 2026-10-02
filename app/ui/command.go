@@ -33,9 +33,26 @@ type commandEntry struct {
 }
 
 // paletteCommand names user-facing commands independently of keybinding IDs.
-// Keep related operations together without exposing implementation-style names.
+// Keyboard motions appear in help but have no command palette entry.
 func (m Model) paletteCommand(action keymap.Action) string {
 	switch action {
+	case keymap.ActionDown, keymap.ActionUp, keymap.ActionPageDown, keymap.ActionPageUp,
+		keymap.ActionHalfPageDown, keymap.ActionHalfPageUp, keymap.ActionHome, keymap.ActionEnd,
+		keymap.ActionScrollLeft, keymap.ActionScrollRight, keymap.ActionScrollCenter,
+		keymap.ActionScrollTop, keymap.ActionScrollBottom,
+		keymap.ActionScrollDiffDown, keymap.ActionScrollDiffUp,
+		keymap.ActionScrollDiffPageDown, keymap.ActionScrollDiffPageUp,
+		keymap.ActionScrollDiffHalfPageDown, keymap.ActionScrollDiffHalfPageUp,
+		keymap.ActionNextItem, keymap.ActionPrevItem, keymap.ActionNextHunk, keymap.ActionPrevHunk:
+		return ""
+	case keymap.ActionNextAnnotation:
+		return "annotation next"
+	case keymap.ActionPrevAnnotation:
+		return "annotation prev"
+	case keymap.ActionFlushOutput:
+		return "w"
+	case keymap.ActionOpenFileInEditor:
+		return "edit"
 	case keymap.ActionStageHunk, keymap.ActionStageFile:
 		verb, scope := "stage", "hunk"
 		if m.stagedContext() {
@@ -87,7 +104,6 @@ func (m Model) commandEntries() []commandEntry {
 		{"annotate", "annotate the selected hunk or file (:a)", ""},
 		{"annotate hunk", "annotate the change hunk under the diff cursor", ""},
 		{"q", "quit", keymap.ActionQuit},
-		{"w", "flush annotations to output or harness", keymap.ActionFlushOutput},
 		{"harness send", "send annotations to the connected harness", keymap.ActionFlushOutput},
 		{"focus diff", "focus the diff pane", keymap.ActionFocusDiff},
 		{"fd", "focus the diff pane", keymap.ActionFocusDiff},
@@ -108,7 +124,9 @@ func (m Model) commandEntries() []commandEntry {
 		if m.cfg.workingTree && entry.Action == keymap.ActionToggleUntracked {
 			continue
 		}
-		entries = append(entries, commandEntry{m.paletteCommand(entry.Action), entry.Description, entry.Action})
+		if name := m.paletteCommand(entry.Action); name != "" {
+			entries = append(entries, commandEntry{name, entry.Description, entry.Action})
+		}
 	}
 	for name := range m.live.harnesses {
 		entries = append(entries, commandEntry{"harness connect " + name, "connect to " + name + " in this directory", ""})
@@ -217,8 +235,8 @@ func (m *Model) submitCommand() (tea.Model, tea.Cmd) {
 		return m.connectHarness(name)
 	}
 	for _, entry := range m.commandEntries() {
-		// Accept exact keybinding IDs too, but keep them out of suggestions.
-		if entry.name == value || (string(entry.action) == value && entry.name == m.paletteCommand(entry.action)) {
+		// Keep legacy keybinding aliases, except flush_output, which is now :w.
+		if entry.name == value || (entry.action != keymap.ActionFlushOutput && string(entry.action) == value && entry.name == m.paletteCommand(entry.action)) {
 			if entry.name == "annotate" || entry.name == "annotate file" || entry.name == "annotate hunk" {
 				if !m.filesLoaded || m.file.requestedPath != "" {
 					m.command.err = "Wait for the selected file to load"

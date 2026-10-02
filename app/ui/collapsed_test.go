@@ -39,12 +39,13 @@ func TestModel_VKeyTogglesCollapsedMode(t *testing.T) {
 		assert.Empty(t, model.modes.collapsed.expandedHunks, "expandedHunks should be reset on toggle")
 	})
 
-	t.Run("no-op in tree pane", func(t *testing.T) {
+	t.Run("toggle from tree pane", func(t *testing.T) {
 		m.modes.collapsed.enabled = false
 		m.layout.focus = paneTree
 		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
 		model := result.(Model)
-		assert.False(t, model.modes.collapsed.enabled, "v should be no-op in tree pane")
+		assert.True(t, model.modes.collapsed.enabled)
+		assert.Equal(t, paneTree, model.layout.focus)
 	})
 
 	t.Run("no-op when no file loaded", func(t *testing.T) {

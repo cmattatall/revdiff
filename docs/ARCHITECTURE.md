@@ -168,7 +168,8 @@ across files by concern to keep files under ~500 lines:
   effective diffs in filtered tree order, wraps, and installs only the next matching file.
   Navigation/file-list/file-load generations reject stale results; tree navigation retains focus.
 - **`command.go`** — action palette and `:<line>` source-line lookup, separate from search state;
-  filters all canonical keymap actions (including unbound ones), browses/completes suggestions,
+  names explicit operations (including unbound ones), browses/completes suggestions,
+  keeps keyboard motions out of the palette while preserving their help entries,
   accepts a unique completion on Enter, and closes before forwarding resolved action names
   through `dispatchAction`. Named lookups injected through `ModelConfig.Harnesses` supply
   `:harness connect <type>`; `:harness send` shares the normal flush action. It
@@ -571,16 +572,18 @@ User presses 'a' on diff line
 ### Source Editor Flow
 
 ```
-User presses 'e' in diff pane
+User runs ':edit' or presses 'e' in the file tree or diff pane
   → openSourceEditor()
-      → sourceEditorTarget() chooses file path and optional worktree line
+      → sourceEditorTarget() rejects staged context, then chooses the focused file
+          and optional diff line (tree selections have no line target)
       → editor.Editor.SourceCommand(path, line) prepares the source-file command
       → tea.ExecProcess(cmd, complete)  (suspends bubbletea, hands over tty)
       → sourceEditorFinishedMsg{err, refreshPolicy}
       → handleSourceEditorFinished:
           err != nil  → log, show hint, do not reload
           err == nil and worktree refresh policy
-              → reloadCurrentFile() reloads current file only
+              → requestFileDiff() reloads the edited file if still selected,
+                  superseding any pending pre-edit load
           err == nil and no-refresh policy
               → return to revdiff without reloading
 ```

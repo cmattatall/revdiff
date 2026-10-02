@@ -403,9 +403,9 @@ func (m Model) cursorHunkStart() (int, bool) {
 }
 
 // toggleCollapsedMode switches between collapsed and expanded diff view.
-// only operates when the diff pane is focused and a file is loaded.
+// only operates when a file is loaded.
 func (m *Model) toggleCollapsedMode() {
-	if m.layout.focus != paneDiff || m.file.name == "" {
+	if m.file.name == "" {
 		return
 	}
 	m.modes.collapsed.enabled = !m.modes.collapsed.enabled

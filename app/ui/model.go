@@ -1202,6 +1202,9 @@ func (m Model) dispatchAction(action keymap.Action) (tea.Model, tea.Cmd) {
 		return m.handleEnterKey()
 	case keymap.ActionAnnotateFile:
 		return m.handleFileAnnotateKey()
+	case keymap.ActionOpenFileInEditor:
+		cmd := m.openSourceEditor()
+		return m, cmd
 	case keymap.ActionMarkReviewed:
 		return m.handleMarkReviewed()
 	case keymap.ActionToggleCollapsed, keymap.ActionToggleCompact, keymap.ActionToggleWrap, keymap.ActionToggleTree,
@@ -1477,7 +1480,7 @@ func (m Model) computeLineNumWidth() int {
 
 // toggleBlame toggles the blame gutter on/off. returns a tea.Cmd to load blame data async.
 func (m *Model) toggleBlame() tea.Cmd {
-	if m.layout.focus != paneDiff || m.file.name == "" || m.blamer == nil {
+	if m.file.name == "" || m.blamer == nil {
 		return nil
 	}
 	m.modes.showBlame = !m.modes.showBlame
@@ -1495,9 +1498,9 @@ func (m *Model) toggleBlame() tea.Cmd {
 // toggleWordDiff toggles intra-line word-diff highlighting on/off.
 // recomputeIntraRanges honors the new wordDiff state: it populates ranges
 // when enabling and clears them when disabling.
-// no-op when the diff pane is not focused or no file is loaded.
+// no-op when no file is loaded.
 func (m *Model) toggleWordDiff() {
-	if m.layout.focus != paneDiff || m.file.name == "" {
+	if m.file.name == "" {
 		return
 	}
 	m.modes.wordDiff = !m.modes.wordDiff
@@ -1569,7 +1572,7 @@ func (m Model) handleViewToggle(action keymap.Action) (tea.Model, tea.Cmd) {
 // toggleWrapMode toggles line wrapping on/off.
 // resets horizontal scroll when enabling wrap and re-renders the diff.
 func (m *Model) toggleWrapMode() {
-	if m.layout.focus != paneDiff || m.file.name == "" {
+	if m.file.name == "" {
 		return
 	}
 	m.modes.wrap = !m.modes.wrap

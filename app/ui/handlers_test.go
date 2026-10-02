@@ -924,20 +924,30 @@ func TestBuildHelpSpec_PaletteCommands(t *testing.T) {
 		"example": func() (FeedbackSender, error) { panic("help must not connect") },
 	}
 	entries := map[string]overlay.HelpEntry{}
+	motions := map[string]overlay.HelpEntry{}
 	for _, section := range m.buildHelpSpec().Sections {
 		for _, entry := range section.Entries {
 			if entry.Command != "" {
 				entries[entry.Command] = entry
+				if entry.Command == ":w" {
+					require.Equal(t, "Annotations", section.Title)
+				}
+			} else {
+				motions[entry.Description] = entry
 			}
 		}
+	}
+	for _, description := range []string{"scroll left", "scroll right / focus diff", "scroll diff down", "scroll diff up", "next file / search match", "prev file / search match"} {
+		require.NotEmpty(t, motions[description].Keys, "motion help keeps its keybindings: %s", description)
 	}
 	for _, command := range m.commandEntries() {
 		assert.Contains(t, entries, ":"+command.name, "every executable command belongs in help")
 	}
-	assert.Equal(t, "Ctrl+F", entries[":flush_output"].Keys)
-	assert.Contains(t, entries[":flush_output"].Description, "harness / output / hook")
+	assert.Equal(t, "Ctrl+F", entries[":w"].Keys)
+	assert.Contains(t, entries[":w"].Description, "harness / output / hook")
 	assert.Empty(t, entries[":quit"].Keys, "unbinding quit must not hide its palette command")
 	assert.Contains(t, entries, ":set number")
+	assert.Equal(t, "e", entries[":edit"].Keys)
 	assert.Contains(t, entries, ":harness send")
 	assert.Contains(t, entries, ":harness connect example")
 }

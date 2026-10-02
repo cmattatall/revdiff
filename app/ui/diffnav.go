@@ -789,9 +789,6 @@ func (m Model) handleDiffAction(action keymap.Action) (tea.Model, tea.Cmd) {
 		cmd := m.openEditor()
 		m.layout.viewport.SetContent(m.renderDiff())
 		return m, cmd
-	case keymap.ActionOpenFileInEditor:
-		cmd := m.openSourceEditor()
-		return m, cmd
 	default: // actions handled by handleKey (quit, toggle_pane, filter, etc.) — not repeated here
 	}
 	m.syncTOCActiveSection()
