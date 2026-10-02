@@ -361,9 +361,7 @@ func TestModel_CommandSemanticNames(t *testing.T) {
 		require.Equal(t, name, matches[0].name)
 		for _, command := range m.commandEntries() {
 			if command.matchesInput(name) {
-				tui, ok := command.(tuiCommand)
-				require.True(t, ok, name)
-				require.Equal(t, action, tui.action, name)
+				require.Equal(t, action, command.action, name)
 			}
 		}
 		count := 0
@@ -1123,7 +1121,7 @@ func TestTUICommand_Scope(t *testing.T) {
 			}
 			m.startCommand()
 			called := false
-			command := tuiCommand{commandEntry: commandEntry{name: "inspect"}, scope: tc.scope,
+			command := paletteCommand{commandEntry: commandEntry{name: "inspect"}, scope: tc.scope,
 				run: func(model *Model, scope commandScope) (tea.Model, tea.Cmd) {
 					called = true
 					require.Equal(t, tc.want, scope)
@@ -1131,7 +1129,7 @@ func TestTUICommand_Scope(t *testing.T) {
 					require.Equal(t, []string{"inspect"}, model.command.history)
 					return *model, nil
 				}}
-			model, _ := command.execute(&m, "inspect")
+			model, _ := command.execute(&m)
 			require.Equal(t, !tc.blocked, called)
 			require.Equal(t, tc.blocked, model.(Model).command.active)
 			if tc.blocked {
@@ -1154,17 +1152,17 @@ func TestTUICommand_RegisteredBehaviorSurvivesRename(t *testing.T) {
 			m.live.harnesses = map[string]func() ([]FeedbackSender, error){
 				"example": func() ([]FeedbackSender, error) { return []FeedbackSender{sender}, nil },
 			}
-			var registered tuiCommand
+			var registered paletteCommand
 			for _, entry := range m.commandEntries() {
-				if entry.metadata().name == name {
-					registered = entry.(tuiCommand)
+				if entry.commandEntry.name == name {
+					registered = entry
 					break
 				}
 			}
 			require.Equal(t, name, registered.name)
 			registered.name = "renamed"
 			m.startCommand()
-			model, cmd := registered.execute(&m, "renamed")
+			model, cmd := registered.execute(&m)
 			m = model.(Model)
 			require.False(t, m.command.active)
 			require.Equal(t, []string{"renamed"}, m.command.history)
@@ -1260,7 +1258,7 @@ func TestModel_CommandAnnotateCompletionAndValidation(t *testing.T) {
 	m.file.name = "a.go"
 	var family []string
 	for _, entry := range m.commandEntries() {
-		if name := entry.metadata().name; strings.HasPrefix(name, "a") {
+		if name := entry.commandEntry.name; strings.HasPrefix(name, "a") {
 			family = append(family, name)
 		}
 	}

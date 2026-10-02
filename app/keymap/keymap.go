@@ -17,6 +17,15 @@ import (
 // Action represents a named action that a key can trigger.
 type Action string
 
+// Command is palette input, without the leading colon.
+type Command string
+
+// Target is either a built-in Action or a palette Command.
+type Target interface{ bindingText() string }
+
+func (a Action) bindingText() string  { return string(a) }
+func (c Command) bindingText() string { return ":" + string(c) }
+
 // action constants for all mappable actions.
 const (
 	ActionDown                   Action = "down"
@@ -185,12 +194,13 @@ type HelpEntryWithKeys struct {
 	Action      Action
 	Description string
 	Keys        string // formatted as "key1 / key2"
+	Command     string // canonical command with inline aliases
 }
 
 // Keymap maps key names to actions. Keys are stored as the string returned
 // by bubbletea's tea.KeyMsg.String().
 type Keymap struct {
-	bindings         map[string]Action
+	bindings         map[string]Target
 	descriptions     []HelpEntry         // ordered list of action descriptions
 	chordPrefixCache map[string]struct{} // lazy cache of chord leader keys; nil = not yet built
 }
@@ -275,8 +285,8 @@ func defaultDescriptions() []HelpEntry {
 }
 
 // defaultBindings returns the default key-to-action mapping.
-func defaultBindings() map[string]Action {
-	return map[string]Action{
+func defaultBindings() map[string]Target {
+	return map[string]Target{
 		"j":           ActionDown,
 		"k":           ActionUp,
 		"down":        ActionDown,
@@ -352,10 +362,17 @@ func NormalizeKey(key string) string {
 	return key
 }
 
-// Resolve returns the action bound to the given key, or empty Action if unbound.
+// Resolve returns a built-in action. Command bindings return an empty Action
+// so text inputs and overlays can keep their own input handling.
+func (km *Keymap) Resolve(key string) Action {
+	action, _ := km.ResolveTarget(key).(Action)
+	return action
+}
+
+// ResolveTarget returns the binding target, or nil if unbound.
 // For non-Latin keyboard layouts, if the key has no direct binding, it is
 // translated to its Latin QWERTY equivalent and looked up again.
-func (km *Keymap) Resolve(key string) Action {
+func (km *Keymap) ResolveTarget(key string) Target {
 	key = normalizeKey(key)
 	if a, ok := km.bindings[key]; ok {
 		return a
@@ -368,14 +385,20 @@ func (km *Keymap) Resolve(key string) Action {
 			}
 		}
 	}
-	return ""
+	return nil
 }
 
-// ResolveChord returns the action bound to the chord (prefix, second), or empty
-// Action if unbound. Applies a layout-resolve fallback to the second key: when
+// ResolveChord returns a built-in action, or empty for an unbound chord or command.
+func (km *Keymap) ResolveChord(prefix, second string) Action {
+	action, _ := km.ResolveChordTarget(prefix, second).(Action)
+	return action
+}
+
+// ResolveChordTarget returns a chord's target, or nil if unbound.
+// Applies a layout-resolve fallback to the second key: when
 // the direct lookup misses and the second key is a single rune, the rune is
 // translated to its Latin QWERTY equivalent and the lookup is retried.
-func (km *Keymap) ResolveChord(prefix, second string) Action {
+func (km *Keymap) ResolveChordTarget(prefix, second string) Target {
 	prefix, second = normalizeKey(prefix), normalizeKey(second)
 	if a, ok := km.bindings[prefix+">"+second]; ok {
 		return a
@@ -387,7 +410,7 @@ func (km *Keymap) ResolveChord(prefix, second string) Action {
 			}
 		}
 	}
-	return ""
+	return nil
 }
 
 // Actions returns an independent, alphabetically sorted list of all canonical
@@ -410,9 +433,9 @@ func (km *Keymap) KeysFor(action Action) []string {
 	return keys
 }
 
-// Bind maps a key to an action, overriding any previous binding for that key.
-func (km *Keymap) Bind(key string, action Action) {
-	km.bindings[key] = action
+// Bind maps a key to a target, overriding any previous binding for that key.
+func (km *Keymap) Bind(key string, target Target) {
+	km.bindings[key] = target
 	km.chordPrefixCache = nil
 }
 
@@ -479,28 +502,58 @@ func (km *Keymap) HelpSections() []HelpSection {
 }
 
 // Dump writes the effective bindings to w in the keybindings file format,
-// grouped by section with # comments. Output can be loaded back with Parse.
+// including unbound actions and removals needed to reload over the defaults.
 func (km *Keymap) Dump(w io.Writer) error {
-	sections := km.HelpSections()
-	for i, sec := range sections {
-		if i > 0 {
-			if _, err := fmt.Fprintln(w); err != nil {
-				return fmt.Errorf("dump keybindings: %w", err)
-			}
-		}
-		if _, err := fmt.Fprintf(w, "# %s\n", sec.Name); err != nil {
-			return fmt.Errorf("dump keybindings: %w", err)
-		}
-		for _, entry := range sec.Entries {
-			keys := km.KeysFor(entry.Action)
-			for _, k := range keys {
-				if _, err := fmt.Fprintf(w, "map %s %s\n", km.dumpKeyName(k), entry.Action); err != nil {
-					return fmt.Errorf("dump keybindings: %w", err)
-				}
-			}
+	var out strings.Builder
+	out.WriteString("# Keybindings: map <key> <action> or map <key> :<command>\n")
+	out.WriteString("# Defaults remain unless removed with unmap <key>.\n")
+	out.WriteString("# Uncomment a template and replace <key> to bind an unbound action.\n")
+	var removed []string
+	for key := range defaultBindings() {
+		if _, bound := km.bindings[key]; !bound {
+			removed = append(removed, key)
 		}
 	}
+	sort.Strings(removed)
+	for _, key := range removed {
+		fmt.Fprintf(&out, "unmap %s\n", km.dumpKeyName(key))
+	}
+	section := ""
+	for _, entry := range km.descriptions {
+		if section != entry.Section {
+			section = entry.Section
+			fmt.Fprintf(&out, "\n# %s\n", section)
+		}
+		fmt.Fprintf(&out, "# %s\n", entry.Description)
+		keys := km.KeysFor(entry.Action)
+		if len(keys) == 0 {
+			fmt.Fprintf(&out, "# map <key> %s\n", entry.Action)
+		}
+		for _, key := range keys {
+			fmt.Fprintf(&out, "map %s %s\n", km.dumpKeyName(key), entry.Action)
+		}
+	}
+	if bindings := km.commandBindings(); len(bindings) > 0 {
+		out.WriteString("\n# Custom command bindings\n")
+		for _, binding := range bindings {
+			fmt.Fprintf(&out, "map %s %s\n", km.dumpKeyName(binding.key), binding.target.bindingText())
+		}
+	}
+	if _, err := io.WriteString(w, out.String()); err != nil {
+		return fmt.Errorf("dump keybindings: %w", err)
+	}
 	return nil
+}
+
+func (km *Keymap) commandBindings() []mapEntry {
+	var entries []mapEntry
+	for key, target := range km.bindings {
+		if _, ok := target.(Command); ok {
+			entries = append(entries, mapEntry{key: key, target: target})
+		}
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].key < entries[j].key })
+	return entries
 }
 
 // reverseAliases maps canonical bubbletea key strings back to user-friendly names
@@ -523,10 +576,42 @@ func (km *Keymap) dumpKeyName(key string) string {
 	return key
 }
 
-// mapEntry represents a parsed "map <key> <action>" line.
+// mapEntry represents a parsed "map <key> <target>" line.
 type mapEntry struct {
 	key    string
-	action Action
+	target Target
+}
+
+// parse preserves the command's arguments after consuming the key token.
+func (entry *mapEntry) parse(text string, line int) bool {
+	fields := strings.Fields(text)
+	if len(fields) < 2 {
+		log.Printf("[WARN] keybindings:%d: map requires key and target, skipping", line)
+		return false
+	}
+	entry.key = normalizeKey(fields[0])
+	if strings.Contains(fields[0], ">") && fields[0] != ">" {
+		var ok bool
+		entry.key, ok = parseChordKey(fields[0], line)
+		if !ok {
+			return false
+		}
+	}
+	text = strings.TrimSpace(text[len(fields[0]):])
+	if command, ok := strings.CutPrefix(text, ":"); ok && strings.TrimSpace(command) != "" {
+		entry.target = Command(command)
+		return true
+	}
+	action, deprecated, ok := resolveAction(Action(fields[1]))
+	if !ok {
+		log.Printf("[WARN] keybindings:%d: unknown action %q, skipping", line, fields[1])
+		return false
+	}
+	if deprecated {
+		warnOnceDeprecatedAlias(Action(fields[1]), action)
+	}
+	entry.target = action
+	return true
 }
 
 // keyAliases maps user-friendly key names to bubbletea's KeyMsg.String() output.
@@ -615,29 +700,10 @@ func parse(r io.Reader) (maps []mapEntry, unmaps []string, err error) {
 		cmd := strings.ToLower(fields[0])
 		switch cmd {
 		case "map":
-			if len(fields) < 3 {
-				log.Printf("[WARN] keybindings:%d: map requires key and action, skipping", lineNum)
-				continue
+			var entry mapEntry
+			if entry.parse(strings.TrimSpace(line[len(fields[0]):]), lineNum) {
+				maps = append(maps, entry)
 			}
-			rawKey := fields[1]
-			rawAction := Action(fields[2])
-			action, deprecated, ok := resolveAction(rawAction)
-			if !ok {
-				log.Printf("[WARN] keybindings:%d: unknown action %q, skipping", lineNum, rawAction)
-				continue
-			}
-			if deprecated {
-				warnOnceDeprecatedAlias(rawAction, action)
-			}
-			if strings.Contains(rawKey, ">") && rawKey != ">" {
-				key, ok := parseChordKey(rawKey, lineNum)
-				if !ok {
-					continue
-				}
-				maps = append(maps, mapEntry{key: key, action: action})
-				continue
-			}
-			maps = append(maps, mapEntry{key: normalizeKey(rawKey), action: action})
 		case "unmap":
 			rawKey := fields[1]
 			if strings.Contains(rawKey, ">") && rawKey != ">" {
@@ -680,7 +746,7 @@ func Load(path string) (*Keymap, error) {
 		km.Unbind(key)
 	}
 	for _, m := range maps {
-		km.Bind(m.key, m.action)
+		km.Bind(m.key, m.target)
 	}
 
 	km.resolveConflicts()

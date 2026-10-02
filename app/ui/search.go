@@ -13,6 +13,12 @@ import (
 // when exceeded, oldest entries are dropped.
 const searchHistoryMax = 50
 
+type focusedSearchLoadedMsg struct {
+	fileLoadedMsg
+	searchSeq uint64
+	focus     pane
+}
+
 // startSearch creates a search textinput and enters searching mode.
 func (m *Model) startSearch() tea.Cmd {
 	if !m.filesLoaded || m.file.requestedPath != "" {
@@ -45,6 +51,31 @@ func (m *Model) submitSearch() tea.Cmd {
 
 	m.search.term = strings.ToLower(query)
 	m.appendSearchHistory(query)
+	if m.currentContextLines() > 0 && m.file.name != "" {
+		load := m.toggleCompactMode()
+		seq, focus := m.nav.scanSeq, m.layout.focus
+		return func() tea.Msg {
+			return focusedSearchLoadedMsg{fileLoadedMsg: load().(fileLoadedMsg), searchSeq: seq, focus: focus}
+		}
+	}
+	return m.searchFocusedContent()
+}
+
+func (m Model) handleFocusedSearchLoaded(msg focusedSearchLoadedMsg) (tea.Model, tea.Cmd) {
+	if msg.seq != m.file.loadSeq || (msg.seq == m.file.canceledLoadSeq && msg.file == m.file.canceledLoadPath) {
+		return m, nil
+	}
+	model, loadCmd := m.handleFileLoaded(msg.fileLoadedMsg)
+	m = model.(Model)
+	if msg.err != nil || msg.searchSeq != m.nav.scanSeq || msg.focus != m.layout.focus {
+		return m, loadCmd
+	}
+	searchCmd := m.searchFocusedContent()
+	m.layout.viewport.SetContent(m.renderDiff())
+	return m, tea.Batch(loadCmd, searchCmd)
+}
+
+func (m *Model) searchFocusedContent() tea.Cmd {
 	m.refreshSearchMatches()
 	if m.layout.focus == paneTree && m.file.mdTOC == nil {
 		return m.scanTree(treeScanSearch, true, true)

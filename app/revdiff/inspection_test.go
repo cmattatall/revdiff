@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCodeInspectorAvailability(t *testing.T) {
+func TestLSPInspectorAvailability(t *testing.T) {
 	for _, tc := range []struct {
 		args []string
 		want bool
@@ -20,12 +20,12 @@ func TestCodeInspectorAvailability(t *testing.T) {
 	} {
 		opts, err := parseArgs(tc.args)
 		require.NoError(t, err)
-		client := newCodeInspector(opts, t.TempDir())
+		client := newLSPInspector(opts, t.TempDir())
 		require.Equal(t, tc.want, client != nil, "args: %v", tc.args)
 		if client != nil {
 			require.NoError(t, client.Close())
 		}
 	}
-	require.Nil(t, newCodeInspector(options{CompareOld: "a", CompareNew: "b"}, t.TempDir()))
-	require.Nil(t, newCodeInspector(options{}, ""))
+	require.Nil(t, newLSPInspector(options{CompareOld: "a", CompareNew: "b"}, t.TempDir()))
+	require.Nil(t, newLSPInspector(options{}, ""))
 }

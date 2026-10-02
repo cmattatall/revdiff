@@ -2,12 +2,14 @@ package ui
 
 import (
 	"fmt"
+	"image/color"
 	"strings"
 	"testing"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,120 +21,114 @@ import (
 
 func TestModel_HighlightSearchMatches(t *testing.T) {
 	colors := style.Colors{SearchFg: "#1a1a1a", SearchBg: "#d7d700"}
-	m := testModel(nil, nil)
-	m.resolver = style.NewResolver(colors)
+	for _, tt := range []struct {
+		name, input, term string
+		start, end        int
+		plain             bool
+	}{
+		{"plain", "say hello world", "hello", 4, 9, false},
+		{"syntax reset inside match", "say \033[32mhe\033[0mllo\033[31m world", "hello", 4, 9, false},
+		{"word background inside match", "say he\033[48;2;45;90;58mllo world", "hello", 4, 9, false},
+		{"word reverse", "say \033[7mhello world", "hello", 4, 9, true},
+		{"case insensitive", "say HELLO world", "hello", 4, 9, false},
+		{"unicode case changes byte length", "K say hello world", "hello", 6, 11, false},
+		{"no match", "say hello world", "absent", 0, 0, false},
+		{"empty query", "say hello world", "", 0, 0, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			m := testModel(nil, nil)
+			if !tt.plain {
+				m.resolver = style.NewResolver(colors)
+			}
+			m.search.term = tt.term
+			got := m.highlightSearchMatches(tt.input, lipgloss.NewStyle())
+			require.Equal(t, ansi.Strip(tt.input), ansi.Strip(got), "highlighting must preserve all text")
+			before := uv.NewScreenBuffer(40, 1)
+			after := uv.NewScreenBuffer(40, 1)
+			uv.NewStyledString(tt.input).Draw(&before, before.Bounds())
+			uv.NewStyledString(got).Draw(&after, after.Bounds())
+			for x := range ansi.StringWidth(tt.input) {
+				cell := after.CellAt(x, 0)
+				if x < tt.start || x >= tt.end {
+					assert.True(t, cell.Equal(before.CellAt(x, 0)), "unchanged style at column %d", x)
+					continue
+				}
+				assert.NotZero(t, cell.Style.Attrs&uv.AttrBold)
+				if tt.plain {
+					assert.NotZero(t, cell.Style.Attrs&uv.AttrReverse)
+				} else {
+					assert.Equal(t, color.NRGBA{26, 26, 26, 255}, color.NRGBAModel.Convert(cell.Style.Fg))
+					assert.Equal(t, color.NRGBA{215, 215, 0, 255}, color.NRGBAModel.Convert(cell.Style.Bg))
+					assert.Zero(t, cell.Style.Attrs&(uv.AttrFaint|uv.AttrReverse))
+				}
+			}
+		})
+	}
+}
 
-	t.Run("plain text single match", func(t *testing.T) {
-		m.search.term = "hello"
-		result := m.highlightSearchMatches("say hello world", diff.ChangeContext)
-		assert.NotContains(t, result, "\033[38;2;", "should not set foreground (bg-only highlight)")
-		assert.Contains(t, result, "\033[48;2;215;215;0m") // search bg
-		assert.Contains(t, result, "hello")
-		assert.Contains(t, result, "\033[49m") // bg reset for context lines
-	})
-
-	t.Run("multiple matches", func(t *testing.T) {
-		m.search.term = "ab"
-		result := m.highlightSearchMatches("ab cd ab", diff.ChangeContext)
-		assert.Equal(t, 2, strings.Count(result, "\033[48;2;215;215;0m"), "should highlight both occurrences")
-	})
-
-	t.Run("no match", func(t *testing.T) {
-		m.search.term = "xyz"
-		result := m.highlightSearchMatches("hello world", diff.ChangeContext)
-		assert.Equal(t, "hello world", result)
-	})
-
-	t.Run("empty search term", func(t *testing.T) {
-		m.search.term = ""
-		result := m.highlightSearchMatches("hello world", diff.ChangeContext)
-		assert.Equal(t, "hello world", result)
-	})
-
-	t.Run("case insensitive", func(t *testing.T) {
-		m.search.term = "hello"
-		result := m.highlightSearchMatches("say HELLO world", diff.ChangeContext)
-		assert.Contains(t, result, "\033[48;2;215;215;0m")
-	})
-
-	t.Run("with ansi codes", func(t *testing.T) {
-		m.search.term = "world"
-		result := m.highlightSearchMatches("\033[32mhello world\033[0m", diff.ChangeContext)
-		assert.Contains(t, result, "\033[48;2;215;215;0m") // search bg on
-		assert.Contains(t, result, "\033[49m")             // search bg reset for context
-		assert.Contains(t, result, "\033[32m")             // original ansi preserved
-	})
-
-	t.Run("no-colors fallback", func(t *testing.T) {
-		noColorModel := testModel(nil, nil)
-		noColorModel.search.term = "hello"
-		result := noColorModel.highlightSearchMatches("say hello world", diff.ChangeContext)
-		assert.Contains(t, result, "\033[7m", "should use reverse video in no-colors mode")
-		assert.Contains(t, result, "\033[27m", "should reset reverse video")
-	})
-
-	t.Run("add line restores add bg instead of terminal default", func(t *testing.T) {
-		c := style.Colors{SearchFg: "#1a1a1a", SearchBg: "#d7d700", AddFg: "#00ff00", AddBg: "#002200"}
-		am := testModel(nil, nil)
-		am.resolver = style.NewResolver(c)
-		am.search.term = "hello"
-		result := am.highlightSearchMatches("say hello world", diff.ChangeAdd)
-		assert.Contains(t, result, "\033[48;2;215;215;0m", "should have search bg on")
-		assert.NotContains(t, result, "\033[49m", "should not reset to terminal default")
-		assert.Contains(t, result, string(am.resolver.Color(style.ColorKeyAddLineBg)), "should restore to add bg")
-	})
-
-	t.Run("remove line restores remove bg instead of terminal default", func(t *testing.T) {
-		c := style.Colors{SearchFg: "#1a1a1a", SearchBg: "#d7d700", RemoveFg: "#ff0000", RemoveBg: "#220000"}
-		rm := testModel(nil, nil)
-		rm.resolver = style.NewResolver(c)
-		rm.search.term = "hello"
-		result := rm.highlightSearchMatches("say hello world", diff.ChangeRemove)
-		assert.Contains(t, result, "\033[48;2;215;215;0m", "should have search bg on")
-		assert.NotContains(t, result, "\033[49m", "should not reset to terminal default")
-		assert.Contains(t, result, string(rm.resolver.Color(style.ColorKeyRemoveLineBg)), "should restore to remove bg")
-	})
-
-	t.Run("search inside word-diff span restores word-diff bg", func(t *testing.T) {
-		c := style.Colors{SearchFg: "#1a1a1a", SearchBg: "#d7d700", AddFg: "#00ff00", AddBg: "#002200", WordAddBg: "#2d5a3a"}
-		am := testModel(nil, nil)
-		am.resolver = style.NewResolver(c)
-		am.search.term = "foo"
-		// simulate input with word-diff markers: [WordAddBg]foobar[AddBg]rest
-		wordBg := string(am.resolver.Color(style.ColorKeyWordAddBg))
-		lineBg := string(am.resolver.Color(style.ColorKeyAddLineBg))
-		input := wordBg + "foobar" + lineBg + "rest"
-		result := am.highlightSearchMatches(input, diff.ChangeAdd)
-		// after search match ends at "foo", should restore to word-diff bg, not line bg
-		searchBg := string(am.resolver.Color(style.ColorKeySearchBg))
-		assert.Contains(t, result, searchBg, "should have search bg on")
-		assert.Contains(t, result, wordBg+"bar", "bar should keep word-diff bg after search match")
-	})
-
-	t.Run("search match spanning word-diff boundary preserves search bg", func(t *testing.T) {
-		c := style.Colors{SearchFg: "#1a1a1a", SearchBg: "#d7d700", AddFg: "#00ff00", AddBg: "#002200", WordAddBg: "#2d5a3a"}
-		am := testModel(nil, nil)
-		am.resolver = style.NewResolver(c)
-		am.search.term = "foobar rest"
-		// simulate input with word-diff markers: [WordAddBg]foobar[AddBg] rest
-		wordBg := string(am.resolver.Color(style.ColorKeyWordAddBg))
-		lineBg := string(am.resolver.Color(style.ColorKeyAddLineBg))
-		searchBg := string(am.resolver.Color(style.ColorKeySearchBg))
-		input := wordBg + "foobar" + lineBg + " rest"
-		result := am.highlightSearchMatches(input, diff.ChangeAdd)
-		// search bg must persist across word-diff boundary so " rest" stays highlighted
-		assert.Contains(t, result, searchBg+" rest", "search bg should be re-emitted after word-diff boundary")
-	})
-
-	t.Run("no-colors search inside word-diff reverse restores reverse", func(t *testing.T) {
-		am := testModel(nil, nil) // no colors → noColors=true
-		am.search.term = "foo"
-		// simulate input with word-diff reverse: \033[7mfoobar\033[27mrest
-		input := "\033[7m" + "foobar" + "\033[27m" + "rest"
-		result := am.highlightSearchMatches(input, diff.ChangeAdd)
-		// after search match ends at "foo", should restore reverse-video for "bar"
-		assert.Contains(t, result, "\033[7m"+"bar", "bar should stay reverse-video after search")
-	})
+func TestModel_SearchHighlightOverridesDiffStyles(t *testing.T) {
+	for _, mode := range []string{"context", "add", "remove", "collapsed add", "collapsed modify"} {
+		for _, wrap := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/wrap=%v", mode, wrap), func(t *testing.T) {
+				m := testModel(nil, nil)
+				res := style.NewResolver(style.Colors{
+					SearchFg: "#1a1a1a", SearchBg: "#ffd700", Muted: "#999999",
+					AddFg: "#87d787", AddBg: "#123800", RemoveFg: "#ff8787", RemoveBg: "#4d1100",
+					ModifyFg: "#f5c542", ModifyBg: "#3d2e00",
+				})
+				m.resolver = res
+				m.renderer = style.NewRenderer(res)
+				m.sgr = style.SGR{}
+				m.layout.width, m.layout.treeWidth = 80, 0
+				m.modes.wrap = wrap
+				if wrap {
+					m.layout.width = 24
+				}
+				change := diff.ChangeContext
+				if strings.Contains(mode, "add") || mode == "collapsed modify" {
+					change = diff.ChangeAdd
+				} else if mode == "remove" {
+					change = diff.ChangeRemove
+				}
+				m.modes.collapsed.enabled = strings.HasPrefix(mode, "collapsed")
+				m.file.lines = []diff.DiffLine{{Content: "prefix needle middle needle suffix", ChangeType: change}}
+				m.file.highlighted = []string{"\033[32mprefix ne\033[31medle middle needle suffix\033[0m"}
+				if mode == "collapsed modify" {
+					m.file.lines = append([]diff.DiffLine{{Content: "old", ChangeType: diff.ChangeRemove}}, m.file.lines...)
+					m.file.highlighted = append([]string{"old"}, m.file.highlighted...)
+				}
+				baseline := m.renderDiff()
+				m.search.term = "needle middle"
+				m.search.matches = []int{len(m.file.lines) - 1}
+				got := m.renderDiff()
+				require.Equal(t, ansi.Strip(baseline), ansi.Strip(got))
+				before, after := uv.NewScreenBuffer(80, 20), uv.NewScreenBuffer(80, 20)
+				uv.NewStyledString(baseline).Draw(&before, before.Bounds())
+				uv.NewStyledString(got).Draw(&after, after.Bounds())
+				var highlighted strings.Builder
+				for y := range 20 {
+					for x := range 80 {
+						cell := after.CellAt(x, y)
+						if cell != nil && cell.Style.Bg != nil && color.NRGBAModel.Convert(cell.Style.Bg) == (color.NRGBA{255, 215, 0, 255}) {
+							highlighted.WriteString(strings.TrimSpace(cell.Content))
+							assert.Equal(t, color.NRGBA{26, 26, 26, 255}, color.NRGBAModel.Convert(cell.Style.Fg))
+							assert.NotZero(t, cell.Style.Attrs&uv.AttrBold)
+						} else {
+							want := before.CellAt(x, y)
+							if cell != nil && want != nil && cell.Content == " " && want.Content == " " {
+								// Foreground is invisible on blank gutter cells.
+								assert.Equal(t, want.Style.Bg, cell.Style.Bg)
+								assert.Equal(t, want.Style.Attrs, cell.Style.Attrs)
+							} else {
+								assert.Equal(t, want, cell, "nonmatch at %d,%d retains its style", x, y)
+							}
+						}
+					}
+				}
+				require.Equal(t, "needlemiddle", highlighted.String(), "the entire match stays visible across wrapping and syntax styles")
+			})
+		}
+	}
 }
 
 func TestModel_StartSearch(t *testing.T) {
@@ -819,7 +815,7 @@ func TestModel_SearchHighlightInCollapsedMode(t *testing.T) {
 		m.search.cursor = 0
 		rendered := m.renderDiff()
 
-		assert.Contains(t, rendered, "added hello line")
+		assert.Contains(t, ansi.Strip(rendered), "added hello line")
 		assert.Contains(t, rendered, "added other line")
 	})
 
@@ -1772,6 +1768,108 @@ func treeSearchKey(t *testing.T, m Model, key string) Model {
 	return m
 }
 
+func TestModel_TreeSearchMatchesContentsNotFilenames(t *testing.T) {
+	files := map[string][]diff.DiffLine{
+		"needle.go": {{NewNum: 1, Content: "no matching content", ChangeType: diff.ChangeAdd}},
+		"one.go":    {{NewNum: 1, Content: "needle first", ChangeType: diff.ChangeAdd}},
+		"two.go":    {{NewNum: 1, Content: "needle second", ChangeType: diff.ChangeAdd}},
+	}
+	m := testModel([]string{"needle.go", "one.go", "two.go"}, files)
+	m.tree.Rebuild([]diff.FileEntry{{Path: "needle.go"}, {Path: "one.go"}, {Path: "two.go"}})
+	m.tree.SelectByPath("needle.go")
+	model, _ := m.Update(fileLoadedMsg{file: "needle.go", lines: files["needle.go"]})
+	m = model.(Model)
+	m.layout.focus = paneTree
+	model, _ = m.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
+	m = model.(Model)
+	require.True(t, m.search.active)
+	model, _ = m.Update(tea.KeyPressMsg{Text: "needle"})
+	m = model.(Model)
+	model, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = model.(Model)
+	require.NotNil(t, cmd)
+	model, _ = m.Update(cmd())
+	m = model.(Model)
+	require.Equal(t, "one.go", m.file.name)
+	require.Equal(t, "needle first", m.file.lines[m.nav.diffCursor].Content)
+	for _, path := range []string{"two.go", "one.go"} {
+		m = treeSearchKey(t, m, "n")
+		require.Equal(t, path, m.file.name, "skip filename-only matches, including on wrap")
+		require.Equal(t, paneTree, m.layout.focus)
+	}
+}
+
+func TestModel_FocusedSearchFindsContextLines(t *testing.T) {
+	for _, focus := range []pane{paneTree, paneDiff} {
+		m := treeSearchModel(t)
+		m.layout.focus = focus
+		m.modes.compact, m.compact.applicable, m.modes.compactContext = true, true, 3
+		m.file.lines = []diff.DiffLine{
+			{Content: "omitted context", ChangeType: diff.ChangeDivider},
+			{NewNum: 100, Content: "changed line", ChangeType: diff.ChangeAdd},
+		}
+		m.nav.diffCursor = 1
+		m.diffRenderer.(*mocks.RendererMock).FileDiffFunc = func(req diff.FileDiffRequest) ([]diff.DiffLine, error) {
+			require.Zero(t, req.ContextLines, "search must request full context for every file")
+			if req.Path != "a.go" {
+				return []diff.DiffLine{{NewNum: 1, Content: "TODO another file", ChangeType: diff.ChangeContext}}, nil
+			}
+			return []diff.DiffLine{
+				{NewNum: 10, Content: "TODO earlier", ChangeType: diff.ChangeContext},
+				{NewNum: 90, Content: "ordinary context", ChangeType: diff.ChangeContext},
+				{NewNum: 100, Content: "changed line", ChangeType: diff.ChangeAdd},
+				{NewNum: 110, Content: "TODO later", ChangeType: diff.ChangeContext},
+			}, nil
+		}
+		m.startSearch()
+		m.search.input.SetValue("TODO")
+		cmd := m.submitSearch()
+		require.NotNil(t, cmd)
+		require.True(t, m.livePaused())
+		queue := []tea.Cmd{cmd}
+		for len(queue) > 0 {
+			cmd, queue = queue[0], queue[1:]
+			if cmd == nil {
+				continue
+			}
+			msg := cmd()
+			if batch, ok := msg.(tea.BatchMsg); ok {
+				queue = append(queue, batch...)
+				continue
+			}
+			model, next := m.Update(msg)
+			m = model.(Model)
+			queue = append(queue, next)
+		}
+		require.False(t, m.modes.compact)
+		require.Equal(t, focus, m.layout.focus)
+		require.Equal(t, 110, m.file.lines[m.nav.diffCursor].NewNum, "search starts at the original source line, not its compact row")
+		m = treeSearchKey(t, m, "n")
+		if focus == paneTree {
+			require.Equal(t, "b.go", m.file.name)
+		} else {
+			require.Equal(t, "a.go", m.file.name)
+			require.Equal(t, 10, m.file.lines[m.nav.diffCursor].NewNum)
+		}
+	}
+}
+
+func TestModel_FocusedSearchDoesNotResumeAfterCancel(t *testing.T) {
+	m := treeSearchModel(t)
+	m.modes.compact, m.compact.applicable, m.modes.compactContext = true, true, 3
+	m.startSearch()
+	m.search.input.SetValue("needle")
+	cmd := m.submitSearch()
+	require.NotNil(t, cmd)
+	msg := cmd()
+	m.clearSearch()
+	model, _ := m.Update(msg)
+	m = model.(Model)
+	require.Empty(t, m.search.term)
+	require.Equal(t, treeScanIdle, m.nav.scanKind)
+	require.Equal(t, "a.go", m.file.name)
+}
+
 func TestModel_SearchScopeFollowsFocus(t *testing.T) {
 	m := treeSearchModel(t)
 	require.True(t, m.tree.SelectByVisibleRow(0)) // root directory, not a file
@@ -1813,7 +1911,7 @@ func TestModel_SearchScopeFollowsFocus(t *testing.T) {
 	}
 }
 
-func TestModel_FileSearchCanExpandToTree(t *testing.T) {
+func TestModel_TreeFocusFindsMatchAbsentFromCurrentFile(t *testing.T) {
 	m := treeSearchModel(t)
 	m.layout.focus = paneDiff
 	m.startSearch()

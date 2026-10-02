@@ -323,8 +323,8 @@ func TestModel_CollapsedWrapSearchMatchUsesSearchBg(t *testing.T) {
 
 		rendered := m.renderDiff()
 		assert.Contains(t, rendered, " ↪ ", "expected wrapped continuation marker")
-		assert.Contains(t, rendered, searchBg, "search-matched continuation marker must carry SearchBg")
-		assert.NotContains(t, rendered, addBg, "search-matched continuation must not leak the add-line bg seam")
+		assert.Contains(t, rendered, "48;2;102;85;34;1mthis", "only the matched text should receive bold search colors")
+		assert.Contains(t, rendered, addBg, "the rest of the line retains its diff background")
 	})
 
 	t.Run("delete placeholder continuation", func(t *testing.T) {

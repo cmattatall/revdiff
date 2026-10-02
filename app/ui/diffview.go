@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/mattn/go-runewidth"
 
@@ -461,22 +462,24 @@ func (m Model) renderWrappedDiffLine(b *strings.Builder, dl diff.DiffLine, textC
 	numGutter, blGutter := m.lineGutters(dl)
 	numBlank, blBlank := m.gutterBlanks()
 
+	if isSearchMatch {
+		textContent = m.highlightSearchMatches(textContent, m.resolver.LineStyle(dl.ChangeType, hasHighlight))
+	}
 	visualLines := m.wrapContent(textContent, m.wrapWidth())
 	for i, vl := range visualLines {
+		if isSearchMatch {
+			vl += "\033[m"
+		}
 		ng := numBlank
 		bg := blBlank
 		var styled string
 		if i == 0 {
 			ng = numGutter
 			bg = blGutter
-			styled = m.styleDiffContent(dl.ChangeType, m.linePrefix(dl.ChangeType), vl, hasHighlight, isSearchMatch)
+			styled = m.styleDiffContent(dl.ChangeType, m.linePrefix(dl.ChangeType), vl, hasHighlight, false)
 		} else {
-			// non-collapsed wrap path applies search highlight per-word via
-			// highlightSearchMatches inside styleDiffContent (the surrounding lipgloss
-			// LineStyle stays add/remove/context, never SearchMatch), so the marker
-			// does not need the no-colors reverse-video fallback even on a search-matched
-			// row — pass false.
-			styled = m.styledWrapMarker(m.resolver.LineBg(dl.ChangeType), false) + m.styleDiffContent(dl.ChangeType, "", vl, hasHighlight, isSearchMatch)
+			// Continuation markers keep the diff color, not the match color.
+			styled = m.styledWrapMarker(m.resolver.LineBg(dl.ChangeType), false) + m.styleDiffContent(dl.ChangeType, "", vl, hasHighlight, false)
 		}
 		styled = m.extendLineBg(styled, m.resolver.LineBg(dl.ChangeType))
 
@@ -653,12 +656,10 @@ func (m Model) styledWrapMarker(bg style.Color, searchMatch bool) string {
 	return b.String()
 }
 
-// highlightSearchMatches wraps each occurrence of the search term in the visible text
-// with ANSI background color sequence (preserving syntax foreground within matches).
-// works with both plain text and ANSI-coded content by stripping ANSI to find match positions.
-// changeType is used to restore the correct line background after each match (add/remove bg)
-// instead of resetting to terminal default, which would break word-diff and line bg overlays.
-func (m Model) highlightSearchMatches(s string, changeType diff.ChangeType) string {
+// highlightSearchMatches applies the line style, then overrides it within matches.
+// Styling first lets the match restore the surrounding syntax and diff colors.
+func (m Model) highlightSearchMatches(s string, lineStyle lipgloss.Style) string {
+	s = lineStyle.Render(s)
 	if m.search.term == "" {
 		return s
 	}
@@ -687,21 +688,43 @@ func (m Model) highlightSearchMatches(s string, changeType diff.ChangeType) stri
 		return s
 	}
 
-	// background-only highlight preserves syntax foreground colors within matches.
-	// restore to line bg (add/remove) after each match instead of terminal default (\033[49m]),
-	// so word-diff and line bg overlays are not broken by search highlights.
-	searchBg := m.resolver.Color(style.ColorKeySearchBg)
-	hlOn := string(searchBg)
-	hlOff := "\033[49m"
-	if hlOn == "" {
-		// no-colors mode: fall back to reverse video so matches remain visible
-		hlOn = "\033[7m"
-		hlOff = "\033[27m"
-	} else if bg := m.resolver.LineBg(changeType); bg != "" {
-		hlOff = string(bg)
+	searchStyle := m.resolver.Style(style.StyleKeySearchMatch)
+	parser := ansi.GetParser()
+	defer ansi.PutParser(parser)
+	var pen, rendered uv.Style
+	var state byte
+	pos, match := 0, 0
+	var result strings.Builder
+	for len(s) > 0 {
+		seq, width, n, next := ansi.DecodeSequence(s, state, parser)
+		s, state = s[n:], next
+		switch {
+		case ansi.HasCsiPrefix(seq) && parser.Command() == 'm':
+			uv.ReadStyle(parser.Params(), &pen)
+		case width > 0:
+			end := pos + len(strings.ToLower(seq))
+			for match < len(matches) && pos >= matches[match].End {
+				match++
+			}
+			paint := pen
+			if match < len(matches) && end > matches[match].Start && pos < matches[match].End {
+				paint.Attrs = (paint.Attrs &^ (uv.AttrFaint | uv.AttrReverse)) | uv.AttrBold
+				if searchStyle.GetReverse() {
+					paint.Attrs |= uv.AttrReverse
+				} else {
+					paint.Fg, paint.Bg = searchStyle.GetForeground(), searchStyle.GetBackground()
+				}
+			}
+			result.WriteString(paint.Diff(&rendered))
+			rendered = paint
+			result.WriteString(seq)
+			pos = end
+		default:
+			result.WriteString(seq)
+		}
 	}
-
-	return m.differ.InsertHighlightMarkers(s, matches, hlOn, hlOff)
+	result.WriteString(pen.Diff(&rendered))
+	return result.String()
 }
 
 // styleDiffContent applies the appropriate line style based on change type.
@@ -709,7 +732,7 @@ func (m Model) highlightSearchMatches(s string, changeType diff.ChangeType) stri
 // (non-wrap paths) or directly after styling (wrap paths where scroll is not used).
 func (m Model) styleDiffContent(changeType diff.ChangeType, prefix, content string, hasHighlight, isSearchMatch bool) string {
 	if isSearchMatch && m.search.term != "" {
-		content = m.highlightSearchMatches(content, changeType)
+		content = m.highlightSearchMatches(content, m.resolver.LineStyle(changeType, hasHighlight))
 	}
 	prefix = m.wrapPrefixForHighlight(prefix, m.resolver.LineFg(changeType), hasHighlight)
 	return m.resolver.LineStyle(changeType, hasHighlight).Render(prefix + content)

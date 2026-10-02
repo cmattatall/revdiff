@@ -44,25 +44,13 @@ func (m Model) displayKeyName(key string) string {
 	return key
 }
 
-// formatKeysForHelp returns a formatted key string for a given action using display names.
-func (m Model) formatKeysForHelp(action keymap.Action) string {
-	keys := m.keymap.KeysFor(action)
-	display := make([]string, len(keys))
-	for i, k := range keys {
-		display[i] = m.displayKeyName(k)
-	}
-	return strings.Join(display, " / ")
-}
-
 // buildHelpSpec builds an overlay.HelpSpec from the keymap's help sections,
 // converting raw key names to display names and inserting the TOC section.
 // When the vim-motion preset is active, appends a synthetic "Vim motion"
 // section listing the 11 preset bindings (which have no entries in the base
 // keymap since they're only reachable through the interceptor).
 func (m Model) buildHelpSpec() overlay.HelpSpec {
-	sections := m.keymap.HelpSections()
-	commands := m.commandEntries()
-	shown := make(map[string]bool)
+	sections := m.keymap.Reference(m).HelpSections()
 	var result []overlay.HelpSection
 	for _, sec := range sections {
 		pad := m.helpIconPad(sec)
@@ -71,17 +59,13 @@ func (m Model) buildHelpSpec() overlay.HelpSpec {
 			if m.cfg.workingTree && e.Action == keymap.ActionToggleUntracked {
 				continue
 			}
-			command := ""
-			for _, entry := range commands {
-				if name := entry.metadata().name; name == m.paletteCommand(e.Action) {
-					command = entry.helpName()
-					shown[name] = true
-					break
-				}
+			keys := strings.Split(e.Keys, " / ")
+			for i := range keys {
+				keys[i] = m.displayKeyName(keys[i])
 			}
 			entries = append(entries, overlay.HelpEntry{
-				Keys:        m.formatKeysForHelp(e.Action),
-				Command:     command,
+				Keys:        strings.Join(keys, " / "),
+				Command:     e.Command,
 				Description: m.helpDescriptionWithIcon(e, pad),
 			})
 		}
@@ -111,15 +95,6 @@ func (m Model) buildHelpSpec() overlay.HelpSpec {
 			}
 		}
 		result = append(result, overlay.HelpSection{Title: section, Entries: []overlay.HelpEntry{entry}})
-	}
-	for _, entry := range commands {
-		info := entry.metadata()
-		if shown[info.name] {
-			continue
-		}
-		appendEntry(info.section, overlay.HelpEntry{
-			Command: entry.helpName(), Description: info.description,
-		})
 	}
 	if m.shell != nil {
 		appendEntry("Miscellaneous", overlay.HelpEntry{Command: ":! <command>", Description: "run a shell command"})

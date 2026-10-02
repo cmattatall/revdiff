@@ -956,11 +956,11 @@ func TestBuildHelpSpec_PaletteCommands(t *testing.T) {
 		found := false
 		for label := range entries {
 			name := strings.TrimSuffix(strings.Split(label, " (")[0], " <args>")
-			if name == ":"+command.metadata().name {
+			if name == ":"+command.commandEntry.name {
 				found = true
 			}
 		}
-		assert.True(t, found, "help must include %s", command.metadata().name)
+		assert.True(t, found, "help must include %s", command.commandEntry.name)
 	}
 	assert.Equal(t, "Ctrl+F", entries[":w"].Keys)
 	assert.Contains(t, entries[":w"].Description, "harness / output / hook")

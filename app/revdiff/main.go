@@ -60,7 +60,11 @@ func main() {
 
 	if opts.DumpKeys {
 		km := keymap.LoadOrDefault(resolveFlagPath(os.Args[1:], "keys", "REVDIFF_KEYS", defaultKeysPath))
-		if err := km.Dump(os.Stdout); err != nil {
+		catalog := ui.CommandReference(ui.ModelConfig{
+			LSPInstallCommands: languageServerInstallCommands(),
+			Harnesses:          map[string]func() ([]ui.FeedbackSender, error){"amp": nil},
+		})
+		if err := km.Reference(catalog).Dump(os.Stdout); err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
@@ -121,6 +125,7 @@ func run(opts options) (int, error) {
 		untrackedFn        func() ([]string, error)
 		untrackedRenamesFn func([]string) ([]diff.FileEntry, error)
 		commitLogger       diff.CommitLogger
+		headSource         ui.RepositoryHeadSource
 		vcsType            diff.VCSType
 		err                error
 	)
@@ -176,6 +181,7 @@ func run(opts options) (int, error) {
 		untrackedFn = filterUntracked(setup.untrackedFn, opts.Include, opts.Exclude)
 		untrackedRenamesFn = setup.untrackedRenamesFn
 		commitLogger = setup.commitLogger
+		headSource = setup.headSource
 		vcsType = setup.vcsType
 	}
 
@@ -246,9 +252,9 @@ func run(opts options) (int, error) {
 
 	var inspector ui.CodeInspector
 	var lspInstallCommands map[string]string
-	if client := newCodeInspector(opts, workDir); client != nil {
+	if client := newLSPInspector(opts, workDir); client != nil {
 		inspector = client
-		lspInstallCommands = client.InstallCommands()
+		lspInstallCommands = languageServerInstallCommands()
 		defer client.Close()
 	}
 
@@ -300,6 +306,7 @@ func run(opts options) (int, error) {
 			workDir:     workDir,
 			vcsType:     vcsType,
 			description: description,
+			headSource:  headSource,
 		}),
 		TabWidth:         opts.TabWidth,
 		Ref:              opts.ref(),

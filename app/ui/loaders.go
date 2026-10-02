@@ -450,6 +450,7 @@ func (m *Model) triggerReload() tea.Cmd {
 	m.review.statsLoaded = false
 	m.review.statsRequested = false
 	m.review.statsLoadSeq++ // invalidate any in-flight stats fetch
+	m.review.headLoadSeq++
 	m.reviewed.loadSeq++
 	m.reviewed.cache = make(map[string]string)
 	m.reviewed.pending = make(map[string]uint64)
@@ -477,7 +478,7 @@ func (m Model) handleFilesLoaded(msg filesLoadedMsg) (tea.Model, tea.Cmd) {
 	}
 	entries := m.filterOnly(msg.entries)
 	m.setReviewEntries(entries)
-	statsCmd := m.triggerReviewStats()
+	statsCmd := tea.Batch(m.triggerReviewStats(), m.loadRepositoryHead())
 	m.refreshInfoOverlay()
 	if len(entries) == 0 && len(m.cfg.only) > 0 {
 		m.layout.viewport.SetContent("no files match --only filter")

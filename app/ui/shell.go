@@ -27,17 +27,27 @@ func (m *Model) runShellCommand(value string) (tea.Model, tea.Cmd) {
 		m.command.err = "Enter a shell command after !"
 		return *m, nil
 	}
-	if m.shell == nil {
-		m.command.err = "Shell commands are unavailable in this session"
+	if err := m.shellError(); err != "" {
+		m.command.err = err
 		return *m, nil
+	}
+	m.command.remember("! " + command)
+	return m.executeShellCommand(command)
+}
+
+func (m *Model) shellError() string {
+	if m.shell == nil {
+		return "Shell commands are unavailable in this session"
 	}
 	if m.live.operation != liveIdle {
-		m.command.err = "Wait for the current review operation to finish"
-		return *m, nil
+		return "Wait for the current review operation to finish"
 	}
+	return ""
+}
+
+func (m *Model) executeShellCommand(command string) (tea.Model, tea.Cmd) {
 	cmd := m.shell.Prepare(command)
 	m.command.lastShell = command
-	m.command.remember("! " + command)
 	m.closeCommand()
 	return *m, tea.ExecProcess(cmd, func(err error) tea.Msg { return shellFinishedMsg{err: err} })
 }
@@ -47,5 +57,6 @@ func (m Model) handleShellFinished(msg shellFinishedMsg) (tea.Model, tea.Cmd) {
 	if msg.err != nil {
 		m.keys.hint = "Shell command failed: " + msg.err.Error()
 	}
-	return m, nil
+	cmd := m.loadRepositoryHead()
+	return m, cmd
 }

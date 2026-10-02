@@ -187,6 +187,13 @@ func TestSGR_Reemit(t *testing.T) {
 		assert.Equal(t, "\033[48;2;10;20;30mwith bg", got[0])
 		assert.Equal(t, "\033[48;2;10;20;30mnext", got[1])
 	})
+
+	t.Run("combined search style and reset", func(t *testing.T) {
+		lines := []string{"\033[38;2;26;26;26;48;2;255;215;0;1mstart", "end\033[38;5;114;49;22m suffix", "normal"}
+		got := sgr.Reemit(lines)
+		assert.Equal(t, "\033[38;2;26;26;26m\033[48;2;255;215;0m\033[1mend\033[38;5;114;49;22m suffix", got[1])
+		assert.Equal(t, "\033[38;5;114mnormal", got[2])
+	})
 }
 
 func TestSGRState_applySGR(t *testing.T) {

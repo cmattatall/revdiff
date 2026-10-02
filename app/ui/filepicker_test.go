@@ -2,9 +2,11 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -56,41 +58,50 @@ func TestModel_JumpFileOpensPickerAndLoadsSelection(t *testing.T) {
 	assert.Equal(t, "b.go", loaded.file)
 }
 
-func TestModel_FilePickerPrefersChangesWithStagedFallback(t *testing.T) {
-	for _, tc := range []struct {
-		path   string
-		staged bool
-	}{
-		{path: "partial.go"},
-		{path: "staged-only.go", staged: true},
-	} {
-		t.Run(tc.path, func(t *testing.T) {
+func TestModel_FilePickerUsesChangesOnly(t *testing.T) {
+	for _, path := range []string{"partial.go", "untracked.go"} {
+		t.Run(path, func(t *testing.T) {
 			m := splitTestModel(t)
 			w := m.tree.(*workingTree)
 			w.Rebuild([]diff.FileEntry{
 				{Path: "partial.go", Status: diff.FileModified, Staged: true},
 				{Path: "partial.go", Status: diff.FileModified},
 				{Path: "staged-only.go", Status: diff.FileModified, Staged: true},
+				{Path: "untracked.go", Status: diff.FileUntracked},
 			})
-			require.True(t, w.SelectEntry(diff.FileEntry{Path: "partial.go", Staged: !tc.staged}))
+			require.True(t, w.SelectEntry(diff.FileEntry{Path: "partial.go", Staged: true}))
 			model, _ := m.handleFileLoaded(m.loadFileDiff("partial.go")().(fileLoadedMsg))
 			m = model.(Model)
 			model, _ = m.Update(tea.KeyPressMsg{Code: 'P', Text: "P"})
-			model, _ = model.Update(tea.PasteMsg{Content: tc.path})
+			picker := model.(Model)
+			popup := picker.overlay.Compose(strings.Repeat("\n", 29), overlay.RenderCtx{Width: 100, Height: 30, Resolver: picker.resolver})
+			require.NotContains(t, ansi.Strip(popup), "staged-only.go", "the picker must omit index-only paths")
+			require.Contains(t, ansi.Strip(popup), "untracked.go")
+			model, _ = model.Update(tea.PasteMsg{Content: path})
 			model, cmd := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 			m = model.(Model)
 			require.False(t, m.overlay.Active())
-			require.Equal(t, tc.path, w.SelectedFile())
-			require.Equal(t, tc.staged, w.SelectedStaged())
+			require.Equal(t, path, w.SelectedFile())
+			require.False(t, w.SelectedStaged())
 			require.Equal(t, paneDiff, m.layout.focus)
 			require.NotNil(t, cmd, "switching versions of the same path must load the selected diff")
 			loaded := cmd().(fileLoadedMsg)
-			require.Equal(t, tc.path, loaded.file)
-			require.Equal(t, tc.staged, loaded.staged)
+			require.Equal(t, path, loaded.file)
+			require.False(t, loaded.staged)
 			model, _ = m.handleFileLoaded(loaded)
-			require.Equal(t, tc.staged, model.(Model).file.staged)
+			require.False(t, model.(Model).file.staged)
 		})
 	}
+}
+
+func TestModel_FilePickerRejectsPathMovedToIndex(t *testing.T) {
+	m := splitTestModel(t)
+	m.openFilePicker()
+	w := m.tree.(*workingTree)
+	w.Rebuild([]diff.FileEntry{{Path: "partial.go", Staged: true}})
+	model, cmd := m.jumpToFile("partial.go")
+	require.Nil(t, cmd)
+	require.Equal(t, m.layout.focus, model.(Model).layout.focus)
 }
 
 func TestModel_JumpFilePrintableNavigationRunesFilter(t *testing.T) {

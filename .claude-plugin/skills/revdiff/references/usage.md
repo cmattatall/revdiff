@@ -133,7 +133,7 @@ Examples piping a real diff:
 | `[` / `]` | Cycle through previous/next hunks in the current file (diff focus) or across the tree (tree focus) |
 | `:edit` | Open focused file in `$EDITOR` |
 
-The file picker lists paths currently visible in the sidebar, preserving annotated-only and unreviewed-only filters. Printable keys always filter full relative paths; use the arrow keys or mouse wheel to move, and press `Enter` or left-click to jump. `Backspace` edits the filter. The first `Esc` clears a non-empty filter and keeps the picker open; the second closes it. Because printable keys always filter, `P` typed inside the picker adds to the filter rather than closing it; a `jump_file` binding with a modifier (e.g. `map alt+f jump_file`) closes the picker when pressed again.
+The file picker lists visible Changes paths in split working-tree reviews, never staged versions or staged-only files. Other review modes use their visible sidebar paths. Annotated-only and unreviewed-only filters remain active. Printable keys always filter full relative paths; use the arrow keys or mouse wheel to move, and press `Enter` or left-click to jump. `Backspace` edits the filter. The first `Esc` clears a non-empty filter and keeps the picker open; the second closes it. Because printable keys always filter, `P` typed inside the picker adds to the filter rather than closing it; a `jump_file` binding with a modifier (e.g. `map alt+f jump_file`) closes the picker when pressed again.
 
 Press `L` in the file viewer to show line numbers, or launch with `--line-numbers`. Type `:123` and press `Enter` to jump to source line 123; no Vim preset is required. Diff jumps use the new-file line numbers, or old-file numbers when the file is entirely deleted. A line omitted by compact mode or outside the file reports "not shown" and leaves the prompt open for correction. The `:` shortcut is rebindable as `command`.
 
@@ -169,8 +169,6 @@ Annotation navigation also has typed commands: `:annotation next` and `:annotati
 
 Run `:! <command>` to execute a shell command, for example `:! git status`. It runs through `$SHELL` (or `/bin/sh`) in revdiff's launch directory, with normal quoting, pipes, and terminal input/output. Press Enter when finished to return to the review. Commands are kept in session history with their original case. Annotations are preserved, and `:reload` refreshes the diff after external changes.
 
-Use `:git <args>` as shorthand for `:! git <args>`, for example `:git status` or `:git commit -m "Fix parsing"`. Arguments retain their case and shell quoting.
-
 Each command opens a clean screen without exposing or clearing your shell's scrollback. Use `:!!` to rerun the last shell command in this session, even after other palette commands.
 
 With the diff focused, `:blame view` (or `:bv`) opens attribution for the selected line: commit, author, date, and summary. Removed lines use the old side of the diff. This opens details without changing the gutter. For a github.com `origin`, it also shows a commit URL and looks up associated merged PRs using authenticated `gh` (optional, five-second timeout). Local blame still works when PR lookup is unavailable. Uncommitted lines have no commit or PR link.
@@ -179,7 +177,11 @@ Single-line annotation, search, command, file-picker, and theme-picker inputs us
 
 **Search:**
 
-Press `/` or run `:search` to open search in the command palette. With the diff pane focused, search and `n`/`N` stay within the current file. With the file tree focused, they search file contents across the tree in tree order, respecting active tree filters and diff modes. Both directions wrap around. Switching focus changes the scope without replacing the query; the match counter shows the position within the displayed file.
+Press `/` or run `:search` to open search in the command palette. With the diff pane focused, search and `n`/`N` stay within the current file. With the file tree focused, they search file contents across the tree in tree order, respecting active tree filters. Both directions wrap around. Switching focus changes the scope without replacing the query; the match counter shows the position within the displayed file.
+
+Submitting a search switches compact diffs to full context so unchanged lines within those files can match. Hidden removed lines remain excluded. Files outside the tree are not searched, unlike a repository-wide `rg` command.
+
+Matching text is bold and uses the theme's search foreground and background over syntax and diff colors, including in collapsed hunks. The default is dark text on bright yellow. With `--no-colors`, matches use bold reverse video.
 
 The `/` prompt and search-history help appear above the footer, including with `--no-status-bar`. Tree searches are labeled “Search file tree”. `Enter` finds a match and closes the pane; `Esc` or `Ctrl+C` cancels without replacing the previous search. The status bar keeps its normal file and navigation information while you type.
 
@@ -252,6 +254,8 @@ Press `Space` to mark the focused file reviewed. Press `F` to toggle the sidebar
 | `:q` | Quit after sending feedback; `:q!` discards unsent feedback |
 
 ## Status Bar Icons
+
+Git reviews show the current checkout as `branch @ short-SHA` beside the bottom-right review statistics, even when reviewing historical refs. Detached checkouts show `detached HEAD @ short-SHA`; new repositories show `branch (no commits)`. This information refreshes on reload and after shell commands, without querying Git during navigation or rendering.
 
 The status bar shows a fixed row of mode indicators on the right side. All slots are always rendered — active modes use the status bar foreground color, inactive modes use muted gray, so the row occupies the same width regardless of what's toggled on. The help overlay (`?`) shows each icon beside the key that controls it.
 

@@ -251,7 +251,7 @@ func buildStyles(c Colors) map[StyleKey]lipgloss.Style {
 	m[StyleKeyStatusBar] = statusBar
 
 	// search match
-	m[StyleKeySearchMatch] = lipgloss.NewStyle().
+	m[StyleKeySearchMatch] = lipgloss.NewStyle().Bold(true).
 		Foreground(lipgloss.Color(c.SearchFg)).
 		Background(lipgloss.Color(c.SearchBg))
 
@@ -363,7 +363,7 @@ func buildPlainStyles() map[StyleKey]lipgloss.Style {
 	m[StyleKeyLineModifyHighlight] = lipgloss.NewStyle()
 
 	m[StyleKeyStatusBar] = lipgloss.NewStyle().Padding(0, 1)
-	m[StyleKeySearchMatch] = lipgloss.NewStyle().Reverse(true)
+	m[StyleKeySearchMatch] = lipgloss.NewStyle().Bold(true).Reverse(true)
 
 	// overlay / input styles — plain (no colors)
 	m[StyleKeyAnnotInputText] = lipgloss.NewStyle()

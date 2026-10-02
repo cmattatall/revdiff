@@ -478,7 +478,7 @@ func TestParse_acceptsDeprecatedCommitInfoAlias(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, maps, 1)
 	assert.Equal(t, "i", maps[0].key)
-	assert.Equal(t, ActionInfo, maps[0].action, "alias must rewrite to canonical action")
+	assert.Equal(t, ActionInfo, maps[0].target, "alias must rewrite to canonical action")
 }
 
 func TestInfo_roundTrip(t *testing.T) {
@@ -509,7 +509,7 @@ func TestInfo_roundTrip(t *testing.T) {
 	require.NoError(t, err)
 	var matched bool
 	for _, m := range maps {
-		if m.key == "i" && m.action == ActionInfo {
+		if m.key == "i" && m.target == ActionInfo {
 			matched = true
 		}
 	}
@@ -551,9 +551,9 @@ func TestParse_validMapLines(t *testing.T) {
 	assert.Empty(t, unmaps)
 	require.Len(t, maps, 2)
 	assert.Equal(t, "x", maps[0].key)
-	assert.Equal(t, ActionQuit, maps[0].action)
+	assert.Equal(t, ActionQuit, maps[0].target)
 	assert.Equal(t, "ctrl+d", maps[1].key)
-	assert.Equal(t, ActionHalfPageDown, maps[1].action)
+	assert.Equal(t, ActionHalfPageDown, maps[1].target)
 }
 
 func TestParse_unmapLines(t *testing.T) {
@@ -580,7 +580,7 @@ func TestParse_unknownAction(t *testing.T) {
 	assert.Empty(t, unmaps)
 	// unknown action skipped, valid one kept
 	require.Len(t, maps, 1)
-	assert.Equal(t, ActionQuit, maps[0].action)
+	assert.Equal(t, ActionQuit, maps[0].target)
 }
 
 func TestParse_invalidLines(t *testing.T) {
@@ -589,7 +589,7 @@ func TestParse_invalidLines(t *testing.T) {
 	require.NoError(t, err)
 	// only valid line parsed
 	require.Len(t, maps, 1)
-	assert.Equal(t, ActionQuit, maps[0].action)
+	assert.Equal(t, ActionQuit, maps[0].target)
 }
 
 func TestParse_duplicateMapLastWins(t *testing.T) {
@@ -598,8 +598,8 @@ func TestParse_duplicateMapLastWins(t *testing.T) {
 	require.NoError(t, err)
 	// both entries returned; Load applies them in order (last wins)
 	require.Len(t, maps, 2)
-	assert.Equal(t, ActionQuit, maps[0].action)
-	assert.Equal(t, ActionHelp, maps[1].action)
+	assert.Equal(t, ActionQuit, maps[0].target)
+	assert.Equal(t, ActionHelp, maps[1].target)
 }
 
 func TestParse_keyNormalization(t *testing.T) {
@@ -624,7 +624,7 @@ func TestParse_ChordBinding(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, maps, 1)
 	assert.Equal(t, "ctrl+w>x", maps[0].key)
-	assert.Equal(t, ActionQuit, maps[0].action)
+	assert.Equal(t, ActionQuit, maps[0].target)
 }
 
 func TestParse_ChordBinding_NormalizesCase(t *testing.T) {
@@ -635,7 +635,7 @@ func TestParse_ChordBinding_NormalizesCase(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, maps, 1)
 	assert.Equal(t, "ctrl+w>X", maps[0].key)
-	assert.Equal(t, ActionQuit, maps[0].action)
+	assert.Equal(t, ActionQuit, maps[0].target)
 }
 
 func TestParse_ChordBinding_AltLeader(t *testing.T) {
@@ -654,7 +654,7 @@ func TestParse_ChordBinding_AltLeaderCapitalizedPrefix(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, maps, 1)
 	assert.Equal(t, "alt+T>n", maps[0].key)
-	assert.Equal(t, ActionThemeSelect, maps[0].action)
+	assert.Equal(t, ActionThemeSelect, maps[0].target)
 }
 
 func TestParse_ChordBinding_RejectsNonModifierLeader(t *testing.T) {
@@ -664,7 +664,7 @@ func TestParse_ChordBinding_RejectsNonModifierLeader(t *testing.T) {
 	// only the valid chord should remain; g>g rejected
 	require.Len(t, maps, 1)
 	assert.Equal(t, "ctrl+w>x", maps[0].key)
-	assert.Equal(t, ActionQuit, maps[0].action)
+	assert.Equal(t, ActionQuit, maps[0].target)
 }
 
 func TestParse_ChordBinding_RejectsShiftLeader(t *testing.T) {
@@ -703,7 +703,7 @@ func TestParse_GreaterThanStandalone(t *testing.T) {
 	input := strings.NewReader("map > quit\nunmap >\n")
 	maps, unmaps, err := parse(input)
 	require.NoError(t, err)
-	assert.Equal(t, []mapEntry{{key: ">", action: ActionQuit}}, maps)
+	assert.Equal(t, []mapEntry{{key: ">", target: ActionQuit}}, maps)
 	assert.Equal(t, []string{">"}, unmaps)
 }
 
@@ -850,11 +850,11 @@ func TestDump_roundTrip(t *testing.T) {
 
 	// rebuild a keymap from parsed output (start empty, apply all maps)
 	rebuilt := &Keymap{
-		bindings:     make(map[string]Action),
+		bindings:     make(map[string]Target),
 		descriptions: defaultDescriptions(),
 	}
 	for _, m := range maps {
-		rebuilt.Bind(m.key, m.action)
+		rebuilt.Bind(m.key, m.target)
 	}
 
 	// verify all original bindings are present in rebuilt
@@ -883,7 +883,7 @@ func TestDump_chordWithSpaceSecondStageRoundTrip(t *testing.T) {
 	// chord binding with "space" as the second stage must round-trip: the literal
 	// space stored as "ctrl+w> " needs to dump as "ctrl+w>space" so that a later
 	// reload re-parses into the same chord key.
-	km := &Keymap{bindings: make(map[string]Action), descriptions: defaultDescriptions()}
+	km := &Keymap{bindings: make(map[string]Target), descriptions: defaultDescriptions()}
 	km.Bind("ctrl+w> ", ActionMarkReviewed)
 
 	var buf strings.Builder
@@ -897,9 +897,9 @@ func TestDump_chordWithSpaceSecondStageRoundTrip(t *testing.T) {
 	maps, _, err := parse(strings.NewReader(output))
 	require.NoError(t, err)
 
-	rebuilt := &Keymap{bindings: make(map[string]Action), descriptions: defaultDescriptions()}
+	rebuilt := &Keymap{bindings: make(map[string]Target), descriptions: defaultDescriptions()}
 	for _, m := range maps {
-		rebuilt.Bind(m.key, m.action)
+		rebuilt.Bind(m.key, m.target)
 	}
 	assert.Equal(t, ActionMarkReviewed, rebuilt.ResolveChord("ctrl+w", " "), "chord with space must survive dump -> parse round-trip")
 }
@@ -920,9 +920,9 @@ func TestDump_spaceKeyRoundTrip(t *testing.T) {
 	maps, _, err := parse(strings.NewReader(output))
 	require.NoError(t, err)
 
-	rebuilt := &Keymap{bindings: make(map[string]Action), descriptions: defaultDescriptions()}
+	rebuilt := &Keymap{bindings: make(map[string]Target), descriptions: defaultDescriptions()}
 	for _, m := range maps {
-		rebuilt.Bind(m.key, m.action)
+		rebuilt.Bind(m.key, m.target)
 	}
 	assert.Equal(t, ActionPageDown, rebuilt.Resolve(" "), "space binding should survive round-trip")
 }
@@ -942,13 +942,13 @@ func TestDump_unboundActions(t *testing.T) {
 
 func TestDump_LoadRoundTrip(t *testing.T) {
 	path := t.TempDir() + "/keys"
-	input := "unmap j\nunmap /\nmap ctrl+w>x :hs\nmap alt+s :harness send\nmap alt+g :git log --format=\"%h  %s\"\nmap space :set number\n"
+	input := "unmap j\nunmap /\nmap ctrl+w>x :hs\nmap alt+s :harness send\nmap alt+g :! git log --format=\"%h  %s\"\nmap space :set number\n"
 	require.NoError(t, os.WriteFile(path, []byte(input), 0o600))
 	km, err := Load(path)
 	require.NoError(t, err)
-	assert.Equal(t, Action(":harness send"), km.Resolve("alt+s"))
-	assert.Equal(t, Action(`:git log --format="%h  %s"`), km.Resolve("alt+g"))
-	assert.Equal(t, Action(":hs"), km.ResolveChord("ctrl+w", "x"))
+	assert.Equal(t, Command("harness send"), km.ResolveTarget("alt+s"))
+	assert.Equal(t, Command(`! git log --format="%h  %s"`), km.ResolveTarget("alt+g"))
+	assert.Equal(t, Command("hs"), km.ResolveChordTarget("ctrl+w", "x"))
 	var dump strings.Builder
 	require.NoError(t, km.Dump(&dump))
 	require.NoError(t, os.WriteFile(path, []byte(dump.String()), 0o600))
@@ -1063,7 +1063,7 @@ func TestAcceptance_invalidActionWarnsNoCrash(t *testing.T) {
 	maps, _, err := parse(input)
 	require.NoError(t, err)
 	require.Len(t, maps, 1, "only valid action should be parsed")
-	assert.Equal(t, ActionQuit, maps[0].action)
+	assert.Equal(t, ActionQuit, maps[0].target)
 }
 
 func TestIsChordLeader(t *testing.T) {
@@ -1235,7 +1235,7 @@ func TestParse_casePreservedForSingleChars(t *testing.T) {
 func TestDump_RoundTripsChords(t *testing.T) {
 	// build a Keymap with a mix of single-key and chord bindings, dump, parse,
 	// rebuild, and assert the bindings are structurally identical.
-	km := &Keymap{bindings: make(map[string]Action), descriptions: defaultDescriptions()}
+	km := &Keymap{bindings: make(map[string]Target), descriptions: defaultDescriptions()}
 	km.Bind("j", ActionDown)
 	km.Bind("q", ActionQuit)
 	km.Bind("ctrl+w>x", ActionQuit)
@@ -1260,7 +1260,7 @@ func TestDump_RoundTripsChords(t *testing.T) {
 		rebuilt.Unbind(key)
 	}
 	for _, m := range maps {
-		rebuilt.Bind(m.key, m.action)
+		rebuilt.Bind(m.key, m.target)
 	}
 
 	// full structural equality on bindings

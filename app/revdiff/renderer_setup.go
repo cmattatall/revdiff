@@ -17,6 +17,7 @@ type vcsSetup struct {
 	untrackedFn        func() ([]string, error)
 	untrackedRenamesFn func([]string) ([]diff.FileEntry, error) // git-only; pairs untracked renames with their origin
 	commitLogger       diff.CommitLogger                        // VCS-backed commit log source; nil when VCS lacks the capability
+	headSource         ui.RepositoryHeadSource
 }
 
 // setupVCSRenderer detects the VCS and creates the appropriate renderer, blamer, and untracked function.
@@ -34,7 +35,7 @@ func setupVCSRenderer(opts options) (vcsSetup, error) {
 		if err != nil {
 			return vcsSetup{}, err
 		}
-		return vcsSetup{renderer: r, vcsType: diff.VCSGit, gitRoot: vcsRoot, workDir: workDir, blamer: g, untrackedFn: g.UntrackedFiles, untrackedRenamesFn: g.UntrackedRenames, commitLogger: g}, nil
+		return vcsSetup{renderer: r, vcsType: diff.VCSGit, gitRoot: vcsRoot, workDir: workDir, blamer: g, untrackedFn: g.UntrackedFiles, untrackedRenamesFn: g.UntrackedRenames, commitLogger: g, headSource: g}, nil
 	case diff.VCSHg:
 		h := diff.NewHg(vcsRoot)
 		r, workDir, err := makeHgRenderer(h, opts, vcsRoot)

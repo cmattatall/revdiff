@@ -35,14 +35,7 @@ type commandEntry struct {
 	section     string
 }
 
-type paletteCommand interface {
-	metadata() commandEntry
-	matchesInput(string) bool
-	helpName() string
-	execute(*Model, string) (tea.Model, tea.Cmd)
-}
-
-type tuiCommand struct {
+type paletteCommand struct {
 	commandEntry
 	action   keymap.Action
 	scope    commandScope
@@ -85,56 +78,16 @@ func (scope commandScope) resolve(m *Model) (commandScope, string) {
 	return scope, ""
 }
 
-type shellCommand struct {
-	commandEntry
-	prefix string
-}
-
-func (e commandEntry) metadata() commandEntry { return e }
-
 func (e commandEntry) matchesName(name string) bool {
 	return e.name == name || slices.Contains(e.aliases, name)
 }
 
-func (c tuiCommand) matchesInput(value string) bool {
+func (c paletteCommand) matchesInput(value string) bool {
 	return c.matchesName(strings.ToLower(value))
 }
 
-func (c shellCommand) arguments(value string) (string, bool) {
-	for _, name := range append([]string{c.name}, c.aliases...) {
-		if len(value) < len(name) || !strings.EqualFold(value[:len(name)], name) {
-			continue
-		}
-		args := value[len(name):]
-		if args == "" || args[0] == ' ' || args[0] == '\t' {
-			return args, true
-		}
-	}
-	return "", false
-}
-
-func (c shellCommand) matchesInput(value string) bool {
-	_, ok := c.arguments(value)
-	return ok
-}
-
-func (c shellCommand) execute(m *Model, value string) (tea.Model, tea.Cmd) {
-	args, _ := c.arguments(value)
-	return m.runShellCommand("! " + c.prefix + args)
-}
-
 func (e commandEntry) helpName() string {
-	name := ":" + e.name
-	if len(e.aliases) > 0 {
-		name += " (:" + strings.Join(e.aliases, ", :") + ")"
-	}
-	return name
-}
-
-func (c shellCommand) helpName() string {
-	entry := c.commandEntry
-	entry.name += " <args>"
-	return entry.helpName()
+	return e.reference().HelpName()
 }
 
 type commandSetting struct {
@@ -144,12 +97,12 @@ type commandSetting struct {
 	enabled                       bool
 }
 
-func (setting commandSetting) command(enabled bool) tuiCommand {
+func (setting commandSetting) command(enabled bool) paletteCommand {
 	name, description := setting.off, setting.offDescription
 	if enabled {
 		name, description = setting.on, setting.onDescription
 	}
-	return tuiCommand{
+	return paletteCommand{
 		commandEntry: commandEntry{name: name, description: description, section: "View"},
 		action:       setting.action,
 		run: func(m *Model, _ commandScope) (tea.Model, tea.Cmd) {
@@ -253,31 +206,33 @@ func (m Model) paletteCommand(action keymap.Action) string {
 
 func (m Model) commandEntries() []paletteCommand {
 	entries := []paletteCommand{
-		tuiCommand{commandEntry: commandEntry{name: "annotate", description: "annotate the selected hunk or file", aliases: []string{"a"}, section: "Annotations"}, scope: commandScopeSelection, run: (*Model).annotateScope},
-		tuiCommand{commandEntry: commandEntry{name: "annotate hunk", description: "annotate the change hunk under the diff cursor", section: "Annotations"}, scope: commandScopeHunk, run: (*Model).annotateScope},
-		tuiCommand{commandEntry: commandEntry{name: "blame view", description: "inspect the current line's commit and associated GitHub PR", aliases: []string{"bv"}, section: "View"},
+		{commandEntry: commandEntry{name: "annotate", description: "annotate the selected hunk or file", aliases: []string{"a"}, section: "Annotations"}, scope: commandScopeSelection, run: (*Model).annotateScope},
+		{commandEntry: commandEntry{name: "annotate hunk", description: "annotate the change hunk under the diff cursor", section: "Annotations"}, scope: commandScopeHunk, run: (*Model).annotateScope},
+		{commandEntry: commandEntry{name: "blame view", description: "inspect the current line's commit and associated GitHub PR", aliases: []string{"bv"}, section: "View"},
 			run: func(m *Model, _ commandScope) (tea.Model, tea.Cmd) { return m.openBlameView() }},
-		tuiCommand{commandEntry: commandEntry{name: "lsp symbol definition", description: "preview a symbol's definition", section: "Inspection"},
+		{commandEntry: commandEntry{name: "lsp symbol definition", description: "preview a symbol's definition", section: "Inspection"},
 			run: func(m *Model, _ commandScope) (tea.Model, tea.Cmd) { return m.openInspection(InspectDefinition) }},
-		tuiCommand{commandEntry: commandEntry{name: "lsp symbol references", description: "find and preview a symbol's references", section: "Inspection"},
+		{commandEntry: commandEntry{name: "lsp symbol references", description: "find and preview a symbol's references", section: "Inspection"},
 			run: func(m *Model, _ commandScope) (tea.Model, tea.Cmd) { return m.openInspection(InspectReferences) }},
-		tuiCommand{commandEntry: commandEntry{name: "lsp symbol list", description: "fuzzy-search symbols in the active file", section: "Inspection"},
+		{commandEntry: commandEntry{name: "lsp symbol list", description: "fuzzy-search symbols in the active file", section: "Inspection"},
 			run: func(m *Model, _ commandScope) (tea.Model, tea.Cmd) { return m.openInspection(InspectSymbols) }},
-		tuiCommand{commandEntry: commandEntry{name: "lsp list", description: "list language servers and PATH availability", section: "Inspection"},
+		{commandEntry: commandEntry{name: "lsp list", description: "list language servers and PATH availability", section: "Inspection"},
 			run: func(m *Model, _ commandScope) (tea.Model, tea.Cmd) { return m.listLanguageServers() }},
-		shellCommand{commandEntry: commandEntry{name: "git", description: "run git through the shell", section: "Miscellaneous"}, prefix: "git"},
-		tuiCommand{commandEntry: commandEntry{name: "harness send", description: "compose a message to the connected harness", aliases: []string{"hs"}, section: "Harness"},
+		{commandEntry: commandEntry{name: "harness send", description: "compose a message to the connected harness", aliases: []string{"hs"}, section: "Harness"},
 			run: func(m *Model, _ commandScope) (tea.Model, tea.Cmd) { return m.openHarnessMessage() }},
-		tuiCommand{commandEntry: commandEntry{name: "harness disconnect", description: "disconnect from the harness and stop automatic connection", section: "Harness"},
+		{commandEntry: commandEntry{name: "harness disconnect", description: "disconnect from the harness and stop automatic connection", section: "Harness"},
 			run: func(m *Model, _ commandScope) (tea.Model, tea.Cmd) { return m.disconnectHarness() }},
-		tuiCommand{commandEntry: commandEntry{name: "quit!", description: "discard unsent feedback and quit", aliases: []string{"q!"}, section: "Miscellaneous"},
+		{commandEntry: commandEntry{name: "quit!", description: "discard unsent feedback and quit", aliases: []string{"q!"}, section: "Miscellaneous"},
 			validate: func(m *Model) string { return m.quitError(true) },
 			run:      func(m *Model, _ commandScope) (tea.Model, tea.Cmd) { return m.quitReview(true) }},
 	}
 	for language, command := range m.inspection.installCommands {
-		entries = append(entries, shellCommand{
+		entries = append(entries, paletteCommand{
 			commandEntry: commandEntry{name: "lsp install " + language, description: "install the " + language + " language server", section: "Inspection"},
-			prefix:       command,
+			validate:     (*Model).shellError,
+			run: func(m *Model, _ commandScope) (tea.Model, tea.Cmd) {
+				return m.executeShellCommand(command)
+			},
 		})
 	}
 	settings := m.commandSettings()
@@ -286,9 +241,9 @@ func (m Model) commandEntries() []paletteCommand {
 	}
 	if _, ok := m.tree.(*workingTree); ok {
 		entries = append(entries,
-			tuiCommand{commandEntry: commandEntry{name: "focus staged", description: "focus the Staged section", aliases: []string{"fs"}, section: keymap.SectionPane},
+			paletteCommand{commandEntry: commandEntry{name: "focus staged", description: "focus the Staged section", aliases: []string{"fs"}, section: keymap.SectionPane},
 				run: func(m *Model, _ commandScope) (tea.Model, tea.Cmd) { return m.focusTreeSection(true) }},
-			tuiCommand{commandEntry: commandEntry{name: "focus changed", description: "focus the Changes section", aliases: []string{"fc"}, section: keymap.SectionPane},
+			paletteCommand{commandEntry: commandEntry{name: "focus changed", description: "focus the Changes section", aliases: []string{"fc"}, section: keymap.SectionPane},
 				run: func(m *Model, _ commandScope) (tea.Model, tea.Cmd) { return m.focusTreeSection(false) }},
 		)
 	}
@@ -303,7 +258,7 @@ actions:
 			}
 		}
 		if name := m.paletteCommand(entry.Action); name != "" {
-			command := tuiCommand{commandEntry: commandEntry{name: name, description: entry.Description, section: entry.Section}, action: entry.Action}
+			command := paletteCommand{commandEntry: commandEntry{name: name, description: entry.Description, section: entry.Section}, action: entry.Action}
 			switch entry.Action {
 			case keymap.ActionQuit:
 				command.aliases = []string{"q"}
@@ -323,10 +278,10 @@ actions:
 		}
 	}
 	for name := range m.live.harnesses {
-		entries = append(entries, tuiCommand{commandEntry: commandEntry{name: "harness connect " + name, description: "connect to " + name + " in this directory", section: "Harness"},
+		entries = append(entries, paletteCommand{commandEntry: commandEntry{name: "harness connect " + name, description: "connect to " + name + " in this directory", section: "Harness"},
 			run: func(m *Model, _ commandScope) (tea.Model, tea.Cmd) { return m.connectHarness(name) }})
 	}
-	sort.Slice(entries, func(i, j int) bool { return entries[i].metadata().name < entries[j].metadata().name })
+	sort.Slice(entries, func(i, j int) bool { return entries[i].commandEntry.name < entries[j].commandEntry.name })
 	return entries
 }
 
@@ -426,7 +381,7 @@ func (m *Model) submitCommand() (tea.Model, tea.Cmd) {
 	commands := m.commandEntries()
 	for _, command := range commands {
 		if command.matchesInput(value) {
-			return command.execute(m, value)
+			return command.execute(m)
 		}
 	}
 	value = strings.ToLower(value)
@@ -438,7 +393,7 @@ func (m *Model) submitCommand() (tea.Model, tea.Cmd) {
 		value = matches[0].name
 		for _, command := range commands {
 			if command.matchesInput(value) {
-				return command.execute(m, value)
+				return command.execute(m)
 			}
 		}
 	}
@@ -491,7 +446,7 @@ func (m *Model) submitCommand() (tea.Model, tea.Cmd) {
 	return *m, nil
 }
 
-func (entry tuiCommand) execute(m *Model, _ string) (tea.Model, tea.Cmd) {
+func (entry paletteCommand) execute(m *Model) (tea.Model, tea.Cmd) {
 	scope, err := entry.scope.resolve(m)
 	if err == "" && entry.validate != nil {
 		err = entry.validate(m)
@@ -517,10 +472,7 @@ func (m Model) commandMatches() []commandEntry {
 	}
 	var matches []commandEntry
 	for _, command := range m.commandEntries() {
-		entry := command.metadata()
-		if command.matchesInput(query) && !entry.matchesName(query) {
-			return nil // shell arguments are not completion queries
-		}
+		entry := command.commandEntry
 		// A recalled stage command must not complete to its opposite operation.
 		if strings.HasPrefix(query, "stage ") && strings.HasPrefix(entry.name, "unstage ") {
 			continue

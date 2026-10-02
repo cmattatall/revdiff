@@ -53,6 +53,7 @@ func (m Model) viewContent() string {
 
 	// diff pane title
 	diffTitle := "no file selected"
+	section := ""
 	if !m.filesLoaded {
 		diffTitle = "loading files..."
 	} else if m.file.name != "" {
@@ -61,14 +62,24 @@ func (m Model) viewContent() string {
 			diffTitle = m.file.oldName + " → " + m.file.name
 		}
 		if m.cfg.workingTree {
-			section := "Changes"
+			section = "Changes"
 			if m.file.staged {
 				section = "Staged"
 			}
 			diffTitle = section + ": " + diffTitle
 		}
 	}
-	diffHeader := m.resolver.Style(style.StyleKeyDirEntry).Render(m.truncateHeaderTitle(diffTitle, diffPaneW))
+	diffHeader := m.truncateHeaderTitle(diffTitle, diffPaneW)
+	if section != "" && strings.HasPrefix(diffHeader, " "+section+":") {
+		color := m.resolver.Color(style.ColorKeyModifyLineFg)
+		if m.file.staged {
+			color = m.resolver.Color(style.ColorKeyAddLineFg)
+		}
+		if color != "" {
+			diffHeader = " " + string(color) + section + string(style.ResetFg) + strings.TrimPrefix(diffHeader, " "+section)
+		}
+	}
+	diffHeader = m.resolver.Style(style.StyleKeyDirEntry).Render(diffHeader)
 	diffContent := lipgloss.JoinVertical(lipgloss.Left, diffHeader, m.layout.viewport.View())
 
 	var mainView string

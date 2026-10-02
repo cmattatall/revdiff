@@ -7,12 +7,14 @@ import (
 	"github.com/umputun/revdiff/app/ui/overlay"
 )
 
-// openFilePicker snapshots the sidebar's current visible file order. The tree
-// owns filter state, so annotated-only and unreviewed-only views carry through
-// without the overlay duplicating that logic.
+// openFilePicker snapshots visible working-tree paths, retaining tree filters.
 func (m *Model) openFilePicker() {
+	tree := m.tree
+	if split, ok := tree.(*workingTree); ok {
+		tree = split.changes
+	}
 	m.overlay.OpenFilePicker(overlay.FilePickerSpec{
-		Paths:      m.tree.VisibleFiles(),
+		Paths:      tree.VisibleFiles(),
 		ActivePath: m.file.name,
 	})
 }
@@ -23,12 +25,11 @@ func (m *Model) openFilePicker() {
 func (m Model) jumpToFile(path string) (tea.Model, tea.Cmd) {
 	m.pendingAnnotJump = nil
 	m.nav.pendingHunkJump = nil
-	// Prefer Changes in a split tree, even when Staged was previously active.
-	selected := false
-	if selector, ok := m.tree.(interface{ SelectEntry(diff.FileEntry) bool }); ok {
-		selected = selector.SelectEntry(diff.FileEntry{Path: path})
-	}
-	if !selected && !m.tree.SelectByPath(path) {
+	if split, ok := m.tree.(*workingTree); ok {
+		if !split.SelectEntry(diff.FileEntry{Path: path}) {
+			return m, nil
+		}
+	} else if !m.tree.SelectByPath(path) {
 		return m, nil
 	}
 	m.tree.EnsureVisible(m.treePageSize())

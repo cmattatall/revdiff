@@ -136,7 +136,7 @@ All color options accept hex values (`#rrggbb`) and have corresponding `REVDIFF_
 | `--color-status-fg` | Status bar foreground | `#202020` |
 | `--color-status-bg` | Status bar background | `#C5794F` |
 | `--color-search-fg` | Search match text | `#1a1a1a` |
-| `--color-search-bg` | Search match background | `#4a4a00` |
+| `--color-search-bg` | Search match background | `#ffd700` |
 
 ## Chroma Syntax Highlighting Styles
 

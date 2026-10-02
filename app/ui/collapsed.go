@@ -125,7 +125,7 @@ func (m Model) maxRenderedContentWidth() int {
 }
 
 // renderCollapsedAddLine renders an add line in collapsed mode with modify or add styling.
-// when search is active, matching lines use search highlight instead of add/modify styling.
+// Search styling overrides diff colors only within the matching text.
 func (m Model) renderCollapsedAddLine(b *strings.Builder, idx int, dl diff.DiffLine, modified bool) {
 	lineContent, textContent, hasHighlight := m.prepareLineContent(idx, dl)
 	isSearchMatch := m.search.matchSet[idx]
@@ -138,12 +138,6 @@ func (m Model) renderCollapsedAddLine(b *strings.Builder, idx int, dl diff.DiffL
 		lineHlStyle = m.resolver.Style(style.StyleKeyLineModifyHighlight)
 		gutter = " ~ "
 	}
-	if isSearchMatch {
-		sm := m.resolver.Style(style.StyleKeySearchMatch)
-		lineStyle = sm
-		lineHlStyle = sm.UnsetForeground()
-	}
-
 	isCursor := m.isCursorLine(idx)
 
 	numGutter, blGutter := m.lineGutters(dl)
@@ -155,16 +149,14 @@ func (m Model) renderCollapsedAddLine(b *strings.Builder, idx int, dl diff.DiffL
 		prefixFg = m.resolver.Color(style.ColorKeyModifyLineFg)
 	}
 	if isSearchMatch {
-		// match the non-highlighted search-match path which uses the search-match
-		// lipgloss style (fg + bg). when chroma highlighting is on, lineHlStyle
-		// drops the foreground for chroma to own content fg, so the prefix wrap
-		// must inject search-fg explicitly. bgColor must also flip to SearchBg so
-		// the wrapped continuation marker (rendered outside lipgloss via styledWrapMarker)
-		// and the right-side extendLineBg padding stay on the same bg as the lineStyle
-		// content — otherwise wrap continuation markers and the trailing pad show a
-		// visible bg seam when a row is search-matched.
-		prefixFg = m.resolver.Color(style.ColorKeySearchFg)
-		bgColor = m.resolver.Color(style.ColorKeySearchBg)
+		contentStyle := lineStyle
+		if hasHighlight {
+			contentStyle = lineHlStyle
+		}
+		textContent = m.highlightSearchMatches(textContent, contentStyle)
+		if !hasHighlight {
+			lineContent = textContent
+		}
 	}
 
 	// wrap mode: break long lines at word boundaries with continuation markers
@@ -172,8 +164,7 @@ func (m Model) renderCollapsedAddLine(b *strings.Builder, idx int, dl diff.DiffL
 		m.renderWrappedCollapsedLine(b, textContent, wrappedLineCtx{
 			gutter: gutter, numGutter: numGutter, blGutter: blGutter,
 			isCursor: isCursor, hasHighlight: hasHighlight,
-			isSearchMatch: isSearchMatch,
-			lineStyle:     lineStyle, hlStyle: lineHlStyle, bgColor: bgColor,
+			lineStyle: lineStyle, hlStyle: lineHlStyle, bgColor: bgColor,
 			prefixFg: prefixFg,
 		})
 		return
@@ -198,7 +189,6 @@ func (m Model) renderCollapsedAddLine(b *strings.Builder, idx int, dl diff.DiffL
 type wrappedLineCtx struct {
 	gutter, numGutter, blGutter string
 	isCursor, hasHighlight      bool
-	isSearchMatch               bool // true when the row is search-matched; drives no-colors marker fallback
 	lineStyle, hlStyle          lipgloss.Style
 	bgColor, prefixFg           style.Color
 }
@@ -208,6 +198,8 @@ func (m Model) renderWrappedCollapsedLine(b *strings.Builder, textContent string
 	numBlank, blBlank := m.gutterBlanks()
 	visualLines := m.wrapContent(textContent, m.wrapWidth())
 	for i, vl := range visualLines {
+		// Each visual row owns its styles so they cannot leak into the next gutter.
+		vl += "\033[m"
 		isFirst := i == 0
 		ng := numBlank
 		bg := blBlank
@@ -237,7 +229,7 @@ func (m Model) styleCollapsedWrapVisual(ctx wrappedLineCtx, vl string, isFirst b
 		}
 		return ctx.lineStyle.Render(ctx.gutter + vl)
 	}
-	marker := m.styledWrapMarker(ctx.bgColor, ctx.isSearchMatch)
+	marker := m.styledWrapMarker(ctx.bgColor, false)
 	if ctx.hasHighlight {
 		return marker + ctx.hlStyle.Render(vl)
 	}

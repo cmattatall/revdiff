@@ -172,7 +172,10 @@ across files by concern to keep files under ~500 lines:
   inputs use Bubbles `textinput`; picker filters use the same component so terminal editing
   behavior is consistent across all single-line text entry. `/` and `:search` open the search
   prompt in the shared command pane, leaving the status bar available for file/navigation info.
-  Diff focus searches and cycles locally. File navigation retains the query and recomputes local highlights.
+  Search scope follows focus: the diff pane searches its file, and the tree searches file
+  contents across its visible paths. Submission loads full context while preserving the
+  source-line cursor. File-load and search generations guard the asynchronous continuation.
+  File navigation retains the query and recomputes local highlights.
 - **`treenav.go`** — shared asynchronous tree navigation for search matches and hunks. Scans
   effective diffs in filtered tree order, wraps, and installs only the next matching file.
   Navigation/file-list/file-load generations reject stale results; tree navigation retains focus.
@@ -182,15 +185,13 @@ across files by concern to keep files under ~500 lines:
   accepts a unique completion on Enter, and closes before forwarding resolved action names
   through `dispatchAction`. Named lookups injected through `ModelConfig.Harnesses` supply
   `:harness connect <type>`. Each command owns its aliases, shared by matching, completion,
-  execution, and inline help labels. `tuiCommand` and `shellCommand` embed shared
-  `commandEntry` metadata and implement `paletteCommand` for matching and execution.
-  TUI commands declare review, file, hunk, or inferred-selection scope. Scope validation
+  execution, and inline help labels. `paletteCommand` embeds `commandEntry` metadata
+  and represents a built-in action with review, file, hunk, or inferred-selection scope. Scope validation
   runs before execution and passes the resolved scope to command handlers, including
   annotation creation. Registrations own handlers and optional validation, including
   explicit settings and quit guards. The executor records canonical names in command
   history and closes the palette before calling the registered handler or keymap action.
-  Shell commands carry a prefix, such as `git`,
-  and forward arguments unchanged through `ShellRunner`. The palette
+  The explicit `:!` escape forwards shell text through `ShellRunner`. The palette
   pauses live refresh and renders a four-row bordered command pane above the footer,
   with separate input and help/error rows, even with the status bar hidden. Search uses the
   same pane frame and height accounting while retaining its own matching and query-history state.
@@ -358,22 +359,24 @@ on selection; the highlight cache does not conceal external edits or replace liv
 
 ### app/keymap/ — keybindings
 
-~30 `Action` constants (e.g., `ActionDown`, `ActionQuit`). `Keymap` type maps key strings to
-actions. Loaded from file (`map <key> <action>` / `unmap <key>` format) or defaults.
+`Keymap` maps key strings to a typed `Target`: a built-in `Action` or palette `Command`.
+Loaded from file (`map <key> <action>`, `map <key> :<command>`, `unmap <key>`) or defaults.
 
-Handlers use `m.keymap.Resolve(msg.String())` instead of raw key strings. Modal text-entry keys
-(annotation input, search input) stay hardcoded. Overlay key dispatch uses keymap
-actions for j/k/up/down but keeps `enter` and `esc` hardcoded.
+Review handlers use `ResolveTarget` and dispatch actions or palette input. Modal handlers use
+`Resolve`, which returns only built-in actions so command bindings do not intercept text entry.
+Modal text-entry keys stay hardcoded. Overlay key dispatch uses keymap actions for j/k/up/down
+but keeps `enter` and `esc` hardcoded.
 
 Two-stage chord bindings (kitty-style, e.g. `map ctrl+w>x mark_reviewed`) are supported with a
-ctrl+/alt+ leader restriction. Storage is flat strings in `bindings` (`"ctrl+w>x" → Action`); a lazy
+ctrl+/alt+ leader restriction. Storage is flat strings in `bindings` (`"ctrl+w>x" → Target`); a lazy
 `chordPrefixCache` provides O(1) `IsChordLeader` lookups. `Load` resolves conflicts by dropping a
-standalone whose key is also a chord leader. `ResolveChord` applies the same Latin layout-resolve
-fallback as `Resolve` for the second-stage key. Chord dispatch lives in `app/ui` on `keyState`
-(`handleChordSecond`, `clearPendingInputState`) and flows through the shared `dispatchAction` path
-so chord-resolved actions share handlers with single-key actions.
+standalone whose key is also a chord leader. `ResolveChordTarget` applies the same Latin layout-resolve
+fallback as `ResolveTarget` for the second-stage key. Chord dispatch lives in `app/ui` on `keyState`
+(`handleChordSecond`, `clearPendingInputState`) and shares `dispatchTarget` with single-key bindings.
 
-Help overlay dynamically rendered from `m.keymap.HelpSections()`.
+`Reference` consumes a `CommandCatalog` supplied by the UI registry and joins commands, aliases,
+and effective bindings for both the help overlay and `--dump-keys`. The dump includes unbound
+action templates and default-key removals so reloading preserves the effective keymap.
 
 ### app/theme/ — theme system
 
@@ -462,8 +465,8 @@ Esc cancels pending queries, which otherwise time out after 30 seconds. Cancella
 that server connection, and the next query starts a fresh one.
 
 `:lsp list` checks executable PATH availability without launching servers. Language-owned
-install commands are registered as ordinary `shellCommand` entries (`:lsp install go`, etc.),
-not special cases in the command parser. Inspection never invokes installers automatically.
+install commands are registered as built-in actions (`:lsp install go`, etc.) whose handlers
+run the configured installer through `ShellRunner`. Inspection never invokes installers automatically.
 
 ### app/shell/ — interactive shell commands
 

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"log"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -11,7 +12,58 @@ import (
 	"github.com/umputun/revdiff/app/diff"
 	"github.com/umputun/revdiff/app/review"
 	"github.com/umputun/revdiff/app/ui/overlay"
+	"github.com/umputun/revdiff/app/ui/style"
 )
+
+// RepositoryHeadSource supplies checkout metadata without involving the renderer.
+type RepositoryHeadSource interface {
+	RepositoryHead() (diff.RepositoryHead, error)
+}
+
+type repositoryHeadLoadedMsg struct {
+	seq  uint64
+	head diff.RepositoryHead
+	err  error
+}
+
+func (m *Model) loadRepositoryHead() tea.Cmd {
+	if m.review.cfg == nil || m.review.cfg.HeadSource == nil {
+		return nil
+	}
+	m.review.headLoadSeq++
+	seq, source := m.review.headLoadSeq, m.review.cfg.HeadSource
+	return func() tea.Msg {
+		head, err := source.RepositoryHead()
+		return repositoryHeadLoadedMsg{seq: seq, head: head, err: err}
+	}
+}
+
+func (m Model) handleRepositoryHeadLoaded(msg repositoryHeadLoadedMsg) (tea.Model, tea.Cmd) {
+	if msg.seq != m.review.headLoadSeq {
+		return m, nil
+	}
+	m.review.head = msg.head
+	if msg.err != nil {
+		m.review.head = diff.RepositoryHead{}
+		log.Printf("[WARN] %v", msg.err)
+	}
+	return m, nil
+}
+
+func (m Model) repositoryHeadText() string {
+	head := m.review.head
+	if head.Branch == "" && head.Commit == "" {
+		return ""
+	}
+	branch := style.SanitizeFilenameForDisplay(head.Branch)
+	if branch == "" {
+		branch = "detached HEAD"
+	}
+	if head.Commit == "" {
+		return branch + " (no commits)"
+	}
+	return branch + " @ " + style.SanitizeFilenameForDisplay(head.Commit)
+}
 
 // setReviewEntries snapshots the file list and invalidates cached totals.
 // handleFilesLoaded schedules the aggregate stats after each refresh.
@@ -225,7 +277,7 @@ func (m Model) reviewHeaderText() string {
 
 // reviewFooterText returns the aggregate-stats summary for the status bar.
 // Pieces are joined with " · " in this order:
-// file count, line totals, file-status histogram, vcs name. Pieces that
+// checkout identity, file count, line totals, file-status histogram, vcs name. Pieces that
 // don't apply in the current mode (e.g. line totals while in --all-files
 // mode) are dropped silently. Empty when m.review.cfg is nil regardless of
 // file count, matching reviewHeaderText and triggerReviewStats: cfg == nil
@@ -236,7 +288,11 @@ func (m Model) reviewFooterText() string {
 	if m.review.cfg == nil {
 		return ""
 	}
-	parts := []string{m.reviewFilesText()}
+	var parts []string
+	if head := m.repositoryHeadText(); head != "" {
+		parts = append(parts, head)
+	}
+	parts = append(parts, m.reviewFilesText())
 	if !m.review.cfg.AllFiles {
 		lines := m.reviewLinesText()
 		if m.review.statsLoaded && m.review.err == nil && (m.review.adds > 0 || m.review.removes > 0) {

@@ -425,6 +425,7 @@ type commitsState struct {
 // focused tests pass nil to exercise the legacy commit-only popup without the
 // surrounding review summary.
 type ReviewInfoConfig struct {
+	HeadSource     RepositoryHeadSource
 	Description    string
 	VCS            string
 	WorkDir        string
@@ -447,6 +448,8 @@ type ReviewInfoConfig struct {
 // that could not include every file, so failed reads are not reported as zero.
 type reviewInfoState struct {
 	cfg                    *ReviewInfoConfig
+	head                   diff.RepositoryHead
+	headLoadSeq            uint64
 	entries                []diff.FileEntry
 	statusCounts           map[diff.FileStatus]int
 	adds                   int
@@ -1057,8 +1060,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleCommitsLoaded(msg)
 	case reviewStatsLoadedMsg:
 		return m.handleReviewStatsLoaded(msg)
+	case repositoryHeadLoadedMsg:
+		return m.handleRepositoryHeadLoaded(msg)
 	case fileLoadedMsg:
 		return m.handleFileLoaded(msg)
+	case focusedSearchLoadedMsg:
+		return m.handleFocusedSearchLoaded(msg)
 	case highlightedMsg:
 		return m.handleHighlighted(msg)
 	case treeScanMsg:
@@ -1170,19 +1177,33 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 
 	key := msg.String()
-	action := m.keymap.Resolve(key)
+	target := m.keymap.ResolveTarget(key)
 
 	// chord-first guard: an unresolved key that is a registered chord leader
 	// enters pending state. Load-time conflict resolution guarantees no key is
 	// bound both as a standalone action and a chord prefix, so action is empty
 	// whenever IsChordLeader returns true; the guard stays purely additive.
-	if action == "" && m.keymap.IsChordLeader(key) {
+	if target == nil && m.keymap.IsChordLeader(key) {
 		m.keys.chordPending = key
 		m.keys.hint = "Pending: " + key + ", esc to cancel"
 		return m, nil
 	}
 
-	return m.dispatchAction(action)
+	return m.dispatchTarget(target)
+}
+
+func (m Model) dispatchTarget(target keymap.Target) (tea.Model, tea.Cmd) {
+	switch target := target.(type) {
+	case keymap.Action:
+		return m.dispatchAction(target)
+	case keymap.Command:
+		m.startCommand()
+		m.command.input.SetValue(string(target))
+		m.command.input.CursorEnd()
+		return m.submitCommand()
+	default:
+		return m, nil
+	}
 }
 
 // dispatchAction routes a resolved keymap action through overlay-open, the
@@ -1344,12 +1365,12 @@ func (m Model) handleChordSecond(keyStr string) (tea.Model, tea.Cmd) {
 	if keyStr == "esc" {
 		return m, nil
 	}
-	action := m.keymap.ResolveChord(prefix, keyStr)
-	if action == "" {
+	target := m.keymap.ResolveChordTarget(prefix, keyStr)
+	if target == nil {
 		m.keys.hint = "Unknown chord: " + prefix + ">" + keyStr
 		return m, nil
 	}
-	return m.dispatchAction(action)
+	return m.dispatchTarget(target)
 }
 
 // handleReload handles the ActionReload key. In stdin mode the feature is

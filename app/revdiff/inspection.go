@@ -12,10 +12,10 @@ import (
 	"github.com/umputun/revdiff/app/ui"
 )
 
-// codeInspector adapts language-server data to the UI's read-only contract.
-type codeInspector struct{ *lsp.Client }
+// lspInspector adapts language-server data to the UI's read-only contract.
+type lspInspector struct{ *lsp.Client }
 
-func (c *codeInspector) Symbols(ctx context.Context, pos ui.InspectionPosition, line string) ([]ui.InspectionSymbol, error) {
+func (c *lspInspector) Symbols(ctx context.Context, pos ui.InspectionPosition, line string) ([]ui.InspectionSymbol, error) {
 	symbols, err := c.Client.Symbols(ctx, lsp.Position(pos), line)
 	if err != nil {
 		return nil, fmt.Errorf("inspect symbols: %w", err)
@@ -27,14 +27,26 @@ func (c *codeInspector) Symbols(ctx context.Context, pos ui.InspectionPosition, 
 	return result, nil
 }
 
-func newCodeInspector(opts options, root string) *codeInspector {
+func languageServers() []lsp.Server {
+	return []lsp.Server{golang.Server(), typescript.Server(), python.Server(), rust.Server()}
+}
+
+func languageServerInstallCommands() map[string]string {
+	commands := make(map[string]string)
+	for _, server := range languageServers() {
+		commands[server.Name] = server.InstallCommand
+	}
+	return commands
+}
+
+func newLSPInspector(opts options, root string) *lspInspector {
 	if root == "" || opts.ref() != "" || opts.Stdin || opts.CompareOld != "" || opts.CompareNew != "" {
 		return nil
 	}
-	return &codeInspector{lsp.New(root, golang.Server(), typescript.Server(), python.Server(), rust.Server())}
+	return &lspInspector{lsp.New(root, languageServers()...)}
 }
 
-func (c *codeInspector) Query(ctx context.Context, op ui.InspectionOperation, pos ui.InspectionPosition, line string) (ui.InspectionResult, error) {
+func (c *lspInspector) Query(ctx context.Context, op ui.InspectionOperation, pos ui.InspectionPosition, line string) (ui.InspectionResult, error) {
 	result, err := c.Client.Query(ctx, lsp.Operation(op), lsp.Position(pos), line)
 	if err != nil {
 		return ui.InspectionResult{}, err
@@ -49,7 +61,7 @@ func (c *codeInspector) Query(ctx context.Context, op ui.InspectionOperation, po
 	return view, nil
 }
 
-func (c *codeInspector) Servers() []ui.InspectionServer {
+func (c *lspInspector) Servers() []ui.InspectionServer {
 	var servers []ui.InspectionServer
 	for _, server := range c.Client.Servers() {
 		servers = append(servers, ui.InspectionServer(server))

@@ -49,7 +49,23 @@ func (s sgrState) scan(line string) sgrState {
 		if seq == "" { // not an SGR sequence
 			continue
 		}
-		s = s.applySGR(params, seq)
+		// Colors consume several parameters. Other attributes consume one.
+		parts := strings.Split(params, ";")
+		for p := 0; p < len(parts); {
+			n := 1
+			if (parts[p] == "38" || parts[p] == "48") && p+1 < len(parts) {
+				switch parts[p+1] {
+				case "2":
+					n = 5
+				case "5":
+					n = 3
+				}
+			}
+			end := min(p+n, len(parts))
+			param := strings.Join(parts[p:end], ";")
+			s = s.applySGR(param, "\033["+param+"m")
+			p = end
+		}
 	}
 	return s
 }
@@ -136,12 +152,12 @@ func parseSGR(s string, i int) (seq, params string, end int) {
 
 // isFgColor returns true if the SGR params represent a foreground color (24-bit or basic).
 func isFgColor(params string) bool {
-	return strings.HasPrefix(params, "38;2;") ||
+	return strings.HasPrefix(params, "38;2;") || strings.HasPrefix(params, "38;5;") ||
 		(len(params) == 2 && params[0] == '3' && params[1] >= '0' && params[1] <= '7')
 }
 
 // isBgColor returns true if the SGR params represent a background color (24-bit or basic).
 func isBgColor(params string) bool {
-	return strings.HasPrefix(params, "48;2;") ||
+	return strings.HasPrefix(params, "48;2;") || strings.HasPrefix(params, "48;5;") ||
 		(len(params) == 2 && params[0] == '4' && params[1] >= '0' && params[1] <= '7')
 }

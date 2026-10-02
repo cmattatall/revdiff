@@ -17,6 +17,66 @@ import (
 	"github.com/umputun/revdiff/app/ui/style"
 )
 
+type repositoryHeadFunc func() (diff.RepositoryHead, error)
+
+func (f repositoryHeadFunc) RepositoryHead() (diff.RepositoryHead, error) { return f() }
+
+func TestModel_RepositoryHeadRefresh(t *testing.T) {
+	m := testModel(nil, nil)
+	calls := 0
+	head := diff.RepositoryHead{Branch: "feature/footer", Commit: "a1b2c3d"}
+	m.review.cfg = &ReviewInfoConfig{VCS: "git", HeadSource: repositoryHeadFunc(func() (diff.RepositoryHead, error) {
+		calls++
+		return head, nil
+	})}
+	model, cmd := m.Update(filesLoadedMsg{}) // also load metadata for a clean repository
+	m = model.(Model)
+	require.NotNil(t, cmd)
+	require.Zero(t, calls, "loading must be asynchronous")
+	model, _ = m.Update(cmd())
+	m = model.(Model)
+	require.Equal(t, "feature/footer @ a1b2c3d", m.repositoryHeadText())
+	for range 3 {
+		require.Contains(t, m.statusBarText(), "feature/footer @ a1b2c3d")
+	}
+	require.Equal(t, 1, calls, "rendering must not query Git")
+
+	stale := m.loadRepositoryHead()()
+	head = diff.RepositoryHead{Branch: "main", Commit: "7654321"}
+	model, cmd = m.Update(shellFinishedMsg{})
+	m = model.(Model)
+	require.NotNil(t, cmd)
+	model, _ = m.Update(cmd())
+	m = model.(Model)
+	model, _ = m.Update(stale)
+	m = model.(Model)
+	require.Equal(t, "main @ 7654321", m.repositoryHeadText())
+
+	head = diff.RepositoryHead{Branch: "older-request", Commit: "1234567"}
+	stale = m.loadRepositoryHead()()
+	m.triggerReload()
+	model, _ = m.Update(stale)
+	m = model.(Model)
+	require.Equal(t, "main @ 7654321", m.repositoryHeadText(), "reload invalidates older requests")
+	model, _ = m.Update(repositoryHeadLoadedMsg{seq: m.review.headLoadSeq, err: errors.New("repository unavailable")})
+	require.Empty(t, model.(Model).repositoryHeadText(), "a failed refresh must not show stale metadata")
+}
+
+func TestModel_RepositoryHeadLabels(t *testing.T) {
+	m := testModel(nil, nil)
+	for _, tt := range []struct {
+		head diff.RepositoryHead
+		want string
+	}{
+		{diff.RepositoryHead{}, ""},
+		{diff.RepositoryHead{Commit: "a1b2c3d"}, "detached HEAD @ a1b2c3d"},
+		{diff.RepositoryHead{Branch: "main"}, "main (no commits)"},
+	} {
+		m.review.head = tt.head
+		require.Equal(t, tt.want, m.repositoryHeadText())
+	}
+}
+
 func TestModel_ReviewInfoStats(t *testing.T) {
 	entries := []diff.FileEntry{{Path: "a.go", Status: diff.FileAdded}, {Path: "b.go", Status: diff.FileModified}}
 	r := &mocks.RendererMock{

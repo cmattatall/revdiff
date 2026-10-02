@@ -28,6 +28,7 @@ type reviewInfoInputs struct {
 	workDir     string
 	vcsType     diff.VCSType
 	description string
+	headSource  ui.RepositoryHeadSource
 }
 
 // reviewInfoFromOptions builds the production *ReviewInfoConfig threaded into
@@ -47,6 +48,7 @@ func reviewInfoFromOptions(opts options, in reviewInfoInputs) *ui.ReviewInfoConf
 		stdinDisplayName = stdinName(opts.StdinName)
 	}
 	return &ui.ReviewInfoConfig{
+		HeadSource:     in.headSource,
 		Description:    in.description,
 		VCS:            vcs,
 		WorkDir:        in.workDir,

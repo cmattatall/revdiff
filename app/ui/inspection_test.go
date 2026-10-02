@@ -204,18 +204,37 @@ func TestInspectionGuards(t *testing.T) {
 	}
 }
 
-func TestLSPInstallUsesShellRegistry(t *testing.T) {
-	m := testModel(nil, nil)
-	m.inspection.installCommands = map[string]string{"example": "package-tool install language-server"}
-	runner := &shellStub{}
-	m.shell = runner
-	m.startCommand()
-	m.command.input.SetValue("lsp install ex")
-	require.Equal(t, "lsp install example", m.commandMatches()[0].name)
-	model, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	require.NotNil(t, cmd)
-	require.Equal(t, "package-tool install language-server", runner.command)
-	require.False(t, model.(Model).command.active)
+func TestLSPInstallCommand(t *testing.T) {
+	for _, state := range []string{"ready", "unavailable", "busy"} {
+		t.Run(state, func(t *testing.T) {
+			m := testModel(nil, nil)
+			m.inspection.installCommands = map[string]string{"example": "package-tool install language-server"}
+			runner := &shellStub{}
+			if state != "unavailable" {
+				m.shell = runner
+			}
+			if state == "busy" {
+				m.live.operation = liveSending
+			}
+			m.startCommand()
+			m.command.input.SetValue("lsp install ex")
+			require.Equal(t, "lsp install example", m.commandMatches()[0].name)
+			model, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+			m = model.(Model)
+			if state != "ready" {
+				require.Nil(t, cmd)
+				require.True(t, m.command.active, "keep errors visible in the palette")
+				require.NotEmpty(t, m.command.err)
+				require.Empty(t, runner.command)
+				require.Empty(t, m.command.history)
+				return
+			}
+			require.NotNil(t, cmd)
+			require.Equal(t, "package-tool install language-server", runner.command)
+			require.False(t, m.command.active)
+			require.Equal(t, []string{"lsp install example"}, m.command.history)
+		})
+	}
 }
 
 func TestLSPListAndCommandFromPopup(t *testing.T) {

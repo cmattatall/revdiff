@@ -440,6 +440,11 @@ func (m Model) handleStage(action keymap.Action) (tea.Model, tea.Cmd) {
 	case m.live.operation != liveIdle || m.liveInteractionActive():
 		m.output.hint = "Finish the current interaction before " + operation
 	default:
+		status := m.tree.FileStatus(path)
+		if action == keymap.ActionStageHunk && !unstage && (status == diff.FileUntracked || status == diff.FileAdded) {
+			// A new file's added hunk is the whole file.
+			action = keymap.ActionStageFile
+		}
 		if action == keymap.ActionStageFile {
 			if path == "" || !slices.Contains(m.tree.VisibleFiles(), path) {
 				m.output.hint = "Select a file before " + operation

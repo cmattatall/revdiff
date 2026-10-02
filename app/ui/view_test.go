@@ -18,9 +18,26 @@ import (
 	"github.com/umputun/revdiff/app/ui/style"
 )
 
+func TestModel_DiffHeadingMatchesTreeSectionColor(t *testing.T) {
+	for _, tc := range []struct{ label, color string }{
+		{"Staged", "\x1b[38;2;68;170;85m"},
+		{"Changes", "\x1b[38;2;204;187;102m"},
+	} {
+		m := splitTestModel(t)
+		m.resolver = style.NewResolver(style.Colors{Accent: "#112233", AddFg: "#44aa55", ModifyFg: "#ccbb66"})
+		m.file.staged = tc.label == "Staged"
+		row := strings.Split(m.View().Content, "\n")[1]
+		require.Contains(t, row, tc.color+tc.label)
+		require.Contains(t, ansi.Strip(row), tc.label+": partial.go")
+		m.resolver = style.PlainResolver()
+		require.NotContains(t, m.View().Content, "38;2;")
+	}
+}
+
 func TestModel_ReviewStatsBottomRight(t *testing.T) {
 	m := testModel([]string{"a.go", "b.go", "c.go"}, nil)
 	m.review.cfg = &ReviewInfoConfig{VCS: "git"}
+	m.review.head = diff.RepositoryHead{Branch: "feature/footer", Commit: "a1b2c3d"}
 	m.review.entries = []diff.FileEntry{{Path: "a.go"}, {Path: "b.go"}, {Path: "c.go"}}
 	m.review.statsLoaded = true
 	m.review.adds, m.review.removes = 17, 6
@@ -29,17 +46,20 @@ func TestModel_ReviewStatsBottomRight(t *testing.T) {
 	m.renderer = style.NewRenderer(style.NewResolver(style.Colors{AddFg: "#00ff00", RemoveFg: "#ff0000", StatusFg: "#abcdef"}))
 	require.Contains(t, m.fileStatsText(), "\033[38;2;0;255;0m+3")
 	require.Contains(t, m.fileStatsText(), "\033[38;2;255;0;0m-2")
-	const stats = "3 files · +17/-6 · A1 M2 · git"
-	for _, width := range []int{120, 60, 32, 12, 0} {
+	const stats = "feature/footer @ a1b2c3d · 3 files · +17/-6 · A1 M2 · git"
+	for _, width := range []int{160, 80, 60, 32, 12, 0} {
 		m.layout.width = width
 		rendered := m.statusBarText()
 		text := ansi.Strip(rendered)
 		require.NotContains(t, text, "\n")
 		require.LessOrEqual(t, ansi.StringWidth(text), max(width-2, 0))
-		if width >= 32 {
+		if width >= 60 {
 			require.True(t, strings.HasSuffix(text, stats), text)
 			require.Contains(t, rendered, "\033[38;2;0;255;0m+17")
 			require.Contains(t, rendered, "\033[38;2;255;0;0m-6")
+		}
+		if width == 32 {
+			require.Contains(t, text, "feature/footer @ a1b2c3d", "checkout identity takes priority on narrow terminals")
 		}
 	}
 }

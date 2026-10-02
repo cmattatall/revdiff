@@ -58,7 +58,7 @@ func (m Model) interceptVimMotion(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool
 	// priority 2: digit accumulation
 	if isDigit(keyStr) {
 		if !m.modes.vimMotion && (m.layout.focus != paneDiff ||
-			m.keymap.Resolve(msg.String()) != "" || m.keymap.IsChordLeader(msg.String())) {
+			m.keymap.ResolveTarget(msg.String()) != nil || m.keymap.IsChordLeader(msg.String())) {
 			m.consumeVimCount()
 			return m, nil, false
 		}
