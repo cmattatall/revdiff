@@ -2,6 +2,9 @@ package ui
 
 import (
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -14,10 +17,32 @@ import (
 
 	"github.com/umputun/revdiff/app/annotation"
 	"github.com/umputun/revdiff/app/diff"
+	"github.com/umputun/revdiff/app/highlight"
 	"github.com/umputun/revdiff/app/ui/mocks"
 	"github.com/umputun/revdiff/app/ui/sidepane"
 	"github.com/umputun/revdiff/app/ui/worddiff"
 )
+
+// Include real syntax highlighting: render-only benchmarks hide file-switch work.
+func BenchmarkModel_FileSwitch(b *testing.B) {
+	for _, n := range []int{500, 2000} {
+		b.Run(fmt.Sprintf("lines=%d", n), func(b *testing.B) {
+			m := benchModel(b, n)
+			m.highlighter = highlight.New("monokai", true)
+			lines := benchDiffLines(n)
+			b.ResetTimer()
+			for i := range b.N {
+				m.file.loadSeq++
+				model, cmd := m.handleFileLoaded(fileLoadedMsg{file: fmt.Sprintf("file%d.go", i%2), seq: m.file.loadSeq, lines: lines})
+				m = model.(Model)
+				if cmd != nil {
+					model, _ = m.Update(cmd()) // include completion and the fully colored render
+					m = model.(Model)
+				}
+			}
+		})
+	}
+}
 
 func TestModel_FilesLoaded(t *testing.T) {
 	m := testModel(nil, nil)
@@ -682,6 +707,28 @@ func TestModel_UntrackedRenames(t *testing.T) {
 		require.Len(t, flMsg.warnings, 1)
 		assert.Contains(t, flMsg.warnings[0], "untracked renames")
 	})
+}
+
+func TestModel_SkipsUnnecessaryRendererWork(t *testing.T) {
+	m := splitTestModel(t)
+	m.cfg.workDir = t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(m.cfg.workDir, "new.go"), []byte("first\nsecond\n"), 0o600))
+	m.diffRenderer = &mocks.RendererMock{} // any FileDiff call is a test failure
+	lines, err := m.fetchEffectiveFileDiff(diff.FileEntry{Path: "new.go", Status: diff.FileUntracked}, 0, true)
+	require.NoError(t, err)
+	require.Equal(t, []diff.DiffLine{
+		{NewNum: 1, Content: "first", ChangeType: diff.ChangeAdd},
+		{NewNum: 2, Content: "second", ChangeType: diff.ChangeAdd},
+	}, lines)
+
+	m.tree.(*workingTree).SelectEntry(diff.FileEntry{Path: "partial.go"})
+	model, cmd := m.loadSelectedIfChanged()
+	require.NotNil(t, cmd)
+	m = model.(Model)
+	seq := m.file.loadSeq
+	model, cmd = m.loadSelectedIfChanged()
+	require.Nil(t, cmd, "do not launch the same pending diff twice")
+	require.Equal(t, seq, model.(Model).file.loadSeq)
 }
 
 func TestModel_detectUntrackedRenames(t *testing.T) {

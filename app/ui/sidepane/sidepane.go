@@ -53,11 +53,12 @@ type Renderer interface {
 
 // FileTreeRender holds parameters for FileTree.Render.
 type FileTreeRender struct {
-	Width     int
-	Height    int
-	Annotated map[string]bool
-	Resolver  Resolver
-	Renderer  Renderer
+	Width         int
+	Height        int
+	HideSelection bool // another working-tree section owns the selection
+	Annotated     map[string]bool
+	Resolver      Resolver
+	Renderer      Renderer
 }
 
 // ScrollState reports the visible window state for a sidepane component.

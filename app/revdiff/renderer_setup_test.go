@@ -350,12 +350,6 @@ func TestSourceEditorPolicy_ModeBehavior(t *testing.T) {
 			},
 		},
 		{
-			name: "staged opens without reload",
-			opts: options{},
-			root: workDir,
-			want: ui.SourceEditorPolicy{Available: true, Root: workDir},
-		},
-		{
 			name: "ref opens without reload",
 			opts: refOpts,
 			root: workDir,

@@ -1098,6 +1098,20 @@ func TestParseArgsAmp(t *testing.T) {
 	}
 }
 
+func TestOptionsWorkingTree(t *testing.T) {
+	for _, opts := range []options{{}, {Only: []string{"a.go"}}, {Output: "review.md"}} {
+		require.True(t, opts.workingTree())
+	}
+	for _, opts := range []options{{AllFiles: true}, {Stdin: true}, {CompareOld: "a"}, {CompareNew: "b"}} {
+		require.False(t, opts.workingTree())
+	}
+	var opts options
+	opts.Refs.Base = "HEAD"
+	require.False(t, opts.workingTree())
+	opts.Refs.Base, opts.Refs.Against = "", "main"
+	require.False(t, opts.workingTree())
+}
+
 func TestOptionsAmpApplicable(t *testing.T) {
 	require.True(t, (options{}).ampApplicable())
 	require.True(t, (options{Only: []string{"README.md"}}).ampApplicable())

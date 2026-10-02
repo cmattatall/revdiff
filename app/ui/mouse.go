@@ -159,6 +159,15 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	m.editorState.hint = ""
 
 	zone := m.hitTest(msg.X, msg.Y)
+	if wt, ok := m.tree.(*workingTree); ok && zone == hitTree && msg.Action == tea.MouseActionPress &&
+		(msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown) {
+		top, _ := wt.bodyHeights(m.paneHeight())
+		row := msg.Y - m.treeTopRow()
+		if row == top+1 {
+			return m, nil // blank separator
+		}
+		wt.activeStaged = row <= top
+	}
 
 	switch msg.Button {
 	case tea.MouseButtonWheelUp:
@@ -289,7 +298,11 @@ func (m Model) handleWheel(zone hitZone, delta int) (tea.Model, tea.Cmd) {
 			m.syncDiffToTOCCursor()
 			return m, nil
 		}
-		m.tree.Move(motion)
+		if wt, ok := m.tree.(*workingTree); ok {
+			wt.active().Move(motion) // wheel navigation stays in the half under the pointer
+		} else {
+			m.tree.Move(motion)
+		}
 		m.pendingAnnotJump = nil
 		m.nav.pendingHunkJump = nil
 		return m.loadSelectedIfChanged()

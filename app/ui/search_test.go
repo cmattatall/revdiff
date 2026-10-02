@@ -956,7 +956,7 @@ func TestModel_SearchUsesCommandPane(t *testing.T) {
 			require.NotContains(t, m.statusBarText(), "/needle")
 			if !noStatus {
 				require.Contains(t, view, "Harness (amp): Review search T-review")
-				require.Contains(t, view, "Repository: /work/review")
+				require.NotContains(t, view, "Repository:")
 				require.Contains(t, m.statusBarText(), "a.go")
 			}
 			model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})

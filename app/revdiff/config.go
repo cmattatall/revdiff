@@ -109,8 +109,12 @@ func (o options) ref() string {
 
 // ampApplicable allows feedback from Git working-tree reviews.
 func (o options) ampApplicable() bool {
-	return o.ref() == "" && !o.AllFiles && !o.Stdin &&
-		o.CompareOld == "" && o.CompareNew == "" && o.Output == "" && o.PostFlushCommand == ""
+	return o.workingTree() && o.Output == "" && o.PostFlushCommand == ""
+}
+
+// workingTree excludes historical comparisons and full-file readers.
+func (o options) workingTree() bool {
+	return o.ref() == "" && !o.AllFiles && !o.Stdin && o.CompareOld == "" && o.CompareNew == ""
 }
 
 // parseArgs parses CLI arguments with config file support.

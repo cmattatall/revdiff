@@ -40,6 +40,9 @@ func (m Model) commandEntries() []commandEntry {
 		{"set nowrap", "disable word wrap", keymap.ActionToggleWrap},
 	}
 	for _, entry := range m.keymap.Actions() {
+		if m.cfg.workingTree && entry.Action == keymap.ActionToggleUntracked {
+			continue
+		}
 		entries = append(entries, commandEntry{string(entry.Action), entry.Description, entry.Action})
 	}
 	for name := range m.live.harnesses {

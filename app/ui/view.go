@@ -50,6 +50,13 @@ func (m Model) View() string {
 		if m.file.oldName != "" && m.file.oldName != m.file.name {
 			diffTitle = m.file.oldName + " → " + m.file.name
 		}
+		if m.cfg.workingTree {
+			section := "Changes"
+			if m.file.staged {
+				section = "Staged"
+			}
+			diffTitle = section + ": " + diffTitle
+		}
 	}
 	diffHeader := m.resolver.Style(style.StyleKeyDirEntry).Render(m.truncateHeaderTitle(diffTitle, diffPaneW))
 	diffContent := lipgloss.JoinVertical(lipgloss.Left, diffHeader, m.layout.viewport.View())

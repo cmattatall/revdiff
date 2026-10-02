@@ -117,6 +117,7 @@ func (m *Model) applyTheme(spec ThemeSpec) {
 	m.invalidateRenderCaches()
 	if m.file.name != "" && len(m.file.lines) > 0 {
 		if chromaChanged {
+			m.highlightWork.seq.Add(1)
 			m.file.highlighted = m.highlighter.HighlightLines(m.file.name, m.file.lines)
 		}
 		m.layout.viewport.SetContent(m.renderDiff())
@@ -129,6 +130,7 @@ func (m *Model) applyTheme(spec ThemeSpec) {
 // built from the previous highlighting.
 func (m *Model) refreshDiff() {
 	if m.file.name != "" && len(m.file.lines) > 0 {
+		m.highlightWork.seq.Add(1)
 		m.file.highlighted = m.highlighter.HighlightLines(m.file.name, m.file.lines)
 		m.invalidateRenderCaches()
 		m.layout.viewport.SetContent(m.renderDiff())

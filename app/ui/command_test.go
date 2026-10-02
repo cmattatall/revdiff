@@ -209,17 +209,17 @@ func TestModel_CommandPaneKeepsSessionFooter(t *testing.T) {
 	require.Equal(t, 30, lipgloss.Height(view))
 	require.Equal(t, originalHeight-4, m.layout.viewport.Height)
 	rows := strings.Split(view, "\n")
-	require.Contains(t, rows[24], ":999")
-	require.Contains(t, rows[25], "Line 999 is not shown")
-	require.Contains(t, rows[27], "Harness (amp): Review commands T-review")
-	require.Contains(t, rows[28], "Repository: /work/review")
+	require.Contains(t, rows[25], ":999")
+	require.Contains(t, rows[26], "Line 999 is not shown")
+	require.Contains(t, rows[28], "Harness (amp): Review commands T-review")
+	require.NotContains(t, view, "Repository:")
 	require.NotContains(t, rows[29], "Harness")
 	require.NotContains(t, view, "connected")
 	require.NotContains(t, rows[29], ":999")
-	for y := 23; y < 30; y++ {
+	for y := 24; y < 30; y++ {
 		require.Equal(t, hitStatus, m.hitTest(5, y), "footer must not map into the diff")
 	}
-	require.Equal(t, hitNone, m.hitTest(5, 22))
+	require.Equal(t, hitNone, m.hitTest(5, 23))
 	require.Equal(t, hitDiff, m.hitTest(5, 21))
 	m.closeCommand()
 	require.Equal(t, originalHeight, m.layout.viewport.Height)

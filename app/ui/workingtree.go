@@ -83,6 +83,7 @@ func (w *workingTree) ReviewedFingerprints() map[string]string {
 	}
 	return result
 }
+
 // NUL cannot appear in a filesystem path, so the index namespace cannot collide.
 func reviewKey(path string, staged bool) string {
 	if staged {
@@ -222,6 +223,7 @@ func (w *workingTree) ReconcileReviewed(a, b map[string]string) {
 	w.changes.ReconcileReviewed(a, b)
 }
 func (w *workingTree) ReconcileReviewedPath(p, f string) { w.active().ReconcileReviewedPath(p, f) }
+
 // Each half scrolls independently; a full-height scrollbar would be misleading.
 func (w *workingTree) ScrollState() sidepane.ScrollState { return sidepane.ScrollState{} }
 func (w *workingTree) Render(r sidepane.FileTreeRender) string {
@@ -229,8 +231,8 @@ func (w *workingTree) Render(r sidepane.FileTreeRender) string {
 	top, bottom := w.bodyHeights(r.Height)
 	var rows []string
 	for _, section := range []struct {
-		name string
-		tree FileTreeComponent
+		name   string
+		tree   FileTreeComponent
 		height int
 		active bool
 	}{{"Staged", w.staged, top, w.activeStaged}, {"Changes", w.changes, bottom, !w.activeStaged}} {
@@ -241,12 +243,21 @@ func (w *workingTree) Render(r sidepane.FileTreeRender) string {
 		if section.active {
 			label = ">" + label[1:]
 		}
-		rows = append(rows, r.Resolver.Style(style.StyleKeyDirEntry).Render(ansi.Truncate(label, r.Width, "")))
+		color := r.Resolver.Color(style.ColorKeyModifyLineFg)
+		if section.tree == w.staged {
+			color = r.Resolver.Color(style.ColorKeyAddLineFg)
+		}
+		label = ansi.Truncate(label, r.Width, "")
+		if color != "" {
+			label = string(color) + label + string(style.ResetFg)
+		}
+		rows = append(rows, lipgloss.NewStyle().Bold(true).Render(label))
 		if section.height == 0 {
 			continue
 		}
 		sr := r
 		sr.Height = section.height
+		sr.HideSelection = !section.active
 		body := strings.Split(section.tree.Render(sr), "\n")
 		for i := range section.height {
 			line := ""

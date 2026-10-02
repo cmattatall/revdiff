@@ -20,7 +20,7 @@ Built for a specific use case: reviewing code changes, plans, and documents with
 - Jujutsu support: auto-detects jj repos (including colocated git+jj), translates git-style refs to jj revsets (`HEAD` → `@-`, `HEAD~N` → `@` plus N+1 dashes); `--all-files` supported
 - Blame gutter: shows author name and commit age per line, toggle with `B`
 - Annotate any line in the diff (added, removed, or context) plus file-level notes
-- Single-file auto-detection: when a diff contains exactly one file, hides the tree pane and gives full terminal width to the diff view
+- Single-file auto-detection: outside Git working-tree reviews, a one-file diff hides the tree pane and gives full terminal width to the diff view
 - Two-pane TUI: file tree (left) + colorized diff viewport (right)
 - Vim-style `/` search within diff with `n`/`N` match navigation
 - Hunk navigation to jump between change groups
@@ -90,12 +90,12 @@ Run `./plugins/amp/install.sh` from this fork's repository root (requires Go). I
 1. Open an Amp thread in your Git checkout. The plugin registers the session automatically, without posting a setup message. After reloading the plugin in an existing thread, registration happens when you next send a prompt or choose **revdiff: connect**.
 2. Run `revdiff` in another terminal pane in the **same directory**. It automatically connects when exactly one live Amp session matches. The default working-tree view includes staged, unstaged, and untracked files. Type `:harness connect amp` to retry discovery manually without sending annotations. If multiple sessions match, disconnect the extras or use **Ctrl+O → revdiff: connect** in the intended Amp thread to get an explicit `--amp` command.
 3. Annotate with `Enter` or `a` (line) and `A` (file). Press `O` (Shift+O) or run `:harness send` to send feedback to that Amp thread without leaving revdiff. Amp receives it as a steering message, including while working.
-4. Press `s` on an added/removed line to stage that contiguous change. Hunk staging supports modified, tracked regular text files in an unstaged Git working-tree review; new/deleted files, renames, binary files, mode changes, refs, and staged views are not supported. Hunk staging changes the index, never the working file, and rejects stale displayed changes.
-5. Press `S` (Shift+S) to stage the entire selected file from the tree or diff pane (`stage_file`, rebindable). This stages the current working-tree version, including edits since the last render, like `git add`. It also supports new/deleted files, renames, binaries, symlinks, and mode changes; directories and submodules are excluded. Both staging shortcuts require an unstaged Git working-tree review and no pending annotations. Neither changes the working file.
+4. Press `s` on an added/removed line to stage that contiguous change. Hunk staging supports modified, tracked regular text files selected from the **Changes** region; new/deleted files, renames, binary files, mode changes, and ref comparisons are not supported. Hunk staging changes the index, never the working file, and rejects stale displayed changes.
+5. Press `S` (Shift+S) to stage the entire selected file from the tree or diff pane (`stage_file`, rebindable). This stages the current working-tree version, including edits since the last render, like `git add`. It also supports new/deleted files, renames, binaries, symlinks, and mode changes; directories and submodules are excluded. Both staging shortcuts require a selection from **Changes** and no pending annotations. Neither changes the working file.
 
 The bottom panel shows **Harness: waiting** until a session is found, then **Harness (amp): &lt;title&gt; &lt;thread ID&gt;**. The identity itself indicates the connection; there is no separate "connected" label. Each harness supplies its own name and display text. Revdiff checks once per second while waiting, even if you are writing annotations; `O` also retries discovery. Connecting never sends comments automatically. **sending** and **unconfirmed** appear beside the identity during an active send or after an unacknowledged delivery; **Harness: unavailable** indicates a discovery error. This row remains visible during input and status messages, unless the status bar is disabled.
 
-The panel also shows the **repository root** above the status/input row. Titles are captured when the plugin registers a connection; untitled threads show the ID alone. Narrow terminals shorten the title before the ID and preserve the end of long repository paths. The root remains visible without an Amp connection. `--no-status-bar` hides the panel too.
+Titles are captured when the plugin registers a connection; untitled threads show the ID alone. Narrow terminals shorten the title before the ID. `--no-status-bar` hides the panel too.
 
 The file list and selected diff refresh about once per second. Refresh pauses during annotation input, while unsent comments exist, and during modal interactions. Successful sends clear only the delivered, unchanged comments; failed sends retain the snapshot, and `O` retries it without duplicating an acknowledged request in the same plugin process. Comments added or edited during delivery stay for the next send. Quit does not send; remaining comments follow the normal output/history behavior. Use **revdiff: disconnect** to close the connection.
 
@@ -159,7 +159,6 @@ Priority: agterm → tmux → Zellij → herdr → kitty → wezterm/Kaku → cm
 /revdiff                  -- smart detection: uncommitted, last commit, or branch diff
 /revdiff HEAD~1 HEAD      -- review last commit
 /revdiff main             -- review current branch against main
-/revdiff                  -- review staged, unstaged, and untracked changes
 /revdiff HEAD~3 HEAD      -- review last 3 commits
 ```
 
@@ -170,7 +169,7 @@ Priority: agterm → tmux → Zellij → herdr → kitty → wezterm/Kaku → cm
 "review diff HEAD~1 HEAD"         -- last commit
 "review diff against main"        -- branch diff
 "review changes from last 2 days" -- Claude resolves the ref automatically
-"revdiff for staged changes"      -- staged only
+"revdiff for staged changes"      -- select the Staged region in the working-tree review
 ```
 
 When no ref is provided, the plugin auto-detects the VCS (git, hg, or jj) and inspects the current repo state to pick what to review:
@@ -249,7 +248,6 @@ Useful args:
 /revdiff                         -- detect uncommitted, staged, or branch changes, then open revdiff
 /revdiff HEAD~1 HEAD             -- review last commit
 /revdiff main                    -- review against main
-/revdiff                          -- review staged, unstaged, and untracked changes
 /revdiff --all-files             -- browse all tracked files
 /revdiff --all-files --exclude vendor
 /revdiff --only README.md        -- review a single file in context-only mode
@@ -748,6 +746,8 @@ In the Claude Code and Codex plugins, you can also tell the agent to use a past 
 
 ### Key Bindings
 
+In Git working-tree reviews, the sidebar has two fixed-height regions separated by a blank row: **Staged** above **Changes** (unstaged and untracked files). A partially staged file appears in both; selecting it shows that region's diff. Use `j`/`k` to move between the regions or click a file. Each region scrolls independently. Stage from Changes with `s` (hunk) or `S` (file). Historical comparisons and non-Git views keep a single tree.
+
 **Navigation:**
 
 | Key | Action |
@@ -783,7 +783,9 @@ Vim-style commands are available too: `:set number` / `:set nonumber` show/hide 
 
 Harness commands support completion too: `:harness connect amp` looks for an Amp session in the current directory without sending annotations; `:harness send` uses the same send/flush action as `O` and `:w`. An existing connection stays bound to its original session, including after an unconfirmed send.
 
-Thread, repository, and status information remain visible while you type. `Esc` cancels; running a command closes the palette and restores the diff's height. The command pane also works with `--no-status-bar` and, for commands such as `help` and `quit`, without a selected file.
+Thread and status information remain visible while you type. `Esc` cancels; running a command closes the palette and restores the diff's height. The command pane also works with `--no-status-bar` and, for commands such as `help` and `quit`, without a selected file.
+
+Help (`?` or `:help`) shows the exact palette command beside each keymap action. The **Command palette** section also lists aliases, harness connections, and actions without a bound key.
 
 Single-line annotation, search, command, file-picker, and theme-picker inputs use revdiff's built-in Bubbles text-input bindings, not your shell's keymap: arrows and `Ctrl+B`/`Ctrl+F` move by character, `Ctrl+A`/`Ctrl+E` move to the start/end, `Backspace`/`Ctrl+H` delete backward, `Ctrl+W` (or `Alt+Backspace`) deletes the previous word, and `Ctrl+U`/`Ctrl+K` delete from the cursor to the start/end. Existing `Enter`, `Esc`, search-history, and list-navigation behavior is unchanged. The terminal sends key sequences; revdiff cannot inherit zsh/readline bindings or Command-key shortcuts. Configure Option/Alt to send Meta for Alt bindings.
 

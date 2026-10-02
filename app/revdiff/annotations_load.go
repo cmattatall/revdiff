@@ -36,7 +36,8 @@ type preloader struct {
 
 	// renames maps a file's current path to its rename origin so the
 	// per-file diff is rename-aware (matches the displayed minimal diff).
-	renames map[string]string
+	renames      map[string]string
+	indexEntries map[string]diff.FileEntry // independently validate annotations against either working-tree side
 }
 
 type lineKey struct {
@@ -49,8 +50,7 @@ type lineKey struct {
 // orphans against the resolved diff. file-level records (Line == 0) require
 // only that the file be present in ChangedFiles. Line-scoped records require
 // both the file and a matching DiffLine (same line number for the record's
-// change type) to be present. Untracked files (surfaced in the UI via the
-// show-untracked toggle) are folded in via untrackedFn so annotations saved
+// change type) to be present. Untracked files are folded in via untrackedFn so annotations saved
 // against them round-trip; their line-set is read from disk as all-added
 // lines, mirroring ui.resolveEmptyDiff. Dropped records are warned to warnOut.
 func preloadAnnotations(path string, store *annotation.Store, renderer ui.Renderer, ref string, staged bool,
@@ -73,6 +73,7 @@ func preloadAnnotations(path string, store *annotation.Store, renderer ui.Render
 		warnOut:            warnOut,
 		lineCache:          make(map[string]map[lineKey]struct{}),
 		renames:            make(map[string]string),
+		indexEntries:       make(map[string]diff.FileEntry),
 	}
 	return p.load(records)
 }
@@ -140,15 +141,8 @@ func (p *preloader) load(records []annotation.Annotation) error {
 }
 
 // resolveKnownFiles returns the set of paths the preload should accept.
-// Mirrors ui.loadFiles' assembly of the visible file set with one deliberate
-// divergence: untracked files are always folded in here, whereas the UI only
-// surfaces them when its show-untracked toggle is on. The preload is
-// upstream of the toggle, so it has to accept either viewing mode for the
-// round-trip to be lossless.
-//
-// When running with no ref, staged-only FileAdded entries
-// are folded in if the unstaged set is empty (matches the UI's empty-diff
-// fallback). Files renamed since the annotations file was generated are
+// Working-tree reviews accept files and line identities from both the index
+// and Changes regions. Files renamed since the annotations file was generated are
 // keyed under their old path and will orphan-drop here — a known limitation
 // of the path-based format.
 func (p *preloader) resolveKnownFiles() (map[string]diff.FileStatus, error) {
@@ -175,7 +169,7 @@ func (p *preloader) resolveKnownFiles() (map[string]diff.FileStatus, error) {
 			p.foldUntrackedRenames(ut, known)
 		}
 	}
-	if p.ref != "" || p.staged || len(files) > 0 {
+	if p.ref != "" || p.staged {
 		return known, nil
 	}
 	stagedFiles, sErr := p.renderer.ChangedFiles("", true)
@@ -184,10 +178,8 @@ func (p *preloader) resolveKnownFiles() (map[string]diff.FileStatus, error) {
 		return known, nil
 	}
 	for _, fe := range stagedFiles {
-		if _, ok := known[fe.Path]; ok {
-			continue
-		}
-		if fe.Status == diff.FileAdded {
+		p.indexEntries[fe.Path] = fe
+		if _, ok := known[fe.Path]; !ok {
 			known[fe.Path] = fe.Status
 		}
 	}
@@ -249,6 +241,16 @@ func (p *preloader) lookupLineSet(file string, status diff.FileStatus) map[lineK
 		lines = map[lineKey]struct{}{}
 	} else {
 		lines = buildLineSet(dl)
+	}
+	if entry, ok := p.indexEntries[file]; ok {
+		indexLines, indexErr := p.renderer.FileDiff(diff.FileDiffRequest{Path: file, OldPath: entry.OldPath, Staged: true})
+		if indexErr != nil {
+			p.warnf("warning: --annotations: index diff for %q: %v\n", file, indexErr)
+		} else {
+			for key := range buildLineSet(indexLines) {
+				lines[key] = struct{}{}
+			}
+		}
 	}
 	p.lineCache[file] = lines
 	return lines

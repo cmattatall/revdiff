@@ -108,12 +108,13 @@ func ComputeStats(req StatsRequest) Stats {
 			stats.Removes += removes
 			continue
 		}
-		lines, err := req.Differ.FileDiff(diff.FileDiffRequest{Ref: req.Ref, Path: e.Path, OldPath: e.OldPath, Staged: req.Staged})
+		staged := req.Staged || e.Staged
+		lines, err := req.Differ.FileDiff(diff.FileDiffRequest{Ref: req.Ref, Path: e.Path, OldPath: e.OldPath, Staged: staged})
 		if err != nil {
 			stats.Err = err
 			return stats
 		}
-		if len(lines) == 0 && !req.Staged && e.Status == diff.FileAdded {
+		if len(lines) == 0 && !staged && e.Status == diff.FileAdded {
 			cached, cachedErr := req.Differ.FileDiff(diff.FileDiffRequest{Ref: req.Ref, Path: e.Path, OldPath: e.OldPath, Staged: true})
 			switch {
 			case cachedErr != nil:

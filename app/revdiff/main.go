@@ -247,7 +247,7 @@ func run(opts options) (int, error) {
 		}
 	}
 	var stager ui.Stager
-	workingTree := vcsType == diff.VCSGit && opts.ref() == "" && !opts.AllFiles && !opts.Stdin && opts.compareAbsOld == ""
+	workingTree := vcsType == diff.VCSGit && opts.workingTree()
 	if workingTree {
 		stager = diff.NewGit(gitRoot)
 	}
@@ -289,7 +289,7 @@ func run(opts options) (int, error) {
 		StartAtChange:        opts.StartAtChange,
 		LineNumbers:          opts.LineNumbers,
 		ShowBlame:            opts.Blame,
-		ShowUntracked:        opts.ref() == "" && !opts.AllFiles && !opts.Stdin && opts.compareAbsOld == "",
+		ShowUntracked:        opts.workingTree(),
 		WordDiff:             opts.WordDiff,
 		FilterUnreviewed:     opts.FilterUnreviewed,
 		VimMotion:            opts.VimMotion,
@@ -448,7 +448,7 @@ func sourceEditorPolicy(opts options, workDir string) ui.SourceEditorPolicy {
 			ExactPath: opts.compareAbsNew,
 		}
 	case workDir != "":
-		worktreeReview := opts.ref() == "" && !opts.AllFiles
+		worktreeReview := opts.ref() == ""
 		return ui.SourceEditorPolicy{
 			Available: true,
 			Root:      workDir,

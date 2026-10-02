@@ -134,6 +134,18 @@ func TestHelpOverlay_CustomKeybinding(t *testing.T) {
 	assert.Contains(t, result, "quit")
 }
 
+func TestHelpOverlay_CommandAndDescriptionOnNarrowTerminal(t *testing.T) {
+	mgr := NewManager()
+	mgr.OpenHelp(HelpSpec{Sections: []HelpSection{{Title: "Annotations", Entries: []HelpEntry{
+		{Keys: "O", Command: ":flush_output", Description: "send annotations to harness / output / hook"},
+	}}}})
+	box := mgr.help.render(RenderCtx{Width: 60, Height: 20, Resolver: style.PlainResolver()}, mgr)
+	require.Contains(t, box, ":flush_output")
+	require.Contains(t, box, "send annotations to harness / output / hook")
+	require.NotContains(t, box, helpTruncTail, "description wraps instead of hiding the command")
+	require.LessOrEqual(t, lipgloss.Width(box), 60)
+}
+
 func TestHelpOverlay_EmptySpec(t *testing.T) {
 	mgr := NewManager()
 	mgr.OpenHelp(HelpSpec{})

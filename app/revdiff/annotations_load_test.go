@@ -68,6 +68,26 @@ func TestPreloadAnnotations_ChangedFilesError(t *testing.T) {
 	assert.Contains(t, err.Error(), "resolve diff")
 }
 
+func TestPreloadAnnotations_PartiallyStagedFile(t *testing.T) {
+	path := writeTempAnnotations(t, "## partial.go:2 (+)\nindex note\n\n## partial.go:7 (-)\nchanges note\n")
+	store := annotation.NewStore()
+	r := &mocks.RendererMock{
+		ChangedFilesFunc: func(string, bool) ([]diff.FileEntry, error) {
+			return []diff.FileEntry{{Path: "partial.go", Status: diff.FileModified}}, nil
+		},
+		FileDiffFunc: func(req diff.FileDiffRequest) ([]diff.DiffLine, error) {
+			if req.Staged {
+				return []diff.DiffLine{{NewNum: 2, ChangeType: diff.ChangeAdd}}, nil
+			}
+			return []diff.DiffLine{{OldNum: 7, ChangeType: diff.ChangeRemove}}, nil
+		},
+	}
+	warnings := &bytes.Buffer{}
+	require.NoError(t, preloadAnnotations(path, store, r, "", false, nil, nil, "", warnings))
+	require.Empty(t, warnings.String())
+	require.Equal(t, 2, store.Count(), "annotations on both independent diffs survive restoration")
+}
+
 func TestPreloadAnnotations_DropsOrphans(t *testing.T) {
 	body := "## a.go (file-level)\nfile-level note\n\n" +
 		"## a.go:5 (+)\nline-add note\n\n" +

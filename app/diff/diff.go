@@ -467,6 +467,17 @@ func (g *Git) UntrackedRenames(untracked []string) ([]FileEntry, error) {
 	if len(untracked) == 0 {
 		return nil, nil
 	}
+	// Most polls have new files but no rename origins. A metadata-only probe
+	// avoids copying the index and running git add/diff in that common case.
+	// Check the whole repository here, not the UI's filtered list: an excluded
+	// old path can still be the origin of an included new path.
+	deleted, err := g.runGit("ls-files", "--deleted", "-z")
+	if err != nil {
+		return nil, fmt.Errorf("find untracked rename origins: %w", err)
+	}
+	if deleted == "" {
+		return nil, nil
+	}
 	indexPath, cleanup, err := g.tempIndexWithIntentToAdd(untracked)
 	if err != nil {
 		// no index (fresh repo with no commits) means nothing is tracked, so no

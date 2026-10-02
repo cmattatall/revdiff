@@ -592,6 +592,9 @@ func TestGit_UntrackedRenames_NotARename(t *testing.T) {
 
 	// genuinely new untracked file, no deletion to pair with
 	writeFile(t, dir, "fresh.txt", "brand new\n")
+	// No rename is possible: do not create a throwaway index just because an
+	// untracked file exists. A missing temp directory makes that work fail.
+	t.Setenv("TMPDIR", filepath.Join(dir, "no-such-tmpdir"))
 
 	renames, err := g.UntrackedRenames([]string{"fresh.txt"})
 	require.NoError(t, err)

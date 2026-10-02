@@ -602,6 +602,8 @@ type Model struct {
 	vim         vimState          // count accumulator, pending letter leader, and transient hint for vim-motion preset
 	wheel       wheelState        // diff-pane mouse wheel coalescing (debounced render via wheelDebounceMsg)
 
+	highlightWork *highlightWork // serialized, latest-only background highlighting
+
 	ready        bool   // true after first WindowSizeMsg
 	filesLoaded  bool   // true after the first filesLoadedMsg is handled (keeps the loading view pinned until real data arrives)
 	filesLoadSeq uint64 // bumped before each new file-list load; stale filesLoadedMsg (seq mismatch) is dropped
@@ -964,6 +966,7 @@ func NewModel(cfg ModelConfig) (Model, error) {
 		compact:              compactState{applicable: cfg.CompactApplicable},
 		annot:                annotationState{rowCache: make(map[annotCacheKey][]string)},
 		renderCache:          &diffRenderCache{},
+		highlightWork:        &highlightWork{},
 		loadUntracked:        cfg.LoadUntracked,
 		loadUntrackedRenames: cfg.LoadUntrackedRenames,
 		activeThemeName:      cfg.ActiveThemeName,
@@ -1009,6 +1012,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		cmd := m.triggerReload()
 		m.live.stageAnchor = m.captureStageAnchor()
+		if tree, ok := m.tree.(*workingTree); ok && msg.action == keymap.ActionStageFile && m.layout.focus == paneDiff {
+			// Select the successor before rebuilding, while the staged file still
+			// has its place in Changes. Rebuild preserves this selection by path.
+			tree.changes.SelectByPath(m.file.name)
+			tree.changes.StepFile(sidepane.DirectionNext)
+			tree.activeStaged = false
+			m.live.stageAnchor = nil
+			if m.layout.treeHidden {
+				m.toggleTreePane()
+			}
+			m.layout.focus = paneTree
+		}
 		return m, cmd
 	case tea.KeyMsg:
 		if m.live.operation == liveStaging {
@@ -1030,6 +1045,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleReviewStatsLoaded(msg)
 	case fileLoadedMsg:
 		return m.handleFileLoaded(msg)
+	case highlightedMsg:
+		return m.handleHighlighted(msg)
 	case treeScanMsg:
 		return m.handleTreeScan(msg)
 	case reviewFingerprintLoadedMsg:

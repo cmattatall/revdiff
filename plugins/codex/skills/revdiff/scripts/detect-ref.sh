@@ -6,8 +6,7 @@
 #
 # auto-detects the VCS (jj → git → hg precedence, matching app/diff/vcs.go),
 # populates the same set of fields regardless of which VCS backs the repo, and
-# applies a shared decision block. the git code path's runtime output is
-# byte-identical to the pre-refactor script on any git repo state.
+# applies a shared decision block. Git working changes use the default split view.
 #
 # output fields:
 #   branch: current branch name

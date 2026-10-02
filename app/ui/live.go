@@ -209,7 +209,7 @@ func (m Model) handleLiveLoaded(msg liveLoadedMsg) (tea.Model, tea.Cmd) {
 	}
 	model, load := m.handleFilesLoaded(msg.files)
 	m = model.(Model)
-	if m.tree.SelectedFile() != oldName || oldName == "" {
+	if m.tree.SelectedFile() != oldName || oldName == "" || (m.cfg.workingTree && m.selectedTreeStaged() != msg.file.staged) {
 		return m, tea.Batch(load, tick)
 	}
 	// The snapshot already contains this file. Apply it atomically rather than
@@ -283,7 +283,7 @@ func (m Model) handleStage(action keymap.Action) (tea.Model, tea.Cmd) {
 		m.output.hint = "Staging requires an unstaged Git working-tree review"
 		return m, nil
 	}
-	if m.cfg.workingTree && m.selectedTreeStaged() {
+	if m.cfg.workingTree && ((m.layout.focus == paneTree && m.selectedTreeStaged()) || (m.layout.focus == paneDiff && m.file.staged)) {
 		m.output.hint = "Staging is available from Changes"
 		return m, nil
 	}

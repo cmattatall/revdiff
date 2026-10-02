@@ -39,6 +39,7 @@ type treeEntry struct {
 // reducing the parameter count of renderFileEntry.
 type renderCtx struct {
 	annotatedFiles map[string]bool
+	hideSelection  bool
 	res            Resolver
 	rnd            Renderer
 }
@@ -436,7 +437,7 @@ func (ft *FileTree) Render(r FileTreeRender) string {
 	ft.EnsureVisible(r.Height)
 	end := min(ft.offset+r.Height, len(ft.entries))
 
-	rc := renderCtx{annotatedFiles: r.Annotated, res: r.Resolver, rnd: r.Renderer}
+	rc := renderCtx{annotatedFiles: r.Annotated, hideSelection: r.HideSelection, res: r.Resolver, rnd: r.Renderer}
 	var b strings.Builder
 	for idx := ft.offset; idx < end; idx++ {
 		e := ft.entries[idx]
@@ -541,7 +542,7 @@ func (ft *FileTree) buildEntries(files []string) []treeEntry {
 
 // renderFileEntry renders a single file entry in the tree, truncating long names to prevent wrapping.
 func (ft *FileTree) renderFileEntry(e treeEntry, idx, width int, rc renderCtx) string {
-	isSelected := idx == ft.cursor
+	isSelected := idx == ft.cursor && !rc.hideSelection
 	hasStatuses := len(ft.fileStatuses) > 0
 
 	// use raw ANSI fg-only sequences for inline colored elements to avoid

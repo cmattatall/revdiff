@@ -85,6 +85,24 @@ func (f fakeDiffer) FileDiff(req diff.FileDiffRequest) ([]diff.DiffLine, error) 
 	return f.fn(req)
 }
 
+func TestComputeStats_PartiallyStagedFile(t *testing.T) {
+	var sides []bool
+	differ := fakeDiffer{fn: func(req diff.FileDiffRequest) ([]diff.DiffLine, error) {
+		sides = append(sides, req.Staged)
+		if req.Staged {
+			return []diff.DiffLine{{ChangeType: diff.ChangeRemove}}, nil
+		}
+		return []diff.DiffLine{{ChangeType: diff.ChangeAdd}, {ChangeType: diff.ChangeAdd}}, nil
+	}}
+	stats := ComputeStats(StatsRequest{Differ: differ, Entries: []diff.FileEntry{
+		{Path: "partial.go", Staged: true}, {Path: "partial.go"},
+	}})
+	require.NoError(t, stats.Err)
+	require.Equal(t, []bool{true, false}, sides)
+	require.Equal(t, 2, stats.Adds)
+	require.Equal(t, 1, stats.Removes)
+}
+
 func TestComputeStats_AggregatesAddsAndRemoves(t *testing.T) {
 	entries := []diff.FileEntry{
 		{Path: "a.go", Status: diff.FileModified},

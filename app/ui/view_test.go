@@ -25,13 +25,13 @@ func TestModel_SessionPanel(t *testing.T) {
 	m.live.discover = func() (FeedbackSender, error) { return sender, nil }
 	resized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	m = resized.(Model)
-	require.Equal(t, []string{"Harness: waiting", "Repository: /work/revdiff"}, m.sessionPanelLines())
-	require.Equal(t, 3, m.statusBarHeight())
-	require.Equal(t, 24, m.layout.viewport.Height)
+	require.Equal(t, []string{"Harness: waiting"}, m.sessionPanelLines())
+	require.Equal(t, 2, m.statusBarHeight())
+	require.Equal(t, 25, m.layout.viewport.Height)
 	connected, _ := m.handleFeedbackDiscovered(feedbackDiscoveredMsg{sender: sender})
 	m = connected.(Model)
-	require.Equal(t, 24, m.layout.viewport.Height, "late connection must preserve viewport geometry")
-	require.Equal(t, []string{"Harness (amp): Review installer T-01a0f870-8501-7158-bd5f-36a7bcca868a", "Repository: /work/revdiff"}, m.sessionPanelLines())
+	require.Equal(t, 25, m.layout.viewport.Height, "late connection must preserve viewport geometry")
+	require.Equal(t, []string{"Harness (amp): Review installer T-01a0f870-8501-7158-bd5f-36a7bcca868a"}, m.sessionPanelLines())
 
 	m.annot.annotating = true
 	m.output.hint = "Feedback sent"
@@ -39,13 +39,13 @@ func TestModel_SessionPanel(t *testing.T) {
 	require.Contains(t, view, "Harness (amp): Review installer T-01a0f870-8501-7158-bd5f-36a7bcca868a")
 	require.Equal(t, 1, strings.Count(view, "Harness (amp):"), "identity and connection state share one row")
 	require.NotContains(t, view, "connected")
-	require.Contains(t, view, "Repository: /work/revdiff")
+	require.NotContains(t, view, "Repository:")
 	require.Equal(t, 30, lipgloss.Height(view))
-	for _, y := range []int{27, 28, 29} {
+	for _, y := range []int{28, 29} {
 		require.Equal(t, hitStatus, m.hitTest(20, y), "footer must not select a diff line")
 	}
-	require.Equal(t, hitNone, m.hitTest(50, 26), "bottom border")
-	require.Equal(t, hitDiff, m.hitTest(50, 25), "last diff row")
+	require.Equal(t, hitNone, m.hitTest(50, 27), "bottom border")
+	require.Equal(t, hitDiff, m.hitTest(50, 26), "last diff row")
 
 	sender.display = "T-review"
 	require.Equal(t, "Harness (amp): T-review", m.sessionPanelLines()[0])
@@ -66,7 +66,7 @@ func TestModel_SessionPanelWidthAndSanitization(t *testing.T) {
 	for _, width := range []int{0, 2, 8, 30, 54, 55, 56, 80, 120} {
 		m.layout.width = width
 		lines := m.sessionPanelLines()
-		require.Len(t, lines, 2)
+		require.Len(t, lines, 1)
 		for _, line := range lines {
 			require.LessOrEqual(t, lipgloss.Width(line), max(width-2, 0))
 			require.NotContains(t, line, "\n")
@@ -78,14 +78,11 @@ func TestModel_SessionPanelWidthAndSanitization(t *testing.T) {
 			require.Contains(t, lines[0], id, "left truncation preserves the identifying suffix")
 			require.True(t, strings.HasPrefix(lines[0], "Harness (amp): "))
 		}
-		if width >= 30 {
-			require.True(t, strings.HasSuffix(lines[1], "/目录/review"), "preserve the repository tail")
-		}
 	}
 	m.layout.width = 80
 	m.live.sender = nil
 	m.review.cfg.VCS = "none"
-	require.Equal(t, []string{"Directory: /long/parent/目录/review"}, m.sessionPanelLines())
+	require.Empty(t, m.sessionPanelLines(), "directory metadata must not add a footer row")
 	m.review.cfg.WorkDir = ""
 	require.Empty(t, m.sessionPanelLines(), "stdin has no repository metadata")
 }

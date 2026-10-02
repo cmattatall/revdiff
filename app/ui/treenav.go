@@ -24,6 +24,7 @@ type treeScanMsg struct {
 	kind                   treeScanKind
 	paths                  []string
 	origin                 string
+	originStaged           bool
 	originLine             int
 	entry                  diff.FileEntry
 	lines                  []diff.DiffLine
@@ -59,10 +60,11 @@ func (m *Model) scanTree(kind treeScanKind, forward, inclusive bool) tea.Cmd {
 	snapshot := *m
 	snapshot.modes.collapsed.expandedHunks = maps.Clone(m.modes.collapsed.expandedHunks)
 	selected := m.tree.SelectedFile()
+	selectedStaged := m.selectedTreeStaged()
 	return func() tea.Msg {
 		msg := treeScanMsg{seq: snapshot.nav.scanSeq, fileSeq: snapshot.file.loadSeq,
 			filesSeq: snapshot.filesLoadSeq, kind: kind, paths: paths, origin: selected,
-			originLine: snapshot.nav.diffCursor, line: -1}
+			originStaged: selectedStaged, originLine: snapshot.nav.diffCursor, line: -1}
 		step := 1
 		if !forward {
 			step = -1
@@ -70,7 +72,8 @@ func (m *Model) scanTree(kind treeScanKind, forward, inclusive bool) tea.Cmd {
 		for visit := 0; visit <= len(entries); visit++ {
 			entry := entries[(origin+step*visit+len(entries))%len(entries)]
 			probe := snapshot
-			if entry.Path != snapshot.file.name {
+			sameFile := entry.Path == snapshot.file.name && (!snapshot.cfg.workingTree || entry.Staged == snapshot.file.staged)
+			if !sameFile {
 				var err error
 				probe.file.lines, err = snapshot.fetchEffectiveFileDiff(entry, snapshot.currentContextLines(), true)
 				if err != nil {
@@ -84,7 +87,7 @@ func (m *Model) scanTree(kind treeScanKind, forward, inclusive bool) tea.Cmd {
 				start, end = len(probe.file.lines)-1, -1
 			}
 			split := start
-			if entry.Path == snapshot.file.name {
+			if sameFile {
 				split = snapshot.nav.diffCursor
 				if !inclusive {
 					split += step
@@ -131,6 +134,7 @@ func (m Model) handleTreeScan(msg treeScanMsg) (tea.Model, tea.Cmd) {
 	m.nav.scanKind = treeScanIdle
 	if msg.fileSeq != m.file.loadSeq || msg.filesSeq != m.filesLoadSeq ||
 		msg.originLine != m.nav.diffCursor ||
+		(m.cfg.workingTree && msg.originStaged != m.selectedTreeStaged()) ||
 		m.layout.focus != paneTree || m.search.active || m.command.active || m.annot.annotating ||
 		m.overlay.Active() || msg.origin != m.tree.SelectedFile() || !slices.Equal(msg.paths, m.tree.VisibleFiles()) {
 		return m, nil

@@ -103,11 +103,10 @@ git format-patch -1 --stdout | revdiff --stdin
 Behavior:
 
 - With no arguments, the extension uses smart detection:
-  - on main/master with staged-only changes → review staged changes with ``
-  - on main/master with uncommitted changes → review uncommitted changes
+  - on main/master with uncommitted changes → review staged, unstaged, and untracked changes
   - on main/master with a clean tree → review `HEAD~1`
   - on a clean feature branch → review against the detected main branch
-  - on a dirty feature branch → asks whether to review uncommitted changes or the branch diff; staged-only uncommitted review uses ``
+  - on a dirty feature branch → asks whether to review uncommitted changes or the branch diff
 - After revdiff exits with annotations, `revdiff_review` returns them in the tool result; the agent processes that result directly.
 - If revdiff exits without captured annotations, report that no annotations were captured and stop.
 - Include `--filter-unreviewed` only when the user asks for the tree limited to files not marked reviewed; `F` toggles the same filter during the review.

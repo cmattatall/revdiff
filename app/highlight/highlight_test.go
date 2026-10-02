@@ -2,7 +2,9 @@ package highlight
 
 import (
 	"fmt"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/alecthomas/chroma/v2"
@@ -12,6 +14,75 @@ import (
 
 	"github.com/umputun/revdiff/app/diff"
 )
+
+func TestHighlightCacheContentAndStyle(t *testing.T) {
+	h := New("monokai", true)
+	lines := []diff.DiffLine{
+		{Content: "/* context", ChangeType: diff.ChangeContext},
+		{Content: "var value = 42", ChangeType: diff.ChangeAdd},
+	}
+	want := h.HighlightLines("a.go", lines)
+	cached, ok := h.cached("a.go", "monokai", lines)
+	require.True(t, ok)
+	require.Equal(t, want, cached)
+	cached[0] = "mutated caller output"
+	require.Equal(t, want, h.HighlightLines("a.go", lines))
+
+	changed := slices.Clone(lines)
+	changed[0].Content = "// context" // unchanged diff lines still affect lexical state
+	got := h.HighlightLines("a.go", changed)
+	require.NotEqual(t, want, got)
+	require.Equal(t, New("monokai", true).HighlightLines("a.go", changed), got)
+	changed[1].Content = "var value = 99" // mutating the caller's slice must not alter the cache key
+	require.Equal(t, New("monokai", true).HighlightLines("a.go", changed), h.HighlightLines("a.go", changed))
+	require.Equal(t, want, h.HighlightLines("a.go", lines), "index and working versions coexist")
+	require.Equal(t, New("monokai", true).HighlightLines("a.py", lines), h.HighlightLines("a.py", lines))
+	require.True(t, h.SetStyle("dracula"))
+	got = h.HighlightLines("a.go", lines)
+	require.NotEqual(t, want, got)
+	require.Equal(t, New("dracula", true).HighlightLines("a.go", lines), got)
+}
+
+func TestHighlightCacheBounds(t *testing.T) {
+	h := New("monokai", true)
+	lines := []diff.DiffLine{{Content: "small", ChangeType: diff.ChangeContext}}
+	for i := range 40 {
+		h.remember(fmt.Sprintf("%d.go", i), "monokai", lines, []string{"small"})
+	}
+	require.Len(t, h.cache, 32)
+	_, ok := h.cached("0.go", "monokai", lines)
+	require.False(t, ok)
+	_, ok = h.cached("8.go", "monokai", lines) // recently used survives the next eviction
+	require.True(t, ok)
+	h.remember("40.go", "monokai", lines, []string{"small"})
+	_, ok = h.cached("8.go", "monokai", lines)
+	require.True(t, ok)
+	_, ok = h.cached("9.go", "monokai", lines)
+	require.False(t, ok)
+
+	large := []string{strings.Repeat("x", maxHighlightCacheBytes/2)}
+	for i := range 3 {
+		h.remember(fmt.Sprintf("large%d.go", i), "monokai", lines, large)
+	}
+	require.LessOrEqual(t, h.cacheSize, maxHighlightCacheBytes)
+	require.Len(t, h.cache, 1)
+	require.Equal(t, "large2.go", h.cache[0].filename)
+}
+
+func TestHighlightConcurrentStyleChanges(t *testing.T) {
+	h := New("monokai", true)
+	lines := []diff.DiffLine{{Content: "package main", ChangeType: diff.ChangeContext}}
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Go(func() {
+			for i := range 20 {
+				h.SetStyle([]string{"monokai", "dracula"}[i%2])
+				h.HighlightLines("a.go", lines)
+			}
+		})
+	}
+	wg.Wait()
+}
 
 func TestHighlighter_HighlightLines(t *testing.T) {
 	h := New("monokai", true)

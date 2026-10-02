@@ -140,8 +140,6 @@
         <div class="code-block"><code>/revdiff                         <span class="code-comment">-- detect uncommitted, staged, or branch changes, then open revdiff</span>
 /revdiff HEAD~1 HEAD             <span class="code-comment">-- review last commit</span>
 /revdiff main                    <span class="code-comment">-- review against main</span>
-/revdiff                 <span class="code-comment">-- review staged changes</span>
-/revdiff             <span class="code-comment">-- include untracked files in working-tree review</span>
 /revdiff --all-files             <span class="code-comment">-- browse all tracked files</span>
 /revdiff --all-files --exclude vendor
 /revdiff --only README.md        <span class="code-comment">-- review a single file in context-only mode</span>
@@ -191,14 +189,11 @@
         <p>In Git working-tree, single-ref, and two-ref modes renamed files are detected automatically: the diff-pane header shows the rename origin as <code>old &rarr; new</code> and the diff renders only the real line changes instead of a full delete-and-add. In the default view, a plain working-tree <code>mv old new</code> (where the new file is still untracked) is paired as a rename too. Rename detection is git-only; <code>hg</code> and <code>jj</code> show renames as separate delete/add entries.</p>
 
         <h2 id="examples">Examples</h2>
-        <div class="code-block"><code><span class="code-comment"># review uncommitted changes</span>
+        <div class="code-block"><code><span class="code-comment"># review staged, unstaged, and untracked changes</span>
 revdiff
 
 <span class="code-comment"># review changes against a branch</span>
 revdiff main
-
-<span class="code-comment"># review staged changes</span>
-revdiff 
 
 <span class="code-comment"># review last commit</span>
 revdiff HEAD~1 HEAD
@@ -516,6 +511,7 @@ color-border = #6272a4
 
         <!-- key bindings -->
         <h2 id="navigation">Navigation</h2>
+        <p>In Git working-tree reviews, the sidebar has two fixed-height regions separated by a blank row: <strong>Staged</strong> above <strong>Changes</strong> (unstaged and untracked files). A partially staged file appears in both; selecting it shows that region's diff. Use <code>j</code>/<code>k</code> to move between the regions or click a file. Each region scrolls independently. Stage from Changes with <code>s</code> (hunk) or <code>S</code> (file). Historical comparisons and non-Git views keep a single tree.</p>
         <table>
             <thead><tr><th>Key</th><th>Action</th></tr></thead>
             <tbody>
@@ -544,7 +540,8 @@ color-border = #6272a4
         <p><code>:h</code> is also an explicit alias for <code>:help</code>, so Enter opens help directly. The command palette works from either pane, including while files are loading.</p>
         <p>Vim-style commands are available too: <code>:set number</code> / <code>:set nonumber</code> show/hide line numbers, and <code>:set wrap</code> / <code>:set nowrap</code> enable/disable wrapping. Repeating a <code>set</code> command keeps the requested state rather than toggling it. <code>:q</code> quits normally, and <code>:w</code> flushes annotations to the configured output or connected harness (it does not write source files). These names also support completion.</p>
         <p>Harness commands support completion too: <code>:harness connect amp</code> looks for an Amp session in the current directory without sending annotations; <code>:harness send</code> uses the same send/flush action as <code>O</code> and <code>:w</code>. An existing connection stays bound to its original session, including after an unconfirmed send.</p>
-        <p>Thread, repository, and status information remain visible while you type. <code>Esc</code> cancels; running a command closes the palette and restores the diff's height. The command pane also works with <code>--no-status-bar</code> and, for commands such as <code>help</code> and <code>quit</code>, without a selected file.</p>
+        <p>Thread and status information remain visible while you type. <code>Esc</code> cancels; running a command closes the palette and restores the diff's height. The command pane also works with <code>--no-status-bar</code> and, for commands such as <code>help</code> and <code>quit</code>, without a selected file.</p>
+        <p>Help (<code>?</code> or <code>:help</code>) shows the exact palette command beside each keymap action. The <strong>Command palette</strong> section also lists aliases, harness connections, and actions without a bound key.</p>
         <p>Single-line annotation, search, command, file-picker, and theme-picker inputs use revdiff's built-in Bubbles text-input bindings, not your shell's keymap: arrows and <code>Ctrl+B</code>/<code>Ctrl+F</code> move by character, <code>Ctrl+A</code>/<code>Ctrl+E</code> move to the start/end, <code>Backspace</code>/<code>Ctrl+H</code> delete backward, <code>Ctrl+W</code> (or <code>Alt+Backspace</code>) deletes the previous word, and <code>Ctrl+U</code>/<code>Ctrl+K</code> delete from the cursor to the start/end. Existing <code>Enter</code>, <code>Esc</code>, search-history, and list-navigation behavior is unchanged. The terminal sends key sequences; revdiff cannot inherit zsh/readline bindings or Command-key shortcuts. Configure Option/Alt to send Meta for Alt bindings.</p>
 
         <h2 id="search">Search</h2>
@@ -672,7 +669,7 @@ unmap q</code></div>
 map pgup scroll_diff_page_up
 map ctrl+d scroll_diff_half_page_down
 map ctrl+u scroll_diff_half_page_up</code></div>
-        <p>Three consequences worth knowing. This also replaces cursor paging while the diff pane has focus: the keys scroll the viewport and pin the cursor back into view instead of walking the cursor a page at a time. The file tree and markdown TOC lose their own page-sized traversal on those keys. And because <code>page_down</code>, <code>page_up</code>, <code>half_page_down</code> and <code>half_page_up</code> have no other default key, rebinding all four lines leaves them unbound everywhere, including the <code>?</code> help and <code>i</code> info overlays, which page through the same actions. Omit one pair of mapping lines to keep its default paging. Because they have no default binding, these actions appear in neither the <code>?</code> help overlay nor <code>--dump-keys</code> until you bind them.</p>
+        <p>Three consequences worth knowing. This also replaces cursor paging while the diff pane has focus: the keys scroll the viewport and pin the cursor back into view instead of walking the cursor a page at a time. The file tree and markdown TOC lose their own page-sized traversal on those keys. And because <code>page_down</code>, <code>page_up</code>, <code>half_page_down</code> and <code>half_page_up</code> have no other default key, rebinding all four lines leaves them unbound everywhere, including the <code>?</code> help and <code>i</code> info overlays, which page through the same actions. Omit one pair of mapping lines to keep its default paging. Unbound actions remain listed in the help overlay's separate Command palette section, while <code>--dump-keys</code> lists only bindings.</p>
         <h3>Chord bindings (ctrl/alt leader)</h3>
         <p>Bind a two-stage chord by joining the leader and second key with <code>&gt;</code>. The leader must be a <code>ctrl+*</code> or <code>alt+*</code> combo; the second stage is any single key. Only two stages are supported.</p>
         <div class="code-block"><code>map ctrl+w&gt;x mark_reviewed
@@ -714,13 +711,13 @@ map alt+t&gt;n theme_select</code></div>
         <p>Run <code>./plugins/amp/install.sh</code> from this fork's repository root (requires Go). It builds and installs <code>revdiff</code> into <code>~/.local/bin</code> and the plugin into <code>~/.config/amp/plugins/revdiff.ts</code>. It detects bash or zsh from <code>$SHELL</code> and adds <code>~/.local/bin</code> to your shell startup files; <code>--shell bash|zsh</code> is an optional override and <code>--no-path</code> skips that edit. Open a new terminal or run <code>export PATH="$HOME/.local/bin:$PATH"</code>, then reload Amp plugins. Rerunning the script updates the installed binary and plugin automatically, replacing any local customizations. Upstream releases do not include this integration.</p>
         <ol>
             <li>Open an Amp thread in your Git checkout. The plugin registers the session automatically, without posting a setup message. After reloading the plugin in an existing thread, registration happens when you next send a prompt or choose <strong>revdiff: connect</strong>.</li>
-            <li>Run <code>revdiff</code> or <code>revdiff </code> in another terminal pane in the <strong>same directory</strong>. It automatically connects when exactly one live Amp session matches. Use <code>revdiff</code> to include new files. Type <code>:harness connect amp</code> to retry discovery manually without sending annotations. If multiple sessions match, disconnect the extras or use <strong>Ctrl+O → revdiff: connect</strong> in the intended Amp thread to get an explicit <code>--amp</code> command.</li>
+            <li>Run <code>revdiff</code> in another terminal pane in the <strong>same directory</strong>. It automatically connects when exactly one live Amp session matches. The default working-tree view includes staged, unstaged, and untracked files. Type <code>:harness connect amp</code> to retry discovery manually without sending annotations. If multiple sessions match, disconnect the extras or use <strong>Ctrl+O → revdiff: connect</strong> in the intended Amp thread to get an explicit <code>--amp</code> command.</li>
             <li>Annotate with <code>Enter</code> or <code>a</code> (line), or <code>A</code> (file). Press <code>O</code> (Shift+O) or run <code>:harness send</code> to send feedback without exiting. Amp receives it as a steering message, including while working.</li>
             <li>Press <code>s</code> on an added/removed line to stage that contiguous change. Hunk staging supports only modified tracked regular text files in a Git working-tree review; new/deleted files, renames, binary files, and mode changes are not supported. Hunk staging updates the index, never the working file, and rejects stale displayed changes.</li>
             <li>Press <code>S</code> (Shift+S) to stage the entire selected file from the tree or diff pane (<code>stage_file</code>, rebindable). This stages the current working-tree version, including edits since the last render, like <code>git add</code>. It also supports new/deleted files, renames, binaries, symlinks, and mode changes; directories and submodules are excluded. Both staging shortcuts require a Git working-tree review and no pending annotations. Neither changes the working file.</li>
         </ol>
         <p>The bottom panel shows <strong>Harness: waiting</strong> until a session is found, then <strong>Harness (amp): &lt;title&gt; &lt;thread ID&gt;</strong>. The identity itself indicates the connection; there is no separate &ldquo;connected&rdquo; label. Each harness supplies its own name and display text. Revdiff checks once per second while waiting, even if you are writing annotations; <code>O</code> also retries discovery. Connecting never sends comments automatically. <strong>sending</strong> and <strong>unconfirmed</strong> appear beside the identity during an active send or after an unacknowledged delivery; <strong>Harness: unavailable</strong> indicates a discovery error. This row remains visible during input and status messages, unless the status bar is disabled.</p>
-        <p>The panel also shows the <strong>repository root</strong> above the status/input row. Titles are captured when the plugin registers a connection; untitled threads show the ID alone. Narrow terminals shorten the title before the ID and preserve the end of long repository paths. The root remains visible without an Amp connection. <code>--no-status-bar</code> hides the panel too.</p>
+        <p>Titles are captured when the plugin registers a connection; untitled threads show the ID alone. Narrow terminals shorten the title before the ID. <code>--no-status-bar</code> hides the panel too.</p>
         <p>The file list and selected diff refresh about once per second, preserving the cursor. Refresh pauses during drafts, while unsent annotations remain, and during modal interactions. Successful sends clear only delivered, unchanged comments. Failed sends retain the snapshot; <code>O</code> retries it. Edited or new comments remain for the next send. Quit does not send: unsent comments follow normal output/history behavior.</p>
         <p>Both processes must use the same host/filesystem and user account. Automatic connection is limited to Git working-tree reviews; refs, <code>--all-files</code>, stdin/compare modes, <code>--output</code>, and <code>--post-flush-command</code> skip discovery and cannot be combined with explicit <code>--amp</code>. Without a matching session, annotations stay local and quit uses normal output/history behavior. Connections use authenticated loopback HTTP and private files under <code>~/.cache/revdiff/amp</code>; stale connections are ignored. <strong>revdiff: disconnect</strong> disables that thread's automatic connection until manual reconnect or plugin reload. Once bound, revdiff never switches connections: after reconnecting or restarting the plugin, relaunch a previously connected revdiff instance. Check the thread before resending uncertain feedback because deduplication does not survive restart.</p>
 
@@ -763,14 +760,13 @@ map alt+t&gt;n theme_select</code></div>
 /revdiff HEAD~1 HEAD      <span class="code-comment">-- review last commit</span>
 /revdiff main             <span class="code-comment">-- review current branch against main</span>
 /revdiff HEAD~3 HEAD      <span class="code-comment">-- review last 3 commits</span>
-/revdiff          <span class="code-comment">-- review staged changes only</span>
 /revdiff all files        <span class="code-comment">-- browse all tracked files</span></code></div>
         <h3>Natural language</h3>
         <div class="code-block"><code>"review diff"                       <span class="code-comment">-- same as /revdiff, smart detection</span>
 "review diff HEAD~1 HEAD"           <span class="code-comment">-- last commit</span>
 "review diff against main"          <span class="code-comment">-- branch diff</span>
 "review changes from last 2 days"   <span class="code-comment">-- Claude resolves the ref</span>
-"revdiff for staged changes"        <span class="code-comment">-- staged only</span>
+"revdiff for staged changes"        <span class="code-comment">-- select the Staged region in the working-tree review</span>
 "review all files exclude vendor"   <span class="code-comment">-- browse project, skip vendor/</span>
 "what themes does revdiff support?" <span class="code-comment">-- ask about config without launching</span>
 "switch revdiff to dracula theme"   <span class="code-comment">-- modify config via conversation</span></code></div>
@@ -858,8 +854,7 @@ cd plugins/opencode && bash setup.sh</code></div>
             <li>Plan-review plugin &mdash; automatically launches revdiff when the assistant exits plan mode, injecting annotations back as user messages</li>
         </ul>
         <div class="code-block"><code>/revdiff              <span class="code-comment"># auto-detect ref</span>
-/revdiff HEAD~3 HEAD  <span class="code-comment"># review last 3 commits</span>
-/revdiff      <span class="code-comment"># review staged changes</span></code></div>
+/revdiff HEAD~3 HEAD  <span class="code-comment"># review last 3 commits</span></code></div>
 
         <!-- output -->
         <h2 id="output-format">Output format</h2>

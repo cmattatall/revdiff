@@ -3,6 +3,7 @@ package highlight
 import (
 	"fmt"
 	"log"
+	"slices"
 	"strings"
 	"sync"
 
@@ -40,9 +41,21 @@ const chromaFallbackStyle = "swapoff"
 
 // Highlighter applies syntax highlighting to source code lines using Chroma.
 type Highlighter struct {
+	mu        sync.Mutex
 	styleName string
 	enabled   bool
+	cache     []highlightEntry // oldest first; immutable content, not file timestamps
+	cacheSize int
 }
+
+type highlightEntry struct {
+	filename, style string
+	lines           []diff.DiffLine
+	highlighted     []string
+	size            int
+}
+
+const maxHighlightCacheBytes = 16 << 20
 
 // New creates a Highlighter with the given Chroma style name and enabled state.
 // If styleName is empty, defaults to "monokai". Logs a warning if the style name is unknown.
@@ -66,18 +79,31 @@ func (h *Highlighter) SetStyle(styleName string) bool {
 	if styles.Get(styleName) == styles.Fallback && styleName != chromaFallbackStyle {
 		return false
 	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	h.styleName = styleName
 	return true
 }
 
 // StyleName returns the current Chroma style name.
 func (h *Highlighter) StyleName() string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	return h.styleName
 }
 
 // IsValidStyle reports whether styleName is a known Chroma style.
 func IsValidStyle(styleName string) bool {
 	return styles.Get(styleName) != styles.Fallback || styleName == chromaFallbackStyle
+}
+
+// CachedLines returns an already-tokenized version without doing lexer work.
+// UI callers can use it for an immediate colored render on repeat visits.
+func (h *Highlighter) CachedLines(filename string, lines []diff.DiffLine) ([]string, bool) {
+	if !h.enabled || len(lines) == 0 {
+		return nil, true
+	}
+	return h.cached(filename, h.StyleName(), lines)
 }
 
 // HighlightLines takes a filename (for lexer detection) and a slice of diff.DiffLine,
@@ -88,6 +114,10 @@ func (h *Highlighter) HighlightLines(filename string, lines []diff.DiffLine) []s
 	if !h.enabled || len(lines) == 0 {
 		return nil
 	}
+	styleName := h.StyleName()
+	if cached, ok := h.cached(filename, styleName, lines); ok {
+		return cached
+	}
 
 	lexer := lexers.Match(filename)
 	if lexer == nil {
@@ -95,14 +125,53 @@ func (h *Highlighter) HighlightLines(filename string, lines []diff.DiffLine) []s
 	}
 	lexer = chroma.Coalesce(lexer)
 
-	style := styles.Get(h.styleName)
+	style := styles.Get(styleName)
 
 	newContent, oldContent := h.reconstructFiles(lines)
 
 	newHL := h.highlightFile(lexer, style, newContent)
 	oldHL := h.highlightFile(lexer, style, oldContent)
 
-	return h.mapHighlightedLines(lines, newHL, oldHL)
+	result := h.mapHighlightedLines(lines, newHL, oldHL)
+	h.remember(filename, styleName, lines, result)
+	return result
+}
+
+// Compare the complete diff, not just changed lines: context and staged versions
+// can differ independently. Clone slice headers' backing storage at the boundary
+// so callers cannot corrupt a cached result. Strings themselves are immutable.
+func (h *Highlighter) cached(filename, style string, lines []diff.DiffLine) ([]string, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for i, entry := range h.cache {
+		if entry.filename == filename && entry.style == style && slices.Equal(entry.lines, lines) {
+			copy(h.cache[i:], h.cache[i+1:])
+			h.cache[len(h.cache)-1] = entry
+			return slices.Clone(entry.highlighted), true
+		}
+	}
+	return nil, false
+}
+
+func (h *Highlighter) remember(filename, style string, lines []diff.DiffLine, highlighted []string) {
+	size := len(filename) + len(style) + len(lines)*80 + len(highlighted)*16
+	for _, line := range lines {
+		size += len(line.Content)
+	}
+	for _, line := range highlighted {
+		size += len(line)
+	}
+	if size > maxHighlightCacheBytes {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for len(h.cache) > 0 && (len(h.cache) >= 32 || h.cacheSize+size > maxHighlightCacheBytes) {
+		h.cacheSize -= h.cache[0].size
+		h.cache = slices.Delete(h.cache, 0, 1)
+	}
+	h.cache = append(h.cache, highlightEntry{filename, style, slices.Clone(lines), slices.Clone(highlighted), size})
+	h.cacheSize += size
 }
 
 // reconstructFiles builds old and new file content from diff lines.

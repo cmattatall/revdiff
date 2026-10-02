@@ -260,6 +260,17 @@ func (m *Model) requestFileDiff(file string) tea.Cmd {
 // used by the visible diff. Fingerprints call this helper too, so review state
 // is always based on the content revdiff would actually display.
 func (m Model) fetchEffectiveFileDiff(entry diff.FileEntry, contextLines int, strict bool) ([]diff.DiffLine, error) {
+	if m.cfg.workDir != "" && entry.Status == diff.FileUntracked {
+		added, err := diff.ReadFileAsAdded(filepath.Join(m.cfg.workDir, entry.Path))
+		if err != nil && !strict {
+			log.Printf("[WARN] read untracked file %s: %v", entry.Path, err)
+			return nil, nil
+		}
+		if err != nil {
+			return added, fmt.Errorf("read untracked file %s: %w", entry.Path, err)
+		}
+		return added, nil
+	}
 	req := diff.FileDiffRequest{
 		Ref:          m.cfg.ref,
 		Path:         entry.Path,
@@ -284,17 +295,6 @@ func (m Model) fetchEffectiveFileDiff(entry diff.FileEntry, contextLines int, st
 		if len(cachedLines) > 0 {
 			return cachedLines, nil
 		}
-	}
-	if m.cfg.workDir != "" && entry.Status == diff.FileUntracked {
-		added, readErr := diff.ReadFileAsAdded(filepath.Join(m.cfg.workDir, entry.Path))
-		if readErr != nil && !strict {
-			log.Printf("[WARN] read untracked file %s: %v", entry.Path, readErr)
-			return nil, nil
-		}
-		if readErr != nil {
-			return added, fmt.Errorf("read untracked file %s: %w", entry.Path, readErr)
-		}
-		return added, nil
 	}
 	return lines, nil
 }
@@ -402,6 +402,9 @@ func (m Model) loadSelectedIfChanged() (tea.Model, tea.Cmd) {
 	if f := m.tree.SelectedFile(); f != "" {
 		staged := m.selectedTreeStaged()
 		if f != m.file.name || (m.cfg.workingTree && staged != m.file.staged) {
+			if f == m.file.requestedPath && staged == m.file.requestedStaged {
+				return m, nil
+			}
 			cmd := m.requestFileDiff(f)
 			return m, cmd
 		}
@@ -410,6 +413,15 @@ func (m Model) loadSelectedIfChanged() (tea.Model, tea.Cmd) {
 			m.file.canceledLoadPath = m.file.requestedPath
 			m.file.requestedPath = ""
 		}
+	} else if m.cfg.workingTree && m.selectedTreeStaged() != m.file.staged {
+		m.file.loadSeq++ // an empty half must not accept an outstanding load from the other half
+		m.file.requestedPath = ""
+		m.file.name, m.file.oldName = "", ""
+		m.file.lines, m.file.highlighted, m.file.lineWidths = nil, nil, nil
+		m.highlightWork.seq.Add(1)
+		m.file.staged = m.selectedTreeStaged()
+		m.nav.diffCursor = 0
+		m.layout.viewport.SetContent("")
 	}
 	return m, nil
 }
@@ -508,6 +520,7 @@ func (m Model) handleFilesLoaded(msg filesLoadedMsg) (tea.Model, tea.Cmd) {
 	}
 	m.file.singleFile = !m.cfg.workingTree && m.tree.TotalFiles() == 1
 	if len(entries) == 0 {
+		m.highlightWork.seq.Add(1)
 		m.file.name = ""
 		m.file.oldName = ""
 		m.file.lines = nil
@@ -574,6 +587,7 @@ func (m Model) handleFileLoaded(msg fileLoadedMsg) (tea.Model, tea.Cmd) {
 	m.file.requestedPath = ""
 	m.file.requestedStaged = false
 	if msg.err != nil {
+		m.highlightWork.seq.Add(1)
 		m.layout.viewport.SetContent(fmt.Sprintf("error loading diff: %v", msg.err))
 		return m, nil
 	}
@@ -588,7 +602,8 @@ func (m Model) handleFileLoaded(msg fileLoadedMsg) (tea.Model, tea.Cmd) {
 	m.invalidateRenderCaches()
 	m.refreshSearchMatches()
 	m.computeFileStats()
-	m.file.highlighted = m.highlighter.HighlightLines(msg.file, m.file.lines)
+	// Display cached colors or plain text immediately; tokenization must not block Update.
+	highlightCmd := m.loadHighlight()
 	m.recomputeIntraRanges()
 	m.file.lineWidths = m.computeLineWidths()
 	if m.modes.lineNumbers {
@@ -624,6 +639,7 @@ func (m Model) handleFileLoaded(msg fileLoadedMsg) (tea.Model, tea.Cmd) {
 		m.file.blameAuthorLen = 0
 		blameCmd = m.loadBlame(msg.file)
 	}
+	preparedCmd := tea.Batch(highlightCmd, blameCmd)
 
 	// handle pending annotation list jump
 	if m.pendingAnnotJump != nil && m.pendingAnnotJump.File == msg.file {
@@ -631,14 +647,14 @@ func (m Model) handleFileLoaded(msg fileLoadedMsg) (tea.Model, tea.Cmd) {
 		m.pendingAnnotJump = nil
 		m.nav.pendingHunkJump = nil
 		m.positionOnAnnotation(a)
-		return m, blameCmd
+		return m, preparedCmd
 	}
 
 	// handle pending hunk jump after cross-file hunk navigation
 	if m.nav.pendingHunkJump != nil {
 		m.applyPendingHunkJump()
 		m.centerViewportOnCursor()
-		return m, blameCmd
+		return m, preparedCmd
 	}
 
 	// handle pending compact-toggle anchor: restore the cursor to where it was
@@ -649,13 +665,13 @@ func (m Model) handleFileLoaded(msg fileLoadedMsg) (tea.Model, tea.Cmd) {
 		m.compact.pendingAnchor = nil
 		if a.seq == msg.seq {
 			m.applyCompactAnchor(a)
-			return m, blameCmd
+			return m, preparedCmd
 		}
 	}
 
 	if stageAnchor != nil && stageAnchor.file == msg.file && stageAnchor.seq == msg.seq {
 		m.applyStageAnchor(stageAnchor)
-		return m, blameCmd
+		return m, preparedCmd
 	}
 
 	// sits below the three jump branches so an explicit jump target always wins, and must return
@@ -663,12 +679,12 @@ func (m Model) handleFileLoaded(msg fileLoadedMsg) (tea.Model, tea.Cmd) {
 	if m.cfg.startAtChange {
 		m.positionOnFirstChange()
 		m.centerViewportOnCursor()
-		return m, blameCmd
+		return m, preparedCmd
 	}
 
 	m.layout.viewport.SetContent(m.renderDiff())
 	m.layout.viewport.GotoTop()
-	return m, blameCmd
+	return m, preparedCmd
 }
 
 func (m Model) handleReviewFingerprintLoaded(msg reviewFingerprintLoadedMsg) (tea.Model, tea.Cmd) {

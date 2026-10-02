@@ -317,8 +317,13 @@ tab-replaced content, aligning with `prepareLineContent` output.
 ### app/highlight/ — syntax highlighting
 
 Chroma-based syntax highlighter. Produces foreground-only ANSI output (no backgrounds) so that diff
-line backgrounds from the style system are preserved. Highlighted lines pre-computed once per file
-load, stored parallel to `diffLines`.
+line backgrounds from the style system are preserved. Uncached file navigation displays plain diff text first;
+`ui/highlighting.go` runs tokenization in a serialized background command, skips superseded requests,
+and applies only the latest result without moving the viewport or cursor. Highlighted lines are stored
+parallel to `diffLines`. The highlighter keeps a 32-entry, 16 MiB bounded LRU keyed by filename, style,
+and complete diff content (including context), so revisiting unchanged files avoids tokenization while
+working-tree edits and the two sides of partially staged files remain distinct. Git diffs are still read
+on selection; the highlight cache does not conceal external edits or replace live refresh.
 
 ### app/keymap/ — keybindings
 

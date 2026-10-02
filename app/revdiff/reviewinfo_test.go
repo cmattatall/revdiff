@@ -32,14 +32,14 @@ func TestReviewInfoFromOptions(t *testing.T) {
 		assert.Equal(t, string(diff.VCSJJ), info.VCS)
 	})
 
-	t.Run("staged is ignored for VCSes without staging area", func(t *testing.T) {
+	t.Run("mercurial reviews the working tree", func(t *testing.T) {
 		info := reviewInfoFromOptions(options{}, reviewInfoInputs{workDir: "/repo", vcsType: diff.VCSHg})
 		assert.False(t, info.Staged)
 	})
 
-	t.Run("staged is preserved for git", func(t *testing.T) {
+	t.Run("git review is not restricted to the index", func(t *testing.T) {
 		info := reviewInfoFromOptions(options{}, reviewInfoInputs{workDir: "/repo", vcsType: diff.VCSGit})
-		assert.True(t, info.Staged)
+		assert.False(t, info.Staged)
 	})
 
 	t.Run("list slices are decoupled from caller", func(t *testing.T) {

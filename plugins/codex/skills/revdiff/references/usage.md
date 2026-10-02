@@ -7,10 +7,8 @@ revdiff [OPTIONS] [base] [against]
 ## Examples
 
 ```bash
-revdiff              # review uncommitted changes
+revdiff              # review staged, unstaged, and untracked changes
 revdiff main         # review changes against a branch
-revdiff      # review staged changes
-revdiff  # show untracked files in the tree
 revdiff HEAD~1 HEAD  # review last commit
 revdiff main feature # diff between two refs
 revdiff main..feature  # same as above, git dot-dot syntax
@@ -29,9 +27,11 @@ printf '# Plan\n\nBody\n' | revdiff --stdin --stdin-name plan.md  # review piped
 some-command | revdiff --stdin --output /tmp/annotations.txt      # annotate generated output
 ```
 
+Git working-tree reviews show **Staged** above **Changes** (unstaged and untracked) in the sidebar, separated by a blank row. Each region scrolls independently; partially staged files appear in both with distinct diffs. Help (`?` or `:help`) lists the exact palette command beside each keymap action, plus aliases and unbound commands in its **Command palette** section.
+
 ## Single-File Mode
 
-When a diff contains exactly one file, revdiff automatically hides the file tree pane and gives full terminal width to the diff view. Pane-switching keys (`Tab`, `h/l`, `n/p`, `f`, `F`) become no-ops, except when markdown TOC is active (see below). Search navigation (`n`/`N`) still works normally.
+Outside Git working-tree reviews, when a diff contains exactly one file, revdiff automatically hides the file tree pane and gives full terminal width to the diff view. Pane-switching keys (`Tab`, `h/l`, `n/p`, `f`, `F`) become no-ops, except when markdown TOC is active (see below). Search navigation (`n`/`N`) still works normally.
 
 ## Markdown TOC Navigation
 
