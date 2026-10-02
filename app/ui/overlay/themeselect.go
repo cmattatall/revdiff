@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/mattn/go-runewidth"
 
 	"github.com/umputun/revdiff/app/keymap"
@@ -116,7 +116,7 @@ func (t *themeSelectOverlay) render(ctx RenderCtx, mgr *Manager) string {
 
 	accentFg := string(ctx.Resolver.Color(style.ColorKeyAccentFg))
 	paneBg := string(ctx.Resolver.Color(style.ColorKeyDiffPaneBg))
-	box = mgr.injectBorderTitle(box, title, borderEdgeText{popupWidth: popupWidth, accentFg: accentFg, paneBg: paneBg})
+	box = mgr.injectBorderTitle(box, title, borderEdgeText{accentFg: accentFg, paneBg: paneBg})
 
 	return box
 }
@@ -173,7 +173,7 @@ func (t *themeSelectOverlay) maxVisible() int {
 	return max(min(len(t.entries), available), 1)
 }
 
-func (t *themeSelectOverlay) handleKey(msg tea.KeyMsg, action keymap.Action) Outcome {
+func (t *themeSelectOverlay) handleKey(msg tea.KeyPressMsg, action keymap.Action) Outcome {
 	if action == keymap.ActionThemeSelect {
 		return Outcome{Kind: OutcomeThemeCanceled}
 	}
@@ -188,15 +188,15 @@ func (t *themeSelectOverlay) handleKey(msg tea.KeyMsg, action keymap.Action) Out
 		return out
 	}
 
-	switch msg.Type {
-	case tea.KeyEnter:
+	switch msg.String() {
+	case "enter":
 		if len(t.entries) == 0 {
 			t.filter.Reset()
 			return Outcome{Kind: OutcomeThemeCanceled}
 		}
 		return Outcome{Kind: OutcomeThemeConfirmed, ThemeChoice: &ThemeChoice{Name: t.entries[t.cursor].Name}}
 
-	case tea.KeyEsc:
+	case "esc":
 		if t.filter.Value() != "" {
 			t.filter.Reset()
 			t.applyFilter()
@@ -204,13 +204,13 @@ func (t *themeSelectOverlay) handleKey(msg tea.KeyMsg, action keymap.Action) Out
 		}
 		return Outcome{Kind: OutcomeThemeCanceled}
 
-	case tea.KeyUp:
+	case "up":
 		if t.moveCursorBy(-1) {
 			return t.previewOutcome()
 		}
 		return Outcome{Kind: OutcomeNone}
 
-	case tea.KeyDown:
+	case "down":
 		if t.moveCursorBy(1) {
 			return t.previewOutcome()
 		}
@@ -251,22 +251,25 @@ func (t *themeSelectOverlay) moveCursorBy(delta int) bool {
 // past the last entry, or on border/padding are no-ops so the overlay is not
 // dismissed by a stray click. coords are popup-local (Manager.HandleMouse
 // translates).
-func (t *themeSelectOverlay) handleMouse(msg tea.MouseMsg) Outcome {
-	if msg.Action != tea.MouseActionPress {
+func (t *themeSelectOverlay) handleMouse(event tea.MouseMsg) Outcome {
+	switch event.(type) {
+	case tea.MouseClickMsg, tea.MouseWheelMsg:
+	default:
 		return Outcome{Kind: OutcomeNone}
 	}
+	msg := event.Mouse()
 	switch msg.Button {
-	case tea.MouseButtonWheelDown:
-		if !t.moveCursorBy(t.wheelStep(msg.Shift)) {
+	case tea.MouseWheelDown:
+		if !t.moveCursorBy(t.wheelStep(msg.Mod.Contains(tea.ModShift))) {
 			return Outcome{Kind: OutcomeNone}
 		}
 		return t.previewOutcome()
-	case tea.MouseButtonWheelUp:
-		if !t.moveCursorBy(-t.wheelStep(msg.Shift)) {
+	case tea.MouseWheelUp:
+		if !t.moveCursorBy(-t.wheelStep(msg.Mod.Contains(tea.ModShift))) {
 			return Outcome{Kind: OutcomeNone}
 		}
 		return t.previewOutcome()
-	case tea.MouseButtonLeft:
+	case tea.MouseLeft:
 		return t.handleLeftClick(msg.X, msg.Y)
 	default:
 		return Outcome{Kind: OutcomeNone}

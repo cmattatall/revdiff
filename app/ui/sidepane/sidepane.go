@@ -4,7 +4,7 @@ package sidepane
 //go:generate go run github.com/go-pkgz/enum@v0.7.0 -type direction
 
 import (
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 
 	"github.com/umputun/revdiff/app/diff"
 	"github.com/umputun/revdiff/app/ui/style"

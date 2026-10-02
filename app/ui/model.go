@@ -21,10 +21,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/umputun/revdiff/app/annotation"
 	"github.com/umputun/revdiff/app/diff"
@@ -111,7 +111,7 @@ type overlayManager interface {
 	UpdateBlame(spec overlay.InfoSpec)
 	OpenInspection(spec overlay.InspectionSpec)
 	Close()
-	HandleKey(msg tea.KeyMsg, action keymap.Action) overlay.Outcome
+	HandleKey(msg tea.KeyPressMsg, action keymap.Action) overlay.Outcome
 	HandleInput(msg tea.Msg) overlay.Outcome
 	HandleMouse(msg tea.MouseMsg) overlay.Outcome
 	Compose(base string, ctx overlay.RenderCtx) string
@@ -1036,7 +1036,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.layout.focus = paneTree
 		}
 		return m, cmd
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if m.live.operation == liveStaging {
 			return m, nil
 		}
@@ -1119,7 +1119,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// transient hints persist for exactly one render cycle; any key that reaches
 	// this point dismisses the last hint before the new action runs.
 	m.reload.hint = ""
@@ -1166,15 +1166,16 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m = model.(Model)
 	}
 
-	action := m.keymap.Resolve(msg.String())
+	key := msg.String()
+	action := m.keymap.Resolve(key)
 
 	// chord-first guard: an unresolved key that is a registered chord leader
 	// enters pending state. Load-time conflict resolution guarantees no key is
 	// bound both as a standalone action and a chord prefix, so action is empty
 	// whenever IsChordLeader returns true; the guard stays purely additive.
-	if action == "" && m.keymap.IsChordLeader(msg.String()) {
-		m.keys.chordPending = msg.String()
-		m.keys.hint = "Pending: " + msg.String() + ", esc to cancel"
+	if action == "" && m.keymap.IsChordLeader(key) {
+		m.keys.chordPending = key
+		m.keys.hint = "Pending: " + key + ", esc to cancel"
 		return m, nil
 	}
 
@@ -1216,6 +1217,8 @@ func (m Model) dispatchAction(action keymap.Action) (tea.Model, tea.Cmd) {
 		return m.handleFileOrSearchNav(false)
 	case keymap.ActionConfirm:
 		return m.handleEnterKey()
+	case keymap.ActionInspectSymbol:
+		return m.openInspection(InspectHover)
 	case keymap.ActionAnnotateFile:
 		return m.handleFileAnnotateKey()
 	case keymap.ActionOpenFileInEditor:
@@ -1314,7 +1317,7 @@ func (m Model) applyReloadCleanup() {
 	}
 }
 
-func (m Model) handlePendingReload(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handlePendingReload(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	m.reload.pending = false
 	if msg.String() == "y" {
 		m.applyReloadCleanup()
@@ -1372,7 +1375,7 @@ func (m Model) handleReload() (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m Model) handleModalKey(msg tea.KeyMsg) (bool, tea.Model, tea.Cmd) {
+func (m Model) handleModalKey(msg tea.KeyPressMsg) (bool, tea.Model, tea.Cmd) {
 	if m.message.active {
 		model, cmd := m.handleHarnessMessageKey(msg)
 		return true, model, cmd
@@ -1469,12 +1472,12 @@ func (m *Model) toggleTreePane() {
 	if m.layout.treeHidden {
 		m.layout.treeWidth = 0
 		m.layout.focus = paneDiff
-		m.layout.viewport.Width = m.layout.width - 2
+		m.layout.viewport.SetWidth(m.layout.width - 2)
 	} else {
 		m.layout.treeWidth = max(minTreeWidth, m.layout.width*m.cfg.treeWidthRatio/10)
-		m.layout.viewport.Width = m.layout.width - m.layout.treeWidth - 4
+		m.layout.viewport.SetWidth(m.layout.width - m.layout.treeWidth - 4)
 	}
-	m.layout.viewport.Height = m.paneHeight() - 1
+	m.layout.viewport.SetHeight(m.paneHeight() - 1)
 	m.syncViewportToCursor()
 }
 
@@ -1616,15 +1619,15 @@ func (m Model) handleResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.layout.width = msg.Width
 	m.layout.height = msg.Height
 	if m.command.active {
-		m.command.input.Width = max(1, m.layout.width-4-len(m.command.input.Prompt))
+		m.command.input.SetWidth(max(1, m.layout.width-4-len(m.command.input.Prompt)))
 		m.command.input.SetCursor(m.command.input.Position())
 	}
 	if m.message.active {
-		m.message.input.Width = max(1, m.layout.width-4-len(m.message.input.Prompt))
+		m.message.input.SetWidth(max(1, m.layout.width-4-len(m.message.input.Prompt)))
 		m.message.input.SetCursor(m.message.input.Position())
 	}
 	if m.search.active {
-		m.search.input.Width = max(1, m.layout.width-5)
+		m.search.input.SetWidth(max(1, m.layout.width-5))
 		m.search.input.SetCursor(m.search.input.Position())
 	}
 
@@ -1641,11 +1644,11 @@ func (m Model) handleResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	diffHeight := m.paneHeight() - 1 // pane height minus diff header
 
 	if !m.ready {
-		m.layout.viewport = viewport.New(diffWidth, diffHeight)
+		m.layout.viewport = viewport.New(viewport.WithWidth(diffWidth), viewport.WithHeight(diffHeight))
 		m.ready = true
 	} else {
-		m.layout.viewport.Width = diffWidth
-		m.layout.viewport.Height = diffHeight
+		m.layout.viewport.SetWidth(diffWidth)
+		m.layout.viewport.SetHeight(diffHeight)
 	}
 
 	m.tree.EnsureVisible(m.treePageSize())

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -60,7 +60,7 @@ func thumbRows(s string) []int {
 
 func TestApplyScrollbar_NoOpWhenContentFits(t *testing.T) {
 	m := testModel(nil, nil)
-	m.layout.viewport.Height = 10
+	m.layout.viewport.SetHeight(10)
 	m.layout.viewport.SetContent(strings.Repeat("x\n", 5)) // 6 lines (split on \n yields trailing empty)
 
 	in := buildPaneRender(10, 20)
@@ -71,7 +71,7 @@ func TestApplyScrollbar_NoOpWhenContentFits(t *testing.T) {
 
 func TestApplyScrollbar_NoOpWhenViewportZero(t *testing.T) {
 	m := testModel(nil, nil)
-	m.layout.viewport.Height = 0
+	m.layout.viewport.SetHeight(0)
 	m.layout.viewport.SetContent(strings.Repeat("x\n", 100))
 
 	in := buildPaneRender(0, 20)
@@ -81,7 +81,7 @@ func TestApplyScrollbar_NoOpWhenViewportZero(t *testing.T) {
 
 func TestApplyScrollbar_ThumbAtTop(t *testing.T) {
 	m := testModel(nil, nil)
-	m.layout.viewport.Height = 10
+	m.layout.viewport.SetHeight(10)
 	// 100 total lines, viewport sees 10 → thumb size = 10*10/100 = 1
 	m.layout.viewport.SetContent(strings.Repeat("x\n", 99))
 	m.layout.viewport.SetYOffset(0)
@@ -95,7 +95,7 @@ func TestApplyScrollbar_ThumbAtTop(t *testing.T) {
 
 func TestApplyScrollbar_ThumbAtBottom(t *testing.T) {
 	m := testModel(nil, nil)
-	m.layout.viewport.Height = 10
+	m.layout.viewport.SetHeight(10)
 	m.layout.viewport.SetContent(strings.Repeat("x\n", 99)) // 100 lines total
 	m.layout.viewport.SetYOffset(90)                        // fully scrolled (total - vh = 90)
 
@@ -108,7 +108,7 @@ func TestApplyScrollbar_ThumbAtBottom(t *testing.T) {
 
 func TestApplyScrollbar_ThumbProportionalSize(t *testing.T) {
 	m := testModel(nil, nil)
-	m.layout.viewport.Height = 20
+	m.layout.viewport.SetHeight(20)
 	// 40 total lines, viewport 20 → thumb size = 20*20/40 = 10, maxStart = 10
 	m.layout.viewport.SetContent(strings.Repeat("x\n", 39))
 
@@ -132,7 +132,7 @@ func TestApplyScrollbar_ThumbProportionalSize(t *testing.T) {
 
 func TestApplyScrollbar_ThumbMinimumSizeOne(t *testing.T) {
 	m := testModel(nil, nil)
-	m.layout.viewport.Height = 5
+	m.layout.viewport.SetHeight(5)
 	// 10000 total lines → thumb size = 5*5/10000 = 0, clamped to 1
 	m.layout.viewport.SetContent(strings.Repeat("x\n", 9999))
 	m.layout.viewport.SetYOffset(0)
@@ -143,7 +143,7 @@ func TestApplyScrollbar_ThumbMinimumSizeOne(t *testing.T) {
 
 func TestApplyScrollbar_ThumbMovesWithOffset(t *testing.T) {
 	m := testModel(nil, nil)
-	m.layout.viewport.Height = 10
+	m.layout.viewport.SetHeight(10)
 	m.layout.viewport.SetContent(strings.Repeat("x\n", 99)) // 100 lines
 
 	// thumb size = 10*10/100 = 1, max start = 9, denominator = 90
@@ -166,7 +166,7 @@ func TestApplyScrollbar_ThumbMovesWithOffset(t *testing.T) {
 
 func TestApplyScrollbar_PreservesAnsiEnvelope(t *testing.T) {
 	m := testModel(nil, nil)
-	m.layout.viewport.Height = 5
+	m.layout.viewport.SetHeight(5)
 	m.layout.viewport.SetContent(strings.Repeat("x\n", 19)) // 20 lines, thumb size = 5*5/20 = 1
 	m.layout.viewport.SetYOffset(0)
 
@@ -201,7 +201,7 @@ func TestApplyScrollbar_PreservesAnsiEnvelope(t *testing.T) {
 
 func TestApplyScrollbar_NeverModifiesCorners(t *testing.T) {
 	m := testModel(nil, nil)
-	m.layout.viewport.Height = 5
+	m.layout.viewport.SetHeight(5)
 	m.layout.viewport.SetContent(strings.Repeat("x\n", 19))
 	m.layout.viewport.SetYOffset(15) // fully scrolled — thumb on last viewport row
 
@@ -231,7 +231,7 @@ func TestApplyScrollbar_NeverModifiesCorners(t *testing.T) {
 
 func TestApplyScrollbar_PreservesLineCount(t *testing.T) {
 	m := testModel(nil, nil)
-	m.layout.viewport.Height = 8
+	m.layout.viewport.SetHeight(8)
 	m.layout.viewport.SetContent(strings.Repeat("x\n", 30))
 	m.layout.viewport.SetYOffset(5)
 
@@ -244,7 +244,7 @@ func TestApplyScrollbar_SafeWhenLinesShorterThanExpected(t *testing.T) {
 	// defensive: if some upstream change shortens the rendered output, the
 	// function must no-op without panic and without applying the thumb.
 	m := testModel(nil, nil)
-	m.layout.viewport.Height = 100
+	m.layout.viewport.SetHeight(100)
 	m.layout.viewport.SetContent(strings.Repeat("x\n", 999))
 	m.layout.viewport.SetYOffset(0)
 
@@ -272,7 +272,7 @@ func TestApplyScrollbar_ThumbWrappedInBoldSGR(t *testing.T) {
 // shaped than the lipgloss-rendered pane assumed by applyScrollbar.
 func TestApplyScrollbar_RowWithoutTrackRune(t *testing.T) {
 	m := testModel(nil, nil)
-	m.layout.viewport.Height = 3
+	m.layout.viewport.SetHeight(3)
 	m.layout.viewport.SetContent(strings.Repeat("x\n", 99)) // forces thumb
 	m.layout.viewport.SetYOffset(0)
 
@@ -299,7 +299,7 @@ func TestApplyScrollbar_RowWithoutTrackRune(t *testing.T) {
 // documented in scrollbar.go's godoc.
 func TestApplyScrollbar_BodyContainingTrackRune(t *testing.T) {
 	m := testModel(nil, nil)
-	m.layout.viewport.Height = 3
+	m.layout.viewport.SetHeight(3)
 	m.layout.viewport.SetContent(strings.Repeat("x\n", 99))
 	m.layout.viewport.SetYOffset(0)
 
@@ -327,7 +327,7 @@ func TestApplyScrollbar_AgainstRealLipglossOutput(t *testing.T) {
 	m := testModel(nil, nil)
 	const innerW = 20
 	const innerH = 6
-	m.layout.viewport.Height = innerH - 1 // 1 row reserved for the header
+	m.layout.viewport.SetHeight(innerH - 1) // 1 row reserved for the header
 	m.layout.viewport.SetContent(strings.Repeat("x\n", 99))
 	m.layout.viewport.SetYOffset(0)
 
@@ -361,7 +361,7 @@ func TestApplyScrollbar_AgainstRealLipglossOutput(t *testing.T) {
 // off-by-one in the maxStart math can't sneak in.
 func TestApplyScrollbar_ViewportHeightOne(t *testing.T) {
 	m := testModel(nil, nil)
-	m.layout.viewport.Height = 1
+	m.layout.viewport.SetHeight(1)
 	m.layout.viewport.SetContent(strings.Repeat("x\n", 99)) // 100 lines
 
 	for _, yOff := range []int{0, 50, 99} {
@@ -384,7 +384,7 @@ func TestApplyScrollbar_BailsOnUnexpectedLineCount(t *testing.T) {
 	// over-long render exceeds it. testModel sets layout.height=40 →
 	// paneHeight()=37 (40 - 2 borders - 1 status bar). drop to 8 → 5.
 	m.layout.height = 8 // paneHeight() = 5
-	m.layout.viewport.Height = 3
+	m.layout.viewport.SetHeight(3)
 	m.layout.viewport.SetContent(strings.Repeat("x\n", 99)) // forces thumb
 	m.layout.viewport.SetYOffset(0)
 

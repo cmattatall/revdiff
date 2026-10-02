@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/umputun/revdiff/app/keymap"
@@ -59,7 +59,7 @@ func (a *annotListOverlay) render(ctx RenderCtx, mgr *Manager) string {
 
 	accentFg := string(ctx.Resolver.Color(style.ColorKeyAccentFg))
 	paneBg := string(ctx.Resolver.Color(style.ColorKeyDiffPaneBg))
-	box = mgr.injectBorderTitle(box, title, borderEdgeText{popupWidth: popupWidth, accentFg: accentFg, paneBg: paneBg})
+	box = mgr.injectBorderTitle(box, title, borderEdgeText{accentFg: accentFg, paneBg: paneBg})
 
 	return box
 }
@@ -74,14 +74,14 @@ func (a *annotListOverlay) emptyOverlay(popupWidth int, resolver Resolver, mgr *
 	title := " annotations (0) "
 	accentFg := string(resolver.Color(style.ColorKeyAccentFg))
 	paneBg := string(resolver.Color(style.ColorKeyDiffPaneBg))
-	box = mgr.injectBorderTitle(box, title, borderEdgeText{popupWidth: popupWidth, accentFg: accentFg, paneBg: paneBg})
+	box = mgr.injectBorderTitle(box, title, borderEdgeText{accentFg: accentFg, paneBg: paneBg})
 	return box
 }
 
 func (a *annotListOverlay) boxStyle(width int, resolver Resolver) lipgloss.Style {
 	return resolver.Style(style.StyleKeyAnnotListBorder).
 		Padding(1, 1).
-		Width(width)
+		Width(width + 2)
 }
 
 func (a *annotListOverlay) maxVisible(height int) int {
@@ -140,13 +140,13 @@ func (a *annotListOverlay) formatItem(item AnnotationItem, width int, selected b
 	return "  " + styledPrefix
 }
 
-func (a *annotListOverlay) handleKey(msg tea.KeyMsg, action keymap.Action) Outcome {
+func (a *annotListOverlay) handleKey(msg tea.KeyPressMsg, action keymap.Action) Outcome {
 	if action == keymap.ActionAnnotList {
 		return Outcome{Kind: OutcomeClosed}
 	}
 
 	switch {
-	case msg.Type == tea.KeyEnter:
+	case msg.String() == "enter":
 		if len(a.items) == 0 {
 			return Outcome{Kind: OutcomeClosed}
 		}
@@ -157,7 +157,7 @@ func (a *annotListOverlay) handleKey(msg tea.KeyMsg, action keymap.Action) Outco
 			AnnotationTarget: &target,
 		}
 
-	case action == keymap.ActionDismiss || msg.Type == tea.KeyEsc:
+	case action == keymap.ActionDismiss || msg.String() == "esc":
 		return Outcome{Kind: OutcomeClosed}
 	}
 
@@ -201,18 +201,21 @@ func (a *annotListOverlay) moveCursorBy(delta int) {
 // pressing Enter). coords are popup-local (Manager.HandleMouse translates).
 // non-press actions and other buttons are ignored so the overlay is not
 // dismissed by accidental drag or release events.
-func (a *annotListOverlay) handleMouse(msg tea.MouseMsg) Outcome {
-	if msg.Action != tea.MouseActionPress {
+func (a *annotListOverlay) handleMouse(event tea.MouseMsg) Outcome {
+	switch event.(type) {
+	case tea.MouseClickMsg, tea.MouseWheelMsg:
+	default:
 		return Outcome{Kind: OutcomeNone}
 	}
+	msg := event.Mouse()
 	switch msg.Button {
-	case tea.MouseButtonWheelDown:
-		a.moveCursorBy(a.wheelStep(msg.Shift))
+	case tea.MouseWheelDown:
+		a.moveCursorBy(a.wheelStep(msg.Mod.Contains(tea.ModShift)))
 		return Outcome{Kind: OutcomeNone}
-	case tea.MouseButtonWheelUp:
-		a.moveCursorBy(-a.wheelStep(msg.Shift))
+	case tea.MouseWheelUp:
+		a.moveCursorBy(-a.wheelStep(msg.Mod.Contains(tea.ModShift)))
 		return Outcome{Kind: OutcomeNone}
-	case tea.MouseButtonLeft:
+	case tea.MouseLeft:
 		return a.handleLeftClick(msg.X, msg.Y)
 	default:
 		return Outcome{Kind: OutcomeNone}

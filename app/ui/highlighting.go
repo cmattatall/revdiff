@@ -4,7 +4,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/umputun/revdiff/app/diff"
 )
 
@@ -54,7 +54,7 @@ func (m Model) handleHighlighted(msg highlightedMsg) (tea.Model, tea.Cmd) {
 	}
 	m.file.highlighted = msg.lines
 	m.invalidateRenderCaches()
-	offset := m.layout.viewport.YOffset
+	offset := m.layout.viewport.YOffset()
 	m.layout.viewport.SetContent(m.renderDiff())
 	m.layout.viewport.SetYOffset(offset)
 	return m, nil

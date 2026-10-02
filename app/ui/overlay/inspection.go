@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/umputun/revdiff/app/diff"
@@ -42,6 +42,7 @@ func (i *inspectionOverlay) open(spec InspectionSpec) {
 		i.spec.Items = slices.Clone(spec.Items)
 		i.picker.open(FilePickerSpec{Paths: spec.Items})
 		i.picker.heading = spec.Title
+		i.picker.fuzzy = true
 	}
 }
 
@@ -60,7 +61,7 @@ func (i *inspectionOverlay) render(ctx RenderCtx, mgr *Manager) string {
 	width := max(1, min(120, ctx.Width-4))
 	inner := max(1, width-4)
 	if i.spec.Line == 0 && i.width != inner {
-		i.lines = strings.Split(ansi.Hardwrap(i.text(), inner, true), "\n")
+		i.lines = style.SGR{}.Reemit(strings.Split(ansi.Hardwrap(i.text(), inner, true), "\n"))
 		i.width = inner
 	}
 	i.offset = max(0, min(i.offset, len(i.lines)-i.height))
@@ -77,7 +78,7 @@ func (i *inspectionOverlay) render(ctx RenderCtx, mgr *Manager) string {
 		rows = append(rows, text)
 	}
 	box := ctx.Resolver.Style(style.StyleKeyInfoBox).Padding(1, 1).Width(width).Render(strings.Join(rows, "\n"))
-	edge := borderEdgeText{popupWidth: width, accentFg: string(ctx.Resolver.Color(style.ColorKeyAccentFg)), paneBg: string(ctx.Resolver.Color(style.ColorKeyDiffPaneBg))}
+	edge := borderEdgeText{accentFg: string(ctx.Resolver.Color(style.ColorKeyAccentFg)), paneBg: string(ctx.Resolver.Color(style.ColorKeyDiffPaneBg))}
 	box = mgr.injectBorderTitle(box, " "+style.SanitizeFilenameForDisplay(i.spec.Title)+" ", edge)
 	return mgr.injectBorderFooter(box, " ↑↓ scroll · Esc back ", edge)
 }
@@ -92,8 +93,8 @@ func (i *inspectionOverlay) outcome(out Outcome) Outcome {
 	return out
 }
 
-func (i *inspectionOverlay) handleKey(msg tea.KeyMsg, action keymap.Action) Outcome {
-	if msg.Type == tea.KeyEsc || msg.Type == tea.KeyCtrlC {
+func (i *inspectionOverlay) handleKey(msg tea.KeyPressMsg, action keymap.Action) Outcome {
+	if msg.String() == "esc" || msg.String() == "ctrl+c" {
 		return Outcome{Kind: OutcomeInspectionBack}
 	}
 	if i.spec.Items != nil {
@@ -120,11 +121,11 @@ func (i *inspectionOverlay) handleMouse(msg tea.MouseMsg) Outcome {
 	if i.spec.Items != nil {
 		return i.outcome(i.picker.handleMouse(msg))
 	}
-	if msg.Action == tea.MouseActionPress {
+	if msg, ok := msg.(tea.MouseWheelMsg); ok {
 		switch msg.Button {
-		case tea.MouseButtonWheelDown:
+		case tea.MouseWheelDown:
 			i.offset += WheelStep
-		case tea.MouseButtonWheelUp:
+		case tea.MouseWheelUp:
 			i.offset -= WheelStep
 		}
 	}

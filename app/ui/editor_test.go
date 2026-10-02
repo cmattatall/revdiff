@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -764,16 +764,16 @@ func TestHandleSourceEditorFinished_RestoresMouseTracking(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			m := testModel([]string{"a.go"}, nil)
+			m.cfg.mouseTracking = true
 
 			result, cmd := m.handleSourceEditorFinished(sourceEditorFinishedMsg{
-				err:          tt.err,
-				fileName:     "a.go",
-				restoreMouse: true,
+				err:      tt.err,
+				fileName: "a.go",
 			})
 			model := result.(Model)
 
-			require.NotNil(t, cmd)
-			assert.IsType(t, tea.EnableMouseCellMotion(), cmd())
+			require.Nil(t, cmd)
+			assert.Equal(t, tea.MouseModeCellMotion, model.View().MouseMode)
 			assert.Equal(t, tt.wantHint, model.editorState.hint)
 		})
 	}
@@ -787,8 +787,9 @@ func TestHandleSourceEditorFinished_DoesNotRestoreDisabledMouseTracking(t *testi
 	assert.Nil(t, cmd)
 }
 
-func TestHandleSourceEditorFinished_CombinesMouseRestoreAndReload(t *testing.T) {
+func TestHandleSourceEditorFinished_ReloadPreservesMouseMode(t *testing.T) {
 	m := testModel([]string{"a.go"}, nil)
+	m.cfg.mouseTracking = true
 	m.tree = testNewFileTree([]string{"a.go"})
 	m.file.name = "a.go"
 	beforeSeq := m.file.loadSeq
@@ -796,15 +797,11 @@ func TestHandleSourceEditorFinished_CombinesMouseRestoreAndReload(t *testing.T) 
 	result, cmd := m.handleSourceEditorFinished(sourceEditorFinishedMsg{
 		fileName:             "a.go",
 		reloadAfterCleanExit: true,
-		restoreMouse:         true,
 	})
 	model := result.(Model)
 
 	require.NotNil(t, cmd)
-	batch, ok := cmd().(tea.BatchMsg)
-	require.True(t, ok)
-	require.Len(t, batch, 2)
-	assert.IsType(t, tea.EnableMouseCellMotion(), batch[0]())
+	assert.Equal(t, tea.MouseModeCellMotion, model.View().MouseMode)
 	assert.Greater(t, model.file.loadSeq, beforeSeq)
 }
 
@@ -883,11 +880,11 @@ func TestModel_EditUsesFocusedContext(t *testing.T) {
 				fake := mockSourceEditor(nil)
 				m.editor = fake
 				m.keymap.Bind("e", keymap.ActionOpenFileInEditor)
-				key := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")}
+				key := tea.KeyPressMsg{Text: "e"}
 				if palette {
 					m.startCommand()
 					m.command.input.SetValue("edit")
-					key = tea.KeyMsg{Type: tea.KeyEnter}
+					key = tea.KeyPressMsg{Code: tea.KeyEnter}
 				}
 				model, cmd := m.Update(key)
 				m = model.(Model)
@@ -973,15 +970,13 @@ func TestModel_EditorFinishedReenablesMouseTracking(t *testing.T) {
 	m.file.lines = lines
 	m.nav.diffCursor = 1
 	m.startAnnotation()
+	m.cfg.mouseTracking = true
 
-	result, cmd := m.Update(editorFinishedMsg{content: "review note", restoreMouse: true, fileName: "a.go", line: 2, changeType: "+"})
+	result, cmd := m.Update(editorFinishedMsg{content: "review note", fileName: "a.go", line: 2, changeType: "+"})
 	model := result.(Model)
 
-	require.NotNil(t, cmd, "editor completion must re-enable mouse tracking after Bubble Tea restores the terminal")
-	// This intentionally checks the current command shape. The external behavior
-	// is a terminal escape sequence emitted by Bubble Tea after Update returns;
-	// asserting it without a PTY harness requires inspecting the command message.
-	assert.IsType(t, tea.EnableMouseCellMotion(), cmd(), "editor completion must emit Bubble Tea's mouse re-enable message")
+	require.Nil(t, cmd, "Bubble Tea restores the terminal modes declared by View")
+	assert.Equal(t, tea.MouseModeCellMotion, model.View().MouseMode)
 	assert.False(t, model.annot.annotating, "annotation mode should close after successful editor save")
 	require.Len(t, model.store.Get("a.go"), 1)
 	assert.Equal(t, "review note", model.store.Get("a.go")[0].Comment)
@@ -1000,10 +995,11 @@ func TestModel_EditorFinishedDoesNotEnableMouseWhenTrackingDisabled(t *testing.T
 	m.nav.diffCursor = 1
 	m.startAnnotation()
 
-	result, cmd := m.Update(editorFinishedMsg{content: "review note", restoreMouse: false, fileName: "a.go", line: 2, changeType: "+"})
+	result, cmd := m.Update(editorFinishedMsg{content: "review note", fileName: "a.go", line: 2, changeType: "+"})
 	model := result.(Model)
 
 	assert.Nil(t, cmd, "editor completion must not enable mouse tracking when the session did not enable it")
+	assert.Equal(t, tea.MouseModeNone, model.View().MouseMode)
 	assert.False(t, model.annot.annotating, "annotation mode should close after successful editor save")
 	require.Len(t, model.store.Get("a.go"), 1)
 	assert.Equal(t, "review note", model.store.Get("a.go")[0].Comment)

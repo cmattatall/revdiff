@@ -3,10 +3,12 @@ package ui
 import (
 	"context"
 	"errors"
+	"io"
 	"strings"
 	"testing"
+	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
 
@@ -16,8 +18,16 @@ import (
 )
 
 type inspectionStub struct {
-	query func(context.Context, InspectionOperation, InspectionPosition, string) (InspectionResult, error)
-	read  func(context.Context, string) (string, error)
+	symbols func(context.Context, InspectionPosition, string) ([]InspectionSymbol, error)
+	query   func(context.Context, InspectionOperation, InspectionPosition, string) (InspectionResult, error)
+	read    func(context.Context, string) (string, error)
+}
+
+func (s inspectionStub) Symbols(ctx context.Context, pos InspectionPosition, line string) ([]InspectionSymbol, error) {
+	if s.symbols != nil {
+		return s.symbols(ctx, pos, line)
+	}
+	return []InspectionSymbol{{Name: "symbol", Column: 0}}, nil
 }
 
 func (s inspectionStub) Query(ctx context.Context, op InspectionOperation, pos InspectionPosition, line string) (InspectionResult, error) {
@@ -32,6 +42,38 @@ func (s inspectionStub) Servers() []InspectionServer {
 	return []InspectionServer{{Name: "example", Command: "example-server", Path: "/tools/example-server"}, {Name: "other", Command: "other-server"}}
 }
 
+type inspectionKeyProbe struct{ Model }
+
+func (m inspectionKeyProbe) Init() tea.Cmd { return nil }
+func (m inspectionKeyProbe) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	model, cmd := m.Model.Update(msg)
+	m.Model = model.(Model)
+	if _, ok := msg.(inspectionLoadedMsg); ok {
+		return m, tea.Quit
+	}
+	return m, cmd
+}
+
+func TestInspectShortcutKeepsDiffFocus(t *testing.T) {
+	m := testModel([]string{"a.go"}, nil)
+	m.filesLoaded, m.layout.focus, m.file.name = true, paneDiff, "a.go"
+	m.file.lines = []diff.DiffLine{{NewNum: 1, Content: "type Name struct{}", ChangeType: diff.ChangeContext}}
+	m.inspection.provider = inspectionStub{symbols: func(_ context.Context, _ InspectionPosition, line string) ([]InspectionSymbol, error) {
+		require.Equal(t, "type Name struct{}", line)
+		return []InspectionSymbol{{"Name", 5}}, nil
+	}}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	p := tea.NewProgram(inspectionKeyProbe{m}, tea.WithContext(ctx), tea.WithInput(strings.NewReader("\x1b[13;9u")), tea.WithOutput(io.Discard), tea.WithoutRenderer(), tea.WithoutSignalHandler())
+	model, err := p.Run()
+	require.NoError(t, err)
+	m = model.(inspectionKeyProbe).Model
+	require.False(t, m.command.active)
+	require.False(t, m.annot.annotating)
+	require.Equal(t, paneDiff, m.layout.focus)
+	require.Equal(t, []string{"Name · column 6"}, m.inspection.page.spec.Items)
+}
+
 func TestInspectionCommandsAndReturnToReview(t *testing.T) {
 	for _, op := range []InspectionOperation{InspectHover, InspectDefinition, InspectReferences} {
 		t.Run(string(op), func(t *testing.T) {
@@ -42,8 +84,15 @@ func TestInspectionCommandsAndReturnToReview(t *testing.T) {
 			m.file.name = "a.go"
 			// Repeat the identifier after a multibyte prefix to catch byte/rune confusion.
 			m.file.lines = []diff.DiffLine{{Content: "header"}, {NewNum: 8, Content: "π := π + π", ChangeType: diff.ChangeAdd}}
-			m.nav.diffCursor, m.layout.viewport.YOffset = 1, 1
+			m.nav.diffCursor = 1
+			m.layout.viewport.SetContent("header\nπ := π + π")
+			m.layout.viewport.SetYOffset(1)
 			m.inspection.provider = inspectionStub{
+				symbols: func(_ context.Context, pos InspectionPosition, line string) ([]InspectionSymbol, error) {
+					require.Equal(t, 8, pos.Line)
+					require.Equal(t, "π := π + π", line)
+					return []InspectionSymbol{{"π", 0}, {"π", 6}, {"π", 11}}, nil
+				},
 				query: func(_ context.Context, got InspectionOperation, pos InspectionPosition, line string) (InspectionResult, error) {
 					require.Equal(t, op, got)
 					require.Equal(t, InspectionPosition{Path: "a.go", Line: 8, Column: 11}, pos)
@@ -56,16 +105,22 @@ func TestInspectionCommandsAndReturnToReview(t *testing.T) {
 				},
 			}
 			m.startCommand()
-			m.command.input.SetValue("inspect " + string(op))
-			model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			verb := string(op)
+			if op == InspectHover {
+				verb = "inspect"
+			}
+			m.command.input.SetValue("lsp symbol " + verb)
+			model, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+			m = model.(Model)
+			model, _ = m.Update(cmd())
 			m = model.(Model)
 			require.Equal(t, overlay.KindInspection, m.overlay.Kind())
 			require.Equal(t, []string{"π · column 1", "π · column 6", "π · column 10"}, m.inspection.page.spec.Items)
 			for range 2 {
-				model, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+				model, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 				m = model.(Model)
 			}
-			model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			model, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 			m = model.(Model)
 			require.NotNil(t, cmd)
 			model, _ = m.Update(cmd())
@@ -76,7 +131,7 @@ func TestInspectionCommandsAndReturnToReview(t *testing.T) {
 				require.Contains(t, m.inspection.page.spec.Highlighted, "\x1b[38;2;")
 			} else {
 				require.Equal(t, []string{"other.go:2:5"}, m.inspection.page.spec.Items)
-				model, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+				model, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 				m = model.(Model)
 				model, _ = m.Update(cmd())
 				m = model.(Model)
@@ -87,13 +142,13 @@ func TestInspectionCommandsAndReturnToReview(t *testing.T) {
 				backs++
 			}
 			for range backs {
-				model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+				model, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 				m = model.(Model)
 			}
 			require.False(t, m.overlay.Active())
 			require.Equal(t, "a.go", m.file.name)
 			require.Equal(t, 1, m.nav.diffCursor)
-			require.Equal(t, 1, m.layout.viewport.YOffset)
+			require.Equal(t, 1, m.layout.viewport.YOffset())
 			require.Equal(t, paneDiff, m.layout.focus)
 		})
 	}
@@ -107,16 +162,18 @@ func TestInspectionCancellationAndStaleReply(t *testing.T) {
 		require.ErrorIs(t, ctx.Err(), context.Canceled)
 		return InspectionResult{}, errors.New("late reply")
 	}}
-	model, _ := m.openInspection(InspectHover)
+	model, cmd := m.openInspection(InspectHover)
 	m = model.(Model)
-	model, cmd := m.chooseInspection(0)
+	model, _ = m.Update(cmd())
 	m = model.(Model)
-	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model, cmd = m.chooseInspection(0)
+	m = model.(Model)
+	model, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	m = model.(Model)
 	model, _ = m.Update(cmd())
 	m = model.(Model)
 	require.Equal(t, inspectionSymbols, m.inspection.page.kind)
-	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	require.False(t, model.(Model).overlay.Active())
 }
 
@@ -132,7 +189,6 @@ func TestInspectionGuards(t *testing.T) {
 		{"loading", func(m *Model) { m.file.requestedPath = "b.go" }, "Wait"},
 		{"deleted", func(m *Model) { m.file.lines[0].ChangeType = diff.ChangeRemove }, "current source line"},
 		{"annotation", func(m *Model) { m.annot.cursorOnAnnotation = true }, "current source line"},
-		{"empty", func(m *Model) { m.file.lines[0].Content = "{}" }, "No identifiers"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := testModel([]string{"a.go"}, nil)
@@ -156,7 +212,7 @@ func TestLSPInstallUsesShellRegistry(t *testing.T) {
 	m.startCommand()
 	m.command.input.SetValue("lsp install ex")
 	require.Equal(t, "lsp install example", m.commandMatches()[0].name)
-	model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	require.NotNil(t, cmd)
 	require.Equal(t, "package-tool install language-server", runner.command)
 	require.False(t, model.(Model).command.active)
@@ -167,17 +223,54 @@ func TestLSPListAndCommandFromPopup(t *testing.T) {
 	m.inspection.provider = inspectionStub{}
 	m.startCommand()
 	m.command.input.SetValue("lsp list")
-	model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = model.(Model)
 	model, _ = m.Update(cmd())
 	m = model.(Model)
 	require.Contains(t, m.inspection.page.spec.Text, "example — example-server (/tools/example-server)")
 	require.Contains(t, m.inspection.page.spec.Text, "other — other-server (not on PATH)")
 	require.Contains(t, m.inspection.page.spec.Text, ":lsp install other")
-	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(":")})
+	model, _ = m.Update(tea.KeyPressMsg{Text: ":"})
 	m = model.(Model)
 	require.True(t, m.command.active)
 	require.False(t, m.overlay.Active())
+}
+
+func TestFileSymbolsFuzzySelectAndPreview(t *testing.T) {
+	for _, focus := range []pane{paneTree, paneDiff} {
+		m := testModel([]string{"active.go"}, nil)
+		m.filesLoaded, m.layout.focus, m.file.name = true, focus, "active.go"
+		m.inspection.provider = inspectionStub{
+			query: func(_ context.Context, op InspectionOperation, pos InspectionPosition, _ string) (InspectionResult, error) {
+				require.Equal(t, InspectSymbols, op)
+				require.Equal(t, "active.go", pos.Path)
+				return InspectionResult{Symbols: []InspectionDocumentSymbol{
+					{"Other", InspectionPosition{"active.go", 2, 0}},
+					{"Parser.ParseRequest", InspectionPosition{"active.go", 19, 5}},
+				}}, nil
+			},
+			read: func(_ context.Context, path string) (string, error) {
+				require.Equal(t, "active.go", path)
+				return strings.Repeat("// context\n", 18) + "func ParseRequest() {}", nil
+			},
+		}
+		m.startCommand()
+		m.command.input.SetValue("lsp symbol list")
+		model, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		m = model.(Model)
+		model, _ = m.Update(cmd())
+		m = model.(Model)
+		model, _ = m.Update(tea.KeyPressMsg{Text: "pprq"})
+		m = model.(Model)
+		model, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		m = model.(Model)
+		require.NotNil(t, cmd, "non-contiguous fuzzy query selects the declaration")
+		model, _ = m.Update(cmd())
+		m = model.(Model)
+		require.Equal(t, 19, m.inspection.page.spec.Line)
+		require.Equal(t, focus, m.layout.focus)
+		require.Equal(t, "active.go", m.file.name)
+	}
 }
 
 func TestInspectionSyntaxHighlighting(t *testing.T) {

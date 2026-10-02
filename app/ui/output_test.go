@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -242,13 +242,12 @@ func TestModel_HandlePostFlushFinished(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		m := testModel([]string{"a.go"}, nil)
 		result, cmd := m.handlePostFlushFinished(postFlushFinishedMsg{
-			successHint:  "Wrote 2 annotations to output file and ran post-flush command",
-			failureHint:  "Wrote 2 annotations to output file; post-flush command failed",
-			restoreMouse: true,
+			successHint: "Wrote 2 annotations to output file and ran post-flush command",
+			failureHint: "Wrote 2 annotations to output file; post-flush command failed",
 		})
 		model := result.(Model)
 		assert.Equal(t, "Wrote 2 annotations to output file and ran post-flush command", model.output.hint)
-		assert.NotNil(t, cmd)
+		assert.Nil(t, cmd)
 	})
 
 	t.Run("failure", func(t *testing.T) {
@@ -299,7 +298,7 @@ func TestModel_ActionFlushOutput_Dispatch(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "out.md")
 	m := testNewModel(t, plainRenderer(), store, noopHighlighter(), ModelConfig{OutputPath: path})
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'O'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'O', Text: string('O')})
 	model := result.(Model)
 	assert.Equal(t, "Wrote 1 annotation to output file", model.output.hint)
 	assert.FileExists(t, path, "O key must flush annotations to the output file")
@@ -315,7 +314,7 @@ func TestModel_OutputHint_ClearsOnNextKey(t *testing.T) {
 	m := testModel([]string{"a.go"}, nil)
 	m.output.hint = "some hint"
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'j', Text: string('j')})
 	model := result.(Model)
 	assert.Empty(t, model.output.hint, "any key press must clear the output hint")
 }

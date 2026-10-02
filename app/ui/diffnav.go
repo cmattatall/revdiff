@@ -4,8 +4,8 @@ import (
 	"slices"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/umputun/revdiff/app/diff"
 	"github.com/umputun/revdiff/app/keymap"
@@ -143,13 +143,13 @@ func (m *Model) moveDiffCursorPageUp() {
 // actions reuse this distance on a pure viewport scroll, where it is exact.
 // half-page motions do not subtract it - they already retain half a screen.
 func (m Model) pageRows() int {
-	return max(1, m.layout.viewport.Height-m.modes.pageOverlap)
+	return max(1, m.layout.viewport.Height()-m.modes.pageOverlap)
 }
 
 // halfPageRows returns how far a half-page motion advances. the page overlap is not
 // subtracted: a half page already retains half a screen.
 func (m Model) halfPageRows() int {
-	return max(1, m.layout.viewport.Height/2)
+	return max(1, m.layout.viewport.Height()/2)
 }
 
 // moveDiffCursorHalfPageDown moves the diff cursor down by half a visual page.
@@ -201,8 +201,8 @@ func (m *Model) moveDiffCursorDownBy(rows int) {
 		}
 	}
 	actualDelta := m.cursorViewportYFromOffsets(offsets) - startY
-	maxOffset := max(0, m.layout.viewport.TotalLineCount()-m.layout.viewport.Height)
-	m.layout.viewport.SetYOffset(min(m.layout.viewport.YOffset+actualDelta, maxOffset))
+	maxOffset := max(0, m.layout.viewport.TotalLineCount()-m.layout.viewport.Height())
+	m.layout.viewport.SetYOffset(min(m.layout.viewport.YOffset()+actualDelta, maxOffset))
 	m.layout.viewport.SetContent(m.renderDiff())
 }
 
@@ -240,7 +240,7 @@ func (m *Model) moveDiffCursorUpBy(rows int) {
 		}
 	}
 	actualDelta := startY - m.cursorViewportYFromOffsets(offsets)
-	m.layout.viewport.SetYOffset(max(0, m.layout.viewport.YOffset-actualDelta))
+	m.layout.viewport.SetYOffset(max(0, m.layout.viewport.YOffset()-actualDelta))
 	m.layout.viewport.SetContent(m.renderDiff())
 }
 
@@ -302,10 +302,10 @@ func (m *Model) syncViewportToCursor() {
 	cursorTop, cursorBottom := m.cursorVisualRange()
 	m.layout.viewport.SetContent(m.renderDiff())
 	switch {
-	case cursorTop < m.layout.viewport.YOffset:
+	case cursorTop < m.layout.viewport.YOffset():
 		m.layout.viewport.SetYOffset(cursorTop)
-	case cursorBottom >= m.layout.viewport.YOffset+m.layout.viewport.Height:
-		m.layout.viewport.SetYOffset(min(cursorBottom-m.layout.viewport.Height+1, cursorTop))
+	case cursorBottom >= m.layout.viewport.YOffset()+m.layout.viewport.Height():
+		m.layout.viewport.SetYOffset(min(cursorBottom-m.layout.viewport.Height()+1, cursorTop))
 	}
 }
 
@@ -314,7 +314,7 @@ func (m *Model) syncViewportToCursor() {
 // accepts the target offset even when the cursor move mutated render height (wrap/annotation rows).
 func (m *Model) centerViewportOnCursor() {
 	cursorY := m.cursorViewportY()
-	offset := max(0, cursorY-m.layout.viewport.Height/2)
+	offset := max(0, cursorY-m.layout.viewport.Height()/2)
 	m.layout.viewport.SetContent(m.renderDiff())
 	m.layout.viewport.SetYOffset(offset)
 }
@@ -360,13 +360,13 @@ func (m *Model) centerHunkInViewport() {
 	}
 
 	var offset int
-	if hunkVisualHeight >= m.layout.viewport.Height {
+	if hunkVisualHeight >= m.layout.viewport.Height() {
 		// hunk taller than viewport: place first line near top with small context margin
 		offset = max(0, cursorY-2)
 	} else {
 		// center the entire hunk by centering its midpoint
 		hunkMidY := cursorY + hunkVisualHeight/2
-		offset = max(0, hunkMidY-m.layout.viewport.Height/2)
+		offset = max(0, hunkMidY-m.layout.viewport.Height()/2)
 	}
 	m.layout.viewport.SetYOffset(offset)
 	m.layout.viewport.SetContent(m.renderDiff())
@@ -386,7 +386,7 @@ func (m *Model) topAlignViewportOnCursor() {
 func (m *Model) bottomAlignViewportOnCursor() {
 	cursorY := m.cursorViewportY()
 	m.layout.viewport.SetContent(m.renderDiff())
-	m.layout.viewport.SetYOffset(max(0, cursorY-m.layout.viewport.Height+1))
+	m.layout.viewport.SetYOffset(max(0, cursorY-m.layout.viewport.Height()+1))
 }
 
 // clampViewportRow clamps an absolute content row to the currently visible
@@ -394,8 +394,8 @@ func (m *Model) bottomAlignViewportOnCursor() {
 // row outside the screen (which would force a scroll). Height 0 collapses the
 // window to the single YOffset row.
 func (m *Model) clampViewportRow(row int) int {
-	top := m.layout.viewport.YOffset
-	bottom := top + max(m.layout.viewport.Height-1, 0)
+	top := m.layout.viewport.YOffset()
+	bottom := top + max(m.layout.viewport.Height()-1, 0)
 	return min(max(row, top), bottom)
 }
 
@@ -406,8 +406,8 @@ func (m *Model) clampViewportRow(row int) int {
 // window (e.g. a large-count H clamped to the bottom row nudging further down);
 // preferring the side with more room keeps the cursor on-screen.
 func (m *Model) nudgeOffDividerTowardViewportInterior(targetRow int) {
-	top := m.layout.viewport.YOffset
-	bottom := top + max(m.layout.viewport.Height-1, 0)
+	top := m.layout.viewport.YOffset()
+	bottom := top + max(m.layout.viewport.Height()-1, 0)
 	m.nudgeCursorOffDivider(targetRow-top <= bottom-targetRow)
 }
 
@@ -419,7 +419,7 @@ func (m *Model) moveDiffCursorToScreenTop(n int) {
 		return
 	}
 	offset := max(0, n-1)
-	row := m.clampViewportRow(m.layout.viewport.YOffset + offset)
+	row := m.clampViewportRow(m.layout.viewport.YOffset() + offset)
 	idx, onAnn := m.visualRowToDiffLine(row)
 	m.annot.cursorOnAnnotation = onAnn
 	m.nav.diffCursor = idx
@@ -435,7 +435,7 @@ func (m *Model) moveDiffCursorToScreenMiddle() {
 	if len(m.file.lines) == 0 {
 		return
 	}
-	row := m.clampViewportRow(m.layout.viewport.YOffset + m.layout.viewport.Height/2)
+	row := m.clampViewportRow(m.layout.viewport.YOffset() + m.layout.viewport.Height()/2)
 	idx, onAnn := m.visualRowToDiffLine(row)
 	m.annot.cursorOnAnnotation = onAnn
 	m.nav.diffCursor = idx
@@ -452,7 +452,7 @@ func (m *Model) moveDiffCursorToScreenBottom(n int) {
 		return
 	}
 	offset := max(0, n-1)
-	row := m.clampViewportRow(m.layout.viewport.YOffset + m.layout.viewport.Height - 1 - offset)
+	row := m.clampViewportRow(m.layout.viewport.YOffset() + m.layout.viewport.Height() - 1 - offset)
 	idx, onAnn := m.visualRowToDiffLine(row)
 	m.annot.cursorOnAnnotation = onAnn
 	m.nav.diffCursor = idx
@@ -740,7 +740,7 @@ func (m *Model) scrollDiffViewportLine(delta int) {
 	if !m.scrollDiffViewportBy(delta) {
 		return
 	}
-	if m.pinDiffCursorTo(m.layout.viewport.YOffset) {
+	if m.pinDiffCursorTo(m.layout.viewport.YOffset()) {
 		m.syncTOCActiveSection()
 		m.layout.viewport.SetContent(m.renderDiff())
 	}

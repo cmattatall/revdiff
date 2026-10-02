@@ -77,6 +77,7 @@ const (
 	ActionFlushOutput            Action = "flush_output"
 	ActionStageHunk              Action = "stage_hunk"
 	ActionStageFile              Action = "stage_file"
+	ActionInspectSymbol          Action = "inspect_symbol"
 )
 
 // SectionPane is the help section name for pane-related keybindings.
@@ -109,6 +110,7 @@ var validActions = map[Action]bool{
 	ActionFlushOutput:      true,
 	ActionStageHunk:        true,
 	ActionStageFile:        true,
+	ActionInspectSymbol:    true,
 }
 
 // deprecatedActionAliases maps obsolete action names parsed from user
@@ -228,6 +230,8 @@ func defaultDescriptions() []HelpEntry {
 		{ActionStageHunk, "stage/unstage change under cursor (Git working tree)", "File/Hunk"},
 		{ActionStageFile, "stage/unstage entire selected file (Git working tree)", "File/Hunk"},
 
+		{ActionInspectSymbol, "show a symbol's type and documentation", "Inspection"},
+
 		// pane
 		{ActionTogglePane, "switch focus to next pane", SectionPane},
 		{ActionFocusTree, "focus tree pane", SectionPane},
@@ -273,55 +277,56 @@ func defaultDescriptions() []HelpEntry {
 // defaultBindings returns the default key-to-action mapping.
 func defaultBindings() map[string]Action {
 	return map[string]Action{
-		"j":      ActionDown,
-		"k":      ActionUp,
-		"down":   ActionDown,
-		"up":     ActionUp,
-		"pgdown": ActionPageDown,
-		"pgup":   ActionPageUp,
-		"ctrl+d": ActionHalfPageDown,
-		"ctrl+u": ActionHalfPageUp,
-		"left":   ActionScrollLeft,
-		"right":  ActionScrollRight,
-		"J":      ActionScrollDiffDown,
-		"K":      ActionScrollDiffUp,
-		"n":      ActionNextItem,
-		"N":      ActionPrevItem,
-		"p":      ActionPrevItem,
-		"P":      ActionJumpFile,
-		":":      ActionCommand,
-		"]":      ActionNextHunk,
-		"[":      ActionPrevHunk,
-		"tab":    ActionTogglePane,
-		"h":      ActionFocusTree,
-		"l":      ActionFocusDiff,
-		"/":      ActionSearch,
-		"a":      ActionConfirm,
-		"enter":  ActionConfirm,
-		"A":      ActionAnnotateFile,
-		"d":      ActionDeleteAnnotation,
-		"@":      ActionAnnotList,
-		"}":      ActionNextAnnotation,
-		"{":      ActionPrevAnnotation,
-		"O":      ActionFlushOutput,
-		"s":      ActionStageHunk,
-		"S":      ActionStageFile,
-		"v":      ActionToggleCollapsed,
-		"C":      ActionToggleCompact,
-		"w":      ActionToggleWrap,
-		"t":      ActionToggleTree,
-		"L":      ActionToggleLineNums,
-		"B":      ActionToggleBlame,
-		"W":      ActionToggleWordDiff,
-		".":      ActionToggleHunk,
-		" ":      ActionMarkReviewed,
-		"F":      ActionFilterUnreviewed,
-		"u":      ActionToggleUntracked,
-		"f":      ActionFilter,
-		"?":      ActionHelp,
-		"T":      ActionThemeSelect,
-		"R":      ActionReload,
-		"esc":    ActionDismiss,
+		"j":           ActionDown,
+		"k":           ActionUp,
+		"down":        ActionDown,
+		"up":          ActionUp,
+		"pgdown":      ActionPageDown,
+		"pgup":        ActionPageUp,
+		"ctrl+d":      ActionHalfPageDown,
+		"ctrl+u":      ActionHalfPageUp,
+		"left":        ActionScrollLeft,
+		"right":       ActionScrollRight,
+		"J":           ActionScrollDiffDown,
+		"K":           ActionScrollDiffUp,
+		"n":           ActionNextItem,
+		"N":           ActionPrevItem,
+		"p":           ActionPrevItem,
+		"P":           ActionJumpFile,
+		":":           ActionCommand,
+		"]":           ActionNextHunk,
+		"[":           ActionPrevHunk,
+		"tab":         ActionTogglePane,
+		"h":           ActionFocusTree,
+		"l":           ActionFocusDiff,
+		"/":           ActionSearch,
+		"a":           ActionConfirm,
+		"enter":       ActionConfirm,
+		"A":           ActionAnnotateFile,
+		"d":           ActionDeleteAnnotation,
+		"@":           ActionAnnotList,
+		"}":           ActionNextAnnotation,
+		"{":           ActionPrevAnnotation,
+		"O":           ActionFlushOutput,
+		"s":           ActionStageHunk,
+		"S":           ActionStageFile,
+		"v":           ActionToggleCollapsed,
+		"C":           ActionToggleCompact,
+		"w":           ActionToggleWrap,
+		"t":           ActionToggleTree,
+		"L":           ActionToggleLineNums,
+		"B":           ActionToggleBlame,
+		"W":           ActionToggleWordDiff,
+		".":           ActionToggleHunk,
+		" ":           ActionMarkReviewed,
+		"F":           ActionFilterUnreviewed,
+		"u":           ActionToggleUntracked,
+		"f":           ActionFilter,
+		"?":           ActionHelp,
+		"T":           ActionThemeSelect,
+		"R":           ActionReload,
+		"esc":         ActionDismiss,
+		"super+enter": ActionInspectSymbol,
 	}
 }
 
@@ -351,6 +356,7 @@ func NormalizeKey(key string) string {
 // For non-Latin keyboard layouts, if the key has no direct binding, it is
 // translated to its Latin QWERTY equivalent and looked up again.
 func (km *Keymap) Resolve(key string) Action {
+	key = normalizeKey(key)
 	if a, ok := km.bindings[key]; ok {
 		return a
 	}
@@ -370,6 +376,7 @@ func (km *Keymap) Resolve(key string) Action {
 // the direct lookup misses and the second key is a single rune, the rune is
 // translated to its Latin QWERTY equivalent and the lookup is retried.
 func (km *Keymap) ResolveChord(prefix, second string) Action {
+	prefix, second = normalizeKey(prefix), normalizeKey(second)
 	if a, ok := km.bindings[prefix+">"+second]; ok {
 		return a
 	}
@@ -436,7 +443,7 @@ func (km *Keymap) chordPrefixes() map[string]struct{} {
 // IsChordLeader returns true if the given key is the leader of any chord binding.
 // Lookup is O(1) via a cached prefix index, built on first call.
 func (km *Keymap) IsChordLeader(key string) bool {
-	_, ok := km.chordPrefixes()[key]
+	_, ok := km.chordPrefixes()[normalizeKey(key)]
 	return ok
 }
 
@@ -525,14 +532,15 @@ type mapEntry struct {
 // keyAliases maps user-friendly key names to bubbletea's KeyMsg.String() output.
 // keys that already match bubbletea's output are not listed here.
 var keyAliases = map[string]string{
-	"page_down":  "pgdown",
-	"page_up":    "pgup",
-	"pagedown":   "pgdown",
-	"pageup":     "pgup",
-	"escape":     "esc",
-	"return":     "enter",
-	"space":      " ",
-	"ctrl+enter": "ctrl+m", // bubbletea maps enter to ctrl+m internally
+	"page_down":     "pgdown",
+	"page_up":       "pgup",
+	"pagedown":      "pgdown",
+	"pageup":        "pgup",
+	"escape":        "esc",
+	"return":        "enter",
+	"space":         " ",
+	"cmd+enter":     "super+enter",
+	"command+enter": "super+enter",
 }
 
 // normalizeKey converts a user-provided key name to the canonical form

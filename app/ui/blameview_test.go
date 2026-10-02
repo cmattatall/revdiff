@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
 
@@ -50,7 +50,7 @@ func TestModel_BlameViewTargetsDisplayedSide(t *testing.T) {
 		m.blamer = provider
 		m.startCommand()
 		m.command.input.SetValue(tc.command)
-		model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		model, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 		m = model.(Model)
 		require.NotNil(t, cmd)
 		require.Equal(t, overlay.KindBlame, m.overlay.Kind())
@@ -61,12 +61,12 @@ func TestModel_BlameViewTargetsDisplayedSide(t *testing.T) {
 			wantLine, wantPath = 13, "old.go:13"
 		}
 		require.Equal(t, diff.LineBlameRequest{FileDiffRequest: diff.FileDiffRequest{Path: "new.go", OldPath: "old.go", Staged: true}, Line: wantLine, Removed: removed}, provider.request)
-		view := ansi.Strip(m.View())
+		view := ansi.Strip(m.View().Content)
 		for _, text := range []string{wantPath, "Alice", "Fix line attribution", "https://github.com/example/project/pull/42"} {
 			require.Contains(t, view, text)
 		}
 		m.refreshInfoOverlay()
-		require.Contains(t, ansi.Strip(m.View()), "Alice", "review-info updates cannot replace blame details")
+		require.Contains(t, ansi.Strip(m.View().Content), "Alice", "review-info updates cannot replace blame details")
 	}
 }
 
@@ -85,11 +85,11 @@ func TestModel_BlameViewDismissalAndStaleResults(t *testing.T) {
 	m = model.(Model)
 	model, _ = m.Update(old())
 	m = model.(Model)
-	require.Contains(t, ansi.Strip(m.View()), "Loading blame")
+	require.Contains(t, ansi.Strip(m.View().Content), "Loading blame")
 	model, _ = m.Update(current())
 	m = model.(Model)
-	require.Contains(t, ansi.Strip(m.View()), "blame unavailable")
-	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	require.Contains(t, ansi.Strip(m.View().Content), "blame unavailable")
+	model, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	m = model.(Model)
 	require.False(t, m.overlay.Active())
 }

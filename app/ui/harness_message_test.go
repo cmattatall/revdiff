@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
 
@@ -24,19 +24,19 @@ func TestHarnessMessageSendPreservesAnnotations(t *testing.T) {
 			m.store.Add(note)
 			m.startCommand()
 			m.command.input.SetValue(command)
-			model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			model, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 			m = model.(Model)
 			require.True(t, m.message.active)
 			require.False(t, m.command.active)
 			require.Empty(t, sender.content)
 			const message = "Please review the overall API, not a specific file."
-			model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(message)})
+			model, _ = m.Update(tea.KeyPressMsg{Text: message})
 			m = model.(Model)
-			model, send := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			model, send := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 			m = model.(Model)
 			require.NotNil(t, send)
 			require.Empty(t, sender.content, "sending must be asynchronous")
-			_, duplicate := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			_, duplicate := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 			require.Nil(t, duplicate)
 			model, _ = m.Update(send())
 			m = model.(Model)
@@ -58,7 +58,7 @@ func TestHarnessMessageDraftAndResize(t *testing.T) {
 	m.cfg.noStatusBar = true
 	model, _ := m.openHarnessMessage()
 	m = model.(Model)
-	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(":! This is message text, not a command")})
+	model, _ = m.Update(tea.KeyPressMsg{Text: ":! This is message text, not a command"})
 	m = model.(Model)
 	for _, width := range []int{25, 100} {
 		model, _ = m.Update(tea.WindowSizeMsg{Width: width, Height: 24})
@@ -70,7 +70,7 @@ func TestHarnessMessageDraftAndResize(t *testing.T) {
 		}
 		require.Contains(t, view, "Message:")
 	}
-	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	m = model.(Model)
 	require.False(t, m.message.active)
 	m.startCommand()
@@ -89,15 +89,15 @@ func TestHarnessMessageRetryKeepsSnapshotAndAnnotations(t *testing.T) {
 	model, _ := m.openHarnessMessage()
 	m = model.(Model)
 	m.message.input.SetValue("Original message")
-	model, send := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model, send := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = model.(Model)
 	model, _ = m.Update(send())
 	m = model.(Model)
 	require.Contains(t, m.message.err, "Enter retries")
-	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("must not change pending text")})
+	model, _ = m.Update(tea.KeyPressMsg{Text: "must not change pending text"})
 	m = model.(Model)
 	require.Equal(t, "Original message", m.message.input.Value())
-	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	m = model.(Model)
 	sender.err = nil
 	model, retry := m.handleFlushOutput()
@@ -121,14 +121,14 @@ func TestHarnessMessageGuards(t *testing.T) {
 	model, _ := m.openHarnessMessage()
 	m = model.(Model)
 	m.message.input.SetValue("Keep this draft")
-	model, send := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model, send := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = model.(Model)
 	require.Nil(t, send)
 	require.Contains(t, m.message.err, "No harness connected")
 	require.Equal(t, "Keep this draft", m.message.input.Value())
 	m.live.sender = &feedbackStub{}
 	m.message.input.SetValue("  ")
-	model, send = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model, send = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = model.(Model)
 	require.Nil(t, send)
 	require.Contains(t, m.message.err, "Enter a message")

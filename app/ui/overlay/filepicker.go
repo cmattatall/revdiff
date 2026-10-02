@@ -5,9 +5,10 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"unicode"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/mattn/go-runewidth"
 
 	"github.com/umputun/revdiff/app/keymap"
@@ -31,10 +32,12 @@ type filePickerOverlay struct {
 	height     int
 	popupWidth int
 	heading    string
+	fuzzy      bool
 }
 
 func (f *filePickerOverlay) open(spec FilePickerSpec) {
 	f.heading = "files"
+	f.fuzzy = false
 	f.all = slices.Clone(spec.Paths)
 	f.filter.open()
 	f.entries = slices.Clone(f.all)
@@ -55,13 +58,28 @@ func (f *filePickerOverlay) applyFilter() {
 		needle := strings.ToLower(f.filter.Value())
 		f.entries = f.entries[:0]
 		for _, path := range f.all {
-			if strings.Contains(strings.ToLower(path), needle) {
+			if f.matches(path, needle) {
 				f.entries = append(f.entries, path)
 			}
 		}
 	}
 	f.cursor = 0
 	f.offset = 0
+}
+
+func (f *filePickerOverlay) matches(text, needle string) bool {
+	text = strings.ToLower(text)
+	if !f.fuzzy {
+		return strings.Contains(text, needle)
+	}
+	for _, r := range needle {
+		at := strings.IndexRune(text, r)
+		if at < 0 {
+			return false
+		}
+		text = text[at+len(string(r)):]
+	}
+	return true
 }
 
 func (f *filePickerOverlay) render(ctx RenderCtx, mgr *Manager) string {
@@ -101,9 +119,8 @@ func (f *filePickerOverlay) render(ctx RenderCtx, mgr *Manager) string {
 	}
 	box := ctx.Resolver.Style(style.StyleKeyFilePickerBox).Width(f.popupWidth).Render(strings.Join(parts, "\n"))
 	box = mgr.injectBorderTitle(box, title, borderEdgeText{
-		popupWidth: f.popupWidth,
-		accentFg:   string(ctx.Resolver.Color(style.ColorKeyAccentFg)),
-		paneBg:     string(ctx.Resolver.Color(style.ColorKeyDiffPaneBg)),
+		accentFg: string(ctx.Resolver.Color(style.ColorKeyAccentFg)),
+		paneBg:   string(ctx.Resolver.Color(style.ColorKeyDiffPaneBg)),
 	})
 	return box
 }
@@ -151,10 +168,10 @@ func (f *filePickerOverlay) maxVisible() int {
 	return max(min(len(f.entries), f.height-filePickerChromeLines), 1)
 }
 
-func (f *filePickerOverlay) handleKey(msg tea.KeyMsg, action keymap.Action) Outcome {
+func (f *filePickerOverlay) handleKey(msg tea.KeyPressMsg, action keymap.Action) Outcome {
 	// An explicitly bound Alt shortcut toggles the picker; ordinary printable
 	// keys still filter, and deletion keys keep their text-editing behavior.
-	if msg.Type == tea.KeyRunes && msg.Alt && action == keymap.ActionJumpFile {
+	if msg.Mod == tea.ModAlt && unicode.IsPrint(msg.Code) && action == keymap.ActionJumpFile {
 		return Outcome{Kind: OutcomeClosed}
 	}
 	before := f.filter.Value()
@@ -176,10 +193,10 @@ func (f *filePickerOverlay) handleKey(msg tea.KeyMsg, action keymap.Action) Outc
 		return Outcome{Kind: OutcomeNone}
 	}
 
-	switch msg.Type {
-	case tea.KeyEnter:
+	switch msg.String() {
+	case "enter":
 		return f.chooseCurrent()
-	case tea.KeyEsc:
+	case "esc":
 		if f.filter.Value() == "" {
 			return Outcome{Kind: OutcomeClosed}
 		}
@@ -215,16 +232,19 @@ func (f *filePickerOverlay) moveCursorBy(delta int) {
 	}
 }
 
-func (f *filePickerOverlay) handleMouse(msg tea.MouseMsg) Outcome {
-	if msg.Action != tea.MouseActionPress {
+func (f *filePickerOverlay) handleMouse(event tea.MouseMsg) Outcome {
+	switch event.(type) {
+	case tea.MouseClickMsg, tea.MouseWheelMsg:
+	default:
 		return Outcome{Kind: OutcomeNone}
 	}
+	msg := event.Mouse()
 	switch msg.Button {
-	case tea.MouseButtonWheelDown:
-		f.moveCursorBy(f.wheelStep(msg.Shift))
-	case tea.MouseButtonWheelUp:
-		f.moveCursorBy(-f.wheelStep(msg.Shift))
-	case tea.MouseButtonLeft:
+	case tea.MouseWheelDown:
+		f.moveCursorBy(f.wheelStep(msg.Mod.Contains(tea.ModShift)))
+	case tea.MouseWheelUp:
+		f.moveCursorBy(-f.wheelStep(msg.Mod.Contains(tea.ModShift)))
+	case tea.MouseLeft:
 		return f.handleLeftClick(msg.X, msg.Y)
 	default:
 		// other mouse buttons and horizontal wheels are intentionally ignored

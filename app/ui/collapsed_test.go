@@ -3,7 +3,7 @@ package ui
 import (
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -20,10 +20,10 @@ func TestModel_VKeyTogglesCollapsedMode(t *testing.T) {
 	m.file.lines = lines
 	m.file.name = "a.go"
 	m.layout.focus = paneDiff
-	m.layout.viewport.Height = 20
+	m.layout.viewport.SetHeight(20)
 
 	t.Run("toggle on", func(t *testing.T) {
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'v', Text: string('v')})
 		model := result.(Model)
 		assert.True(t, model.modes.collapsed.enabled, "v should enable collapsed mode")
 		assert.NotNil(t, model.modes.collapsed.expandedHunks)
@@ -33,7 +33,7 @@ func TestModel_VKeyTogglesCollapsedMode(t *testing.T) {
 	t.Run("toggle off", func(t *testing.T) {
 		m.modes.collapsed.enabled = true
 		m.modes.collapsed.expandedHunks = map[int]bool{1: true}
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'v', Text: string('v')})
 		model := result.(Model)
 		assert.False(t, model.modes.collapsed.enabled, "v should disable collapsed mode")
 		assert.Empty(t, model.modes.collapsed.expandedHunks, "expandedHunks should be reset on toggle")
@@ -42,7 +42,7 @@ func TestModel_VKeyTogglesCollapsedMode(t *testing.T) {
 	t.Run("toggle from tree pane", func(t *testing.T) {
 		m.modes.collapsed.enabled = false
 		m.layout.focus = paneTree
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'v', Text: string('v')})
 		model := result.(Model)
 		assert.True(t, model.modes.collapsed.enabled)
 		assert.Equal(t, paneTree, model.layout.focus)
@@ -51,7 +51,7 @@ func TestModel_VKeyTogglesCollapsedMode(t *testing.T) {
 	t.Run("no-op when no file loaded", func(t *testing.T) {
 		m.layout.focus = paneDiff
 		m.file.name = ""
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'v', Text: string('v')})
 		model := result.(Model)
 		assert.False(t, model.modes.collapsed.enabled, "v should be no-op when no file loaded")
 	})
@@ -72,11 +72,11 @@ func TestModel_DotKeyExpandsHunkInCollapsedMode(t *testing.T) {
 	m.layout.focus = paneDiff
 	m.modes.collapsed.enabled = true
 	m.modes.collapsed.expandedHunks = make(map[int]bool)
-	m.layout.viewport.Height = 20
+	m.layout.viewport.SetHeight(20)
 
 	t.Run("expand hunk at cursor", func(t *testing.T) {
 		m.nav.diffCursor = 2 // on add line in hunk 1 (start=1)
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'.'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: '.', Text: string('.')})
 		model := result.(Model)
 		assert.True(t, model.modes.collapsed.expandedHunks[1], "hunk at index 1 should be expanded")
 	})
@@ -84,7 +84,7 @@ func TestModel_DotKeyExpandsHunkInCollapsedMode(t *testing.T) {
 	t.Run("collapse expanded hunk", func(t *testing.T) {
 		m.modes.collapsed.expandedHunks = map[int]bool{1: true}
 		m.nav.diffCursor = 1 // on remove line in hunk 1
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'.'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: '.', Text: string('.')})
 		model := result.(Model)
 		assert.False(t, model.modes.collapsed.expandedHunks[1], "hunk should be collapsed after second dot")
 	})
@@ -92,7 +92,7 @@ func TestModel_DotKeyExpandsHunkInCollapsedMode(t *testing.T) {
 	t.Run("expand second hunk independently", func(t *testing.T) {
 		m.modes.collapsed.expandedHunks = map[int]bool{1: true}
 		m.nav.diffCursor = 4 // on add line in hunk 2 (start=4)
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'.'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: '.', Text: string('.')})
 		model := result.(Model)
 		assert.True(t, model.modes.collapsed.expandedHunks[4], "hunk 2 should be expanded")
 		assert.True(t, model.modes.collapsed.expandedHunks[1], "hunk 1 should remain expanded")
@@ -101,7 +101,7 @@ func TestModel_DotKeyExpandsHunkInCollapsedMode(t *testing.T) {
 	t.Run("no-op on context line", func(t *testing.T) {
 		m.modes.collapsed.expandedHunks = make(map[int]bool)
 		m.nav.diffCursor = 0 // on context line
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'.'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: '.', Text: string('.')})
 		model := result.(Model)
 		assert.Empty(t, model.modes.collapsed.expandedHunks, "dot on context line should be no-op")
 	})
@@ -118,9 +118,9 @@ func TestModel_DotKeyExplainsAddOnlyHunk(t *testing.T) {
 	m.modes.collapsed.enabled = false
 	m.modes.collapsed.expandedHunks = make(map[int]bool)
 	m.nav.diffCursor = 0
-	m.layout.viewport.Height = 20
+	m.layout.viewport.SetHeight(20)
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'.'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '.', Text: string('.')})
 	model := result.(Model)
 	assert.False(t, model.modes.collapsed.enabled)
 	assert.Contains(t, model.keys.hint, "no removed lines")
@@ -144,11 +144,11 @@ func TestModel_HunkToggleFromEitherPaneAndView(t *testing.T) {
 				m.modes.collapsed.enabled = collapsed
 				m.modes.collapsed.expandedHunks = map[int]bool{4: true}
 				for _, firstVisible := range []bool{collapsed, !collapsed} {
-					key := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'.'}}
+					key := tea.KeyPressMsg{Code: '.', Text: string('.')}
 					if palette {
 						m.startCommand()
 						m.command.input.SetValue("hunk toggle")
-						key = tea.KeyMsg{Type: tea.KeyEnter}
+						key = tea.KeyPressMsg{Code: tea.KeyEnter}
 					}
 					model, _ := m.Update(key)
 					m = model.(Model)
@@ -602,7 +602,7 @@ func TestModel_CollapsedPageDownSkipsRemovedLines(t *testing.T) {
 	model.layout.focus = paneDiff
 	model.modes.collapsed.enabled = true
 
-	pageHeight := model.layout.viewport.Height
+	pageHeight := model.layout.viewport.Height()
 	require.Positive(t, pageHeight)
 
 	startCursor := model.nav.diffCursor
@@ -647,7 +647,7 @@ func TestModel_CollapsedPageUpSkipsRemovedLines(t *testing.T) {
 	model.moveDiffCursorPageUp()
 
 	assert.Less(t, model.nav.diffCursor, len(lines)-1, "cursor should move back")
-	assert.GreaterOrEqual(t, startY-model.cursorViewportY(), model.layout.viewport.Height, "should move at least one page up")
+	assert.GreaterOrEqual(t, startY-model.cursorViewportY(), model.layout.viewport.Height(), "should move at least one page up")
 
 	// verify cursor did not land on a hidden removed line
 	dl := model.file.lines[model.nav.diffCursor]
@@ -690,7 +690,7 @@ func TestModel_CollapsedHunkNavigationSkipsRemovedLines(t *testing.T) {
 	m.modes.collapsed.enabled = true
 	m.modes.collapsed.expandedHunks = make(map[int]bool)
 	m.nav.diffCursor = 0
-	m.layout.viewport.Height = 20
+	m.layout.viewport.SetHeight(20)
 
 	// next hunk should skip hidden removes and land on add line
 	m.moveToNextHunk()
@@ -717,7 +717,7 @@ func TestModel_CollapsedHunkNavigationExpandedHunk(t *testing.T) {
 	m.modes.collapsed.enabled = true
 	m.modes.collapsed.expandedHunks = map[int]bool{1: true} // hunk at index 1 is expanded
 	m.nav.diffCursor = 0
-	m.layout.viewport.Height = 20
+	m.layout.viewport.SetHeight(20)
 
 	// expanded hunk: should land on hunk start (remove line is visible)
 	m.moveToNextHunk()
@@ -740,7 +740,7 @@ func TestModel_CollapsedHunkNavigationDeleteOnly(t *testing.T) {
 	m.modes.collapsed.enabled = true
 	m.modes.collapsed.expandedHunks = make(map[int]bool)
 	m.nav.diffCursor = 0
-	m.layout.viewport.Height = 20
+	m.layout.viewport.SetHeight(20)
 
 	// next hunk lands on delete-only hunk 1's placeholder (first remove line)
 	m.moveToNextHunk()

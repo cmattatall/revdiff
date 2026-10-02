@@ -6,7 +6,7 @@ import (
 	"slices"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/umputun/revdiff/app/annotation"
 	"github.com/umputun/revdiff/app/diff"
@@ -222,7 +222,7 @@ func (m Model) handleLiveLoaded(msg liveLoadedMsg) (tea.Model, tea.Cmd) {
 	if slices.Equal(m.review.entries, m.filterOnly(msg.files.entries)) && slices.Equal(m.file.lines, msg.file.lines) {
 		return m, tick
 	}
-	oldName, cursor, offset := m.file.name, m.nav.diffCursor, m.layout.viewport.YOffset
+	oldName, cursor, offset := m.file.name, m.nav.diffCursor, m.layout.viewport.YOffset()
 	var anchor diff.DiffLine
 	if cursor >= 0 && cursor < len(m.file.lines) {
 		anchor = m.file.lines[cursor]
@@ -387,7 +387,7 @@ func (m Model) captureStageAnchor() *stageAnchor {
 	if m.nav.diffCursor < 0 || m.nav.diffCursor >= len(m.file.lines) {
 		return nil
 	}
-	a := &stageAnchor{file: m.file.name, seq: m.file.loadSeq, row: m.cursorViewportY() - m.layout.viewport.YOffset, staged: m.file.staged}
+	a := &stageAnchor{file: m.file.name, seq: m.file.loadSeq, row: m.cursorViewportY() - m.layout.viewport.YOffset(), staged: m.file.staged}
 	// Follow the next surviving line when the cursor has no number on the
 	// stable side, falling back to the preceding line at EOF.
 	for i := m.nav.diffCursor; i < len(m.file.lines); i++ {

@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -181,7 +181,7 @@ func mouseTestModel(t *testing.T, files []string, diffs map[string][]diff.DiffLi
 	m.layout.width = 120
 	m.layout.height = 40
 	m.layout.treeWidth = 36
-	m.layout.viewport = viewport.New(80, 30)
+	m.layout.viewport = viewport.New(viewport.WithWidth(80), viewport.WithHeight(30))
 	if len(files) > 0 {
 		m.file.name = files[0]
 		if d, ok := diffs[files[0]]; ok {
@@ -194,9 +194,11 @@ func mouseTestModel(t *testing.T, files []string, diffs map[string][]diff.DiffLi
 // wheelMsg builds a wheel-up or wheel-down MouseMsg at (x, y) with an
 // optional shift modifier.
 func wheelMsg(button tea.MouseButton, x, y int, shift bool) tea.MouseMsg {
-	return tea.MouseMsg(tea.MouseEvent{
-		X: x, Y: y, Shift: shift, Button: button, Action: tea.MouseActionPress,
-	})
+	mod := tea.KeyMod(0)
+	if shift {
+		mod = tea.ModShift
+	}
+	return tea.MouseWheelMsg{X: x, Y: y, Mod: mod, Button: button}
 }
 
 // updateWheelAndFlush dispatches a wheel event through Update, then dispatches
@@ -228,9 +230,7 @@ func updateWheelAndFlush(t *testing.T, m Model, msg tea.MouseMsg) Model {
 
 // leftPressAt builds a left-click press MouseMsg at (x, y).
 func leftPressAt(x, y int) tea.MouseMsg {
-	return tea.MouseMsg(tea.MouseEvent{
-		X: x, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress,
-	})
+	return tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft}
 }
 
 func TestModel_HandleMouse_WheelInDiff(t *testing.T) {
@@ -245,13 +245,13 @@ func TestModel_HandleMouse_WheelInDiff(t *testing.T) {
 	// wheel-down scrolls the viewport by wheelStep; the cursor at line 0
 	// is now above the visible range and is pinned to the new top after the
 	// debounce flush (the pin is deferred so the per-event path stays O(1)).
-	model := updateWheelAndFlush(t, m, wheelMsg(tea.MouseButtonWheelDown, 60, 10, false))
-	assert.Equal(t, wheelStep, model.layout.viewport.YOffset, "wheel-down must scroll viewport by wheelStep")
+	model := updateWheelAndFlush(t, m, wheelMsg(tea.MouseWheelDown, 60, 10, false))
+	assert.Equal(t, wheelStep, model.layout.viewport.YOffset(), "wheel-down must scroll viewport by wheelStep")
 	assert.Equal(t, wheelStep, model.nav.diffCursor, "cursor must pin to top of visible range when scrolled off-screen")
 
 	// wheel-up scrolls the viewport back; cursor at line 3 stays in view, so it does not move.
-	model = updateWheelAndFlush(t, model, wheelMsg(tea.MouseButtonWheelUp, 60, 10, false))
-	assert.Equal(t, 0, model.layout.viewport.YOffset, "wheel-up must scroll viewport back to the top")
+	model = updateWheelAndFlush(t, model, wheelMsg(tea.MouseWheelUp, 60, 10, false))
+	assert.Equal(t, 0, model.layout.viewport.YOffset(), "wheel-up must scroll viewport back to the top")
 	assert.Equal(t, wheelStep, model.nav.diffCursor, "cursor stays put when its visual range still overlaps the viewport")
 }
 
@@ -267,9 +267,9 @@ func TestModel_HandleMouse_WheelInDiff_CursorStaysWhenInView(t *testing.T) {
 	m.layout.viewport.SetContent(m.renderDiff())
 	m.nav.diffCursor = 20 // cursor sits comfortably inside the 30-row viewport
 
-	result, _ := m.Update(wheelMsg(tea.MouseButtonWheelDown, 60, 10, false))
+	result, _ := m.Update(wheelMsg(tea.MouseWheelDown, 60, 10, false))
 	model := result.(Model)
-	assert.Equal(t, wheelStep, model.layout.viewport.YOffset)
+	assert.Equal(t, wheelStep, model.layout.viewport.YOffset())
 	assert.Equal(t, 20, model.nav.diffCursor, "cursor must not move while still inside the viewport")
 }
 
@@ -285,9 +285,9 @@ func TestModel_HandleMouse_WheelInDiff_NoopWhenContentFits(t *testing.T) {
 	m.file.lines = lines
 	m.layout.viewport.SetContent(m.renderDiff())
 
-	result, _ := m.Update(wheelMsg(tea.MouseButtonWheelDown, 60, 10, false))
+	result, _ := m.Update(wheelMsg(tea.MouseWheelDown, 60, 10, false))
 	model := result.(Model)
-	assert.Equal(t, 0, model.layout.viewport.YOffset, "wheel must not change YOffset when content fits")
+	assert.Equal(t, 0, model.layout.viewport.YOffset(), "wheel must not change YOffset when content fits")
 	assert.Equal(t, 0, model.nav.diffCursor, "wheel must not change cursor when content fits")
 }
 
@@ -304,13 +304,13 @@ func TestModel_HandleMouse_WheelUp_PinsCursorToBottom(t *testing.T) {
 	// start with viewport scrolled down and cursor at the bottom of the file.
 	m.layout.viewport.SetYOffset(30)
 	m.nav.diffCursor = 59
-	require.Equal(t, 30, m.layout.viewport.YOffset)
+	require.Equal(t, 30, m.layout.viewport.YOffset())
 
 	// wheel-up: viewport scrolls up by wheelStep, cursor at 59 is below new view.
-	model := updateWheelAndFlush(t, m, wheelMsg(tea.MouseButtonWheelUp, 60, 10, false))
+	model := updateWheelAndFlush(t, m, wheelMsg(tea.MouseWheelUp, 60, 10, false))
 	newOffset := 30 - wheelStep
-	assert.Equal(t, newOffset, model.layout.viewport.YOffset, "wheel-up must scroll viewport up by wheelStep")
-	wantCursor := newOffset + model.layout.viewport.Height - 1
+	assert.Equal(t, newOffset, model.layout.viewport.YOffset(), "wheel-up must scroll viewport up by wheelStep")
+	wantCursor := newOffset + model.layout.viewport.Height() - 1
 	assert.Equal(t, wantCursor, model.nav.diffCursor, "cursor must pin to bottom of new visible range")
 }
 
@@ -324,14 +324,14 @@ func TestModel_HandleMouse_WheelDown_NoopAtMaxOffset(t *testing.T) {
 	m := mouseTestModel(t, []string{"a.go"}, map[string][]diff.DiffLine{"a.go": lines})
 	m.file.lines = lines
 	m.layout.viewport.SetContent(m.renderDiff())
-	maxOffset := m.layout.viewport.TotalLineCount() - m.layout.viewport.Height
+	maxOffset := m.layout.viewport.TotalLineCount() - m.layout.viewport.Height()
 	require.Positive(t, maxOffset, "test requires a scrollable diff")
 	m.layout.viewport.SetYOffset(maxOffset)
 	m.nav.diffCursor = 30
 
-	result, _ := m.Update(wheelMsg(tea.MouseButtonWheelDown, 60, 10, false))
+	result, _ := m.Update(wheelMsg(tea.MouseWheelDown, 60, 10, false))
 	model := result.(Model)
-	assert.Equal(t, maxOffset, model.layout.viewport.YOffset, "wheel-down at max offset must not change YOffset")
+	assert.Equal(t, maxOffset, model.layout.viewport.YOffset(), "wheel-down at max offset must not change YOffset")
 	assert.Equal(t, 30, model.nav.diffCursor, "wheel-down at max offset must not change cursor")
 }
 
@@ -356,8 +356,8 @@ func TestModel_HandleMouse_WheelInWrapMode_CursorAboveViewport(t *testing.T) {
 	// with wheelStep=3 past cursorBottom, cursor is entirely above the new viewport.
 	require.Less(t, cursorBottom, wheelStep, "cursorBottom must be < wheelStep to exercise the above-viewport path")
 
-	model := updateWheelAndFlush(t, m, wheelMsg(tea.MouseButtonWheelDown, 60, 10, false))
-	require.Equal(t, wheelStep, model.layout.viewport.YOffset)
+	model := updateWheelAndFlush(t, m, wheelMsg(tea.MouseWheelDown, 60, 10, false))
+	require.Equal(t, wheelStep, model.layout.viewport.YOffset())
 	assert.Positive(t, model.nav.diffCursor, "cursor must advance to a line whose marker row is in the new viewport")
 }
 
@@ -385,8 +385,8 @@ func TestModel_HandleMouse_WheelInWrapMode_StraddlePinsToNextLine(t *testing.T) 
 	require.Greater(t, cursorBottom, wheelStep,
 		"cursorBottom (%d) must exceed wheelStep (%d) to exercise the straddle branch", cursorBottom, wheelStep)
 
-	model := updateWheelAndFlush(t, m, wheelMsg(tea.MouseButtonWheelDown, 60, 10, false))
-	require.Equal(t, wheelStep, model.layout.viewport.YOffset,
+	model := updateWheelAndFlush(t, m, wheelMsg(tea.MouseWheelDown, 60, 10, false))
+	require.Equal(t, wheelStep, model.layout.viewport.YOffset(),
 		"viewport must scroll by wheelStep")
 	// viewTop=wheelStep is inside line 0's span [0, cursorBottom]; cursor must advance to line 1.
 	assert.Equal(t, 1, model.nav.diffCursor,
@@ -400,11 +400,11 @@ func TestModel_HandleMouse_ShiftWheelHalfPage(t *testing.T) {
 	}
 	m := mouseTestModel(t, []string{"a.go"}, map[string][]diff.DiffLine{"a.go": lines})
 	m.file.lines = lines
-	m.layout.viewport = viewport.New(80, 20) // Height=20 so half-page = 10
+	m.layout.viewport = viewport.New(viewport.WithWidth(80), viewport.WithHeight(20)) // Height=20 so half-page = 10
 	m.layout.viewport.SetContent(m.renderDiff())
 
-	model := updateWheelAndFlush(t, m, wheelMsg(tea.MouseButtonWheelDown, 60, 10, true))
-	assert.Equal(t, 10, model.layout.viewport.YOffset, "shift+wheel must scroll viewport by half page")
+	model := updateWheelAndFlush(t, m, wheelMsg(tea.MouseWheelDown, 60, 10, true))
+	assert.Equal(t, 10, model.layout.viewport.YOffset(), "shift+wheel must scroll viewport by half page")
 	assert.Equal(t, 10, model.nav.diffCursor, "cursor must pin to top of visible range after half-page scroll")
 }
 
@@ -427,7 +427,7 @@ func TestModel_HandleMouse_WheelInTreeMovesTreeCursor(t *testing.T) {
 		m.layout.focus = paneDiff // wheel routing is by hit zone, not focus
 		require.Equal(t, "aa.go", m.tree.SelectedFile())
 
-		result, _ := m.Update(wheelMsg(tea.MouseButtonWheelDown, 5, 3, false))
+		result, _ := m.Update(wheelMsg(tea.MouseWheelDown, 5, 3, false))
 		model := result.(Model)
 		assert.Equal(t, "ab.go", model.tree.SelectedFile(), "single wheel-down notch must advance tree cursor by exactly one entry")
 	})
@@ -437,7 +437,7 @@ func TestModel_HandleMouse_WheelInTreeMovesTreeCursor(t *testing.T) {
 		m.tree.SelectByPath("ac.go") // cursor at entry 2
 		require.Equal(t, "ac.go", m.tree.SelectedFile())
 
-		result, _ := m.Update(wheelMsg(tea.MouseButtonWheelUp, 5, 3, false))
+		result, _ := m.Update(wheelMsg(tea.MouseWheelUp, 5, 3, false))
 		model := result.(Model)
 		assert.Equal(t, "ab.go", model.tree.SelectedFile(), "single wheel-up notch must retreat tree cursor by exactly one entry")
 	})
@@ -449,7 +449,7 @@ func TestModel_HandleMouse_WheelInTreeMovesTreeCursor(t *testing.T) {
 		m := mouseTestModel(t, files, diffs)
 		require.Equal(t, "aa.go", m.tree.SelectedFile())
 
-		result, _ := m.Update(wheelMsg(tea.MouseButtonWheelDown, 5, 3, true))
+		result, _ := m.Update(wheelMsg(tea.MouseWheelDown, 5, 3, true))
 		model := result.(Model)
 		assert.Equal(t, "ab.go", model.tree.SelectedFile(), "shift+wheel in tree must still move exactly one entry")
 	})
@@ -458,7 +458,7 @@ func TestModel_HandleMouse_WheelInTreeMovesTreeCursor(t *testing.T) {
 		m := mouseTestModel(t, files, diffs)
 		require.Equal(t, "aa.go", m.tree.SelectedFile())
 
-		result, _ := m.Update(wheelMsg(tea.MouseButtonWheelUp, 5, 3, false))
+		result, _ := m.Update(wheelMsg(tea.MouseWheelUp, 5, 3, false))
 		model := result.(Model)
 		assert.Equal(t, "aa.go", model.tree.SelectedFile(), "wheel-up at first entry must clamp, not wrap")
 	})
@@ -468,7 +468,7 @@ func TestModel_HandleMouse_WheelInTreeMovesTreeCursor(t *testing.T) {
 		m.tree.SelectByPath(files[len(files)-1])
 		require.Equal(t, files[len(files)-1], m.tree.SelectedFile())
 
-		result, _ := m.Update(wheelMsg(tea.MouseButtonWheelDown, 5, 3, false))
+		result, _ := m.Update(wheelMsg(tea.MouseWheelDown, 5, 3, false))
 		model := result.(Model)
 		assert.Equal(t, files[len(files)-1], model.tree.SelectedFile(), "wheel-down at last entry must clamp, not wrap")
 	})
@@ -483,7 +483,7 @@ func TestModel_HandleMouse_WheelInTreeMovesTreeCursor(t *testing.T) {
 		require.False(t, m.wheel.renderPending)
 		require.False(t, m.wheel.tickInFlight)
 
-		result, _ := m.Update(wheelMsg(tea.MouseButtonWheelDown, 5, 3, false))
+		result, _ := m.Update(wheelMsg(tea.MouseWheelDown, 5, 3, false))
 		model := result.(Model)
 		assert.Equal(t, 0, model.wheel.gen, "tree wheel must not bump diff wheel gen")
 		assert.False(t, model.wheel.renderPending, "tree wheel must not set diff renderPending")
@@ -500,28 +500,28 @@ func TestModel_HandleMouse_WheelNonPressActionIgnored(t *testing.T) {
 	})
 	m.nav.diffCursor = 0
 
-	for _, action := range []tea.MouseAction{tea.MouseActionRelease, tea.MouseActionMotion} {
-		for _, btn := range []tea.MouseButton{tea.MouseButtonWheelUp, tea.MouseButtonWheelDown} {
-			msg := tea.MouseMsg(tea.MouseEvent{X: 60, Y: 10, Button: btn, Action: action})
-			result, _ := m.Update(msg)
-			model := result.(Model)
-			assert.Equal(t, 0, model.nav.diffCursor, "wheel with Action=%v must be ignored", action)
-		}
+	for _, msg := range []tea.MouseMsg{
+		tea.MouseReleaseMsg{X: 60, Y: 10, Button: tea.MouseWheelUp},
+		tea.MouseMotionMsg{X: 60, Y: 10, Button: tea.MouseWheelDown},
+	} {
+		result, _ := m.Update(msg)
+		model := result.(Model)
+		assert.Equal(t, 0, model.nav.diffCursor, "non-wheel message must be ignored")
 	}
 }
 
 func TestModel_HandleMouse_ShiftWheelInDiffUsesHalfPage(t *testing.T) {
-	// shift+wheel in the diff pane must step by viewport.Height/2 to match
+	// shift+wheel in the diff pane must step by viewport.Height()/2 to match
 	// the keyboard half-page shortcut. tree/TOC wheel paths ignore the
 	// magnitude entirely (single-step cursor nav) so they are not exercised
 	// here.
 	m := mouseTestModel(t, []string{"a.go"}, map[string][]diff.DiffLine{
 		"a.go": {{NewNum: 1, Content: "x", ChangeType: diff.ChangeContext}},
 	})
-	m.layout.viewport.Height = 20
+	m.layout.viewport.SetHeight(20)
 
-	assert.Equal(t, max(1, m.layout.viewport.Height/2), m.wheelStepFor(true),
-		"shift+wheel must step by viewport.Height/2")
+	assert.Equal(t, max(1, m.layout.viewport.Height()/2), m.wheelStepFor(true),
+		"shift+wheel must step by viewport.Height()/2")
 	assert.Equal(t, wheelStep, m.wheelStepFor(false),
 		"plain wheel must step by the wheelStep constant")
 }
@@ -532,7 +532,7 @@ func TestModel_HandleMouse_HorizontalWheelNoop(t *testing.T) {
 	})
 	m.nav.diffCursor = 0
 
-	for _, btn := range []tea.MouseButton{tea.MouseButtonWheelLeft, tea.MouseButtonWheelRight} {
+	for _, btn := range []tea.MouseButton{tea.MouseWheelLeft, tea.MouseWheelRight} {
 		result, cmd := m.Update(wheelMsg(btn, 60, 10, false))
 		model := result.(Model)
 		assert.Nil(t, cmd)
@@ -715,13 +715,13 @@ func TestModel_HandleMouse_NonLeftButtonsNoop(t *testing.T) {
 	m.layout.focus = paneTree
 
 	buttons := []tea.MouseButton{
-		tea.MouseButtonRight,
-		tea.MouseButtonMiddle,
-		tea.MouseButtonBackward,
-		tea.MouseButtonForward,
+		tea.MouseRight,
+		tea.MouseMiddle,
+		tea.MouseBackward,
+		tea.MouseForward,
 	}
 	for _, btn := range buttons {
-		msg := tea.MouseMsg(tea.MouseEvent{X: 60, Y: 10, Button: btn, Action: tea.MouseActionPress})
+		msg := tea.MouseClickMsg{X: 60, Y: 10, Button: btn}
 		result, cmd := m.Update(msg)
 		model := result.(Model)
 		assert.Nil(t, cmd, "button %v must be no-op", btn)
@@ -736,12 +736,14 @@ func TestModel_HandleMouse_LeftReleaseAndMotionNoop(t *testing.T) {
 	m.nav.diffCursor = 0
 	m.layout.focus = paneTree
 
-	for _, action := range []tea.MouseAction{tea.MouseActionRelease, tea.MouseActionMotion} {
-		msg := tea.MouseMsg(tea.MouseEvent{X: 60, Y: 12, Button: tea.MouseButtonLeft, Action: action})
+	for _, msg := range []tea.MouseMsg{
+		tea.MouseReleaseMsg{X: 60, Y: 12, Button: tea.MouseLeft},
+		tea.MouseMotionMsg{X: 60, Y: 12, Button: tea.MouseLeft},
+	} {
 		result, cmd := m.Update(msg)
 		model := result.(Model)
-		assert.Nil(t, cmd, "action %v on left button must be no-op", action)
-		assert.Equal(t, paneTree, model.layout.focus, "action %v must not change focus", action)
+		assert.Nil(t, cmd, "non-click left event must be a no-op")
+		assert.Equal(t, paneTree, model.layout.focus, "non-click event must not change focus")
 	}
 }
 
@@ -755,7 +757,7 @@ func TestModel_HandleMouse_SwallowedWhileAnnotating(t *testing.T) {
 	m.nav.diffCursor = 0
 
 	// wheel must be swallowed: cursor unchanged, textinput value preserved
-	result, _ := m.Update(wheelMsg(tea.MouseButtonWheelDown, 60, 10, false))
+	result, _ := m.Update(wheelMsg(tea.MouseWheelDown, 60, 10, false))
 	model := result.(Model)
 	assert.Equal(t, 0, model.nav.diffCursor, "wheel must not move cursor while annotating")
 	assert.True(t, model.annot.annotating, "annotating state must be preserved")
@@ -775,7 +777,7 @@ func TestModel_HandleMouse_SwallowedWhileSearching(t *testing.T) {
 	m.search.input = textinput.New()
 	m.nav.diffCursor = 0
 
-	result, _ := m.Update(wheelMsg(tea.MouseButtonWheelDown, 60, 10, false))
+	result, _ := m.Update(wheelMsg(tea.MouseWheelDown, 60, 10, false))
 	model := result.(Model)
 	assert.Equal(t, 0, model.nav.diffCursor, "wheel must not move cursor while search is active")
 	assert.True(t, model.search.active)
@@ -799,7 +801,7 @@ func TestModel_HandleMouse_SwallowedWhileReloadPending(t *testing.T) {
 		"reload hint must stay visible while pending — otherwise the modal prompt vanishes but the modal remains")
 
 	// wheel must also preserve the hint
-	result, _ = m.Update(wheelMsg(tea.MouseButtonWheelDown, 60, 10, false))
+	result, _ = m.Update(wheelMsg(tea.MouseWheelDown, 60, 10, false))
 	model = result.(Model)
 	assert.True(t, model.reload.pending)
 	assert.NotEmpty(t, model.reload.hint, "wheel must not erase the reload prompt while pending")
@@ -816,7 +818,7 @@ func TestModel_HandleMouse_SwallowedWhileOverlayOpen(t *testing.T) {
 	m.nav.diffCursor = 0
 
 	// wheel over help is a no-op — overlay stays open and diff cursor is unchanged
-	result, _ := m.Update(wheelMsg(tea.MouseButtonWheelDown, 60, 10, false))
+	result, _ := m.Update(wheelMsg(tea.MouseWheelDown, 60, 10, false))
 	model := result.(Model)
 	assert.True(t, model.overlay.Active(), "overlay must stay open after wheel event")
 	assert.Equal(t, 0, model.nav.diffCursor, "wheel must not leak through to diff pane")
@@ -847,7 +849,7 @@ func TestModel_HandleMouse_WheelScrollsInfoOverlay(t *testing.T) {
 	// this value; overlay consuming the wheel leaves it intact.
 	m.nav.diffCursor = 5
 
-	result, _ := m.Update(wheelMsg(tea.MouseButtonWheelDown, 60, 10, false))
+	result, _ := m.Update(wheelMsg(tea.MouseWheelDown, 60, 10, false))
 	model := result.(Model)
 	assert.True(t, model.overlay.Active(), "info overlay stays open after wheel")
 	assert.Equal(t, 5, model.nav.diffCursor, "diff cursor must stay put — wheel is consumed by overlay, not the pane beneath")
@@ -871,7 +873,7 @@ func TestModel_HandleMouse_WheelScrollsAnnotListOverlay(t *testing.T) {
 	m.nav.diffCursor = 0
 
 	// wheel-down must be consumed by the overlay; diff cursor must not move
-	result, _ := m.Update(wheelMsg(tea.MouseButtonWheelDown, 60, 10, false))
+	result, _ := m.Update(wheelMsg(tea.MouseWheelDown, 60, 10, false))
 	model := result.(Model)
 	assert.True(t, model.overlay.Active(), "annotlist overlay stays open after wheel")
 	assert.Equal(t, 0, model.nav.diffCursor, "diff cursor must not move")
@@ -891,14 +893,14 @@ func TestModel_HandleMouse_WheelScrollsThemeSelectOverlay(t *testing.T) {
 	_ = mgr.Compose(makeOverlayBase(m.layout.width, m.layout.height), ctx)
 	m.nav.diffCursor = 0
 
-	result, _ := m.Update(wheelMsg(tea.MouseButtonWheelDown, 60, 10, false))
+	result, _ := m.Update(wheelMsg(tea.MouseWheelDown, 60, 10, false))
 	model := result.(Model)
 	assert.True(t, model.overlay.Active(), "themeselect overlay stays open after wheel")
 	assert.Equal(t, 0, model.nav.diffCursor)
 }
 
 // makeOverlayBase builds a base screen string for priming Manager.bounds via
-// Compose. Joins blank lines with "\n" (no trailing newline) so lipgloss.Width
+// Compose. Joins blank lines with "\n" (no trailing newline) so lipgloss.Width()
 // and len(Split) match production View() output; Repeat("line\n", N) would add
 // a phantom trailing row and shift centering math.
 func makeOverlayBase(width, height int) string {
@@ -990,7 +992,7 @@ func TestModel_HandleMouse_ClearsTransientHints(t *testing.T) {
 	m.output.hint = "Wrote 1 annotation to output file"
 	m.compact.hint = "not applicable"
 
-	result, _ := m.Update(wheelMsg(tea.MouseButtonWheelDown, 60, 10, false))
+	result, _ := m.Update(wheelMsg(tea.MouseWheelDown, 60, 10, false))
 	model := result.(Model)
 	assert.Empty(t, model.reload.hint)
 	assert.Empty(t, model.output.hint)
@@ -1052,7 +1054,7 @@ func TestModel_HandleMouse_WheelInTOCJumpsViewport(t *testing.T) {
 		require.True(t, ok, "TOC must have a valid cursor as a precondition")
 		require.Equal(t, 0, before)
 
-		result, _ := m.Update(wheelMsg(tea.MouseButtonWheelDown, 5, 3, false))
+		result, _ := m.Update(wheelMsg(tea.MouseWheelDown, 5, 3, false))
 		model := result.(Model)
 		after, ok := model.file.mdTOC.CurrentLineIdx()
 		require.True(t, ok)
@@ -1064,14 +1066,14 @@ func TestModel_HandleMouse_WheelInTOCJumpsViewport(t *testing.T) {
 		m := build(t)
 		// position TOC cursor on entry 2 (## B at lineIdx=3) via two wheel-downs.
 		for range 2 {
-			r, _ := m.Update(wheelMsg(tea.MouseButtonWheelDown, 5, 3, false))
+			r, _ := m.Update(wheelMsg(tea.MouseWheelDown, 5, 3, false))
 			m = r.(Model)
 		}
 		mid, ok := m.file.mdTOC.CurrentLineIdx()
 		require.True(t, ok, "TOC cursor must remain valid after the two-step setup")
 		require.Equal(t, 3, mid)
 
-		result, _ := m.Update(wheelMsg(tea.MouseButtonWheelUp, 5, 3, false))
+		result, _ := m.Update(wheelMsg(tea.MouseWheelUp, 5, 3, false))
 		model := result.(Model)
 		after, ok := model.file.mdTOC.CurrentLineIdx()
 		require.True(t, ok)
@@ -1081,7 +1083,7 @@ func TestModel_HandleMouse_WheelInTOCJumpsViewport(t *testing.T) {
 
 	t.Run("shift+wheel in TOC still single-step", func(t *testing.T) {
 		m := build(t)
-		result, _ := m.Update(wheelMsg(tea.MouseButtonWheelDown, 5, 3, true))
+		result, _ := m.Update(wheelMsg(tea.MouseWheelDown, 5, 3, true))
 		model := result.(Model)
 		after, ok := model.file.mdTOC.CurrentLineIdx()
 		require.True(t, ok)
@@ -1094,7 +1096,7 @@ func TestModel_HandleMouse_WheelInTOCJumpsViewport(t *testing.T) {
 		require.True(t, ok)
 		require.Equal(t, 0, before)
 
-		result, _ := m.Update(wheelMsg(tea.MouseButtonWheelUp, 5, 3, false))
+		result, _ := m.Update(wheelMsg(tea.MouseWheelUp, 5, 3, false))
 		model := result.(Model)
 		after, ok := model.file.mdTOC.CurrentLineIdx()
 		require.True(t, ok, "wheel-up at top must leave cursor in a valid position (not invalidated)")
@@ -1106,14 +1108,14 @@ func TestModel_HandleMouse_WheelInTOCJumpsViewport(t *testing.T) {
 		// advance to the last entry by wheel-down notches; entries are
 		// [README.md, # A, ## B, ## C] = 4 total, so 3 notches lands on # C.
 		for range 3 {
-			r, _ := m.Update(wheelMsg(tea.MouseButtonWheelDown, 5, 3, false))
+			r, _ := m.Update(wheelMsg(tea.MouseWheelDown, 5, 3, false))
 			m = r.(Model)
 		}
 		end, ok := m.file.mdTOC.CurrentLineIdx()
 		require.True(t, ok)
 		require.Equal(t, 5, end, "should now be on ## C at lineIdx=5")
 
-		result, _ := m.Update(wheelMsg(tea.MouseButtonWheelDown, 5, 3, false))
+		result, _ := m.Update(wheelMsg(tea.MouseWheelDown, 5, 3, false))
 		model := result.(Model)
 		after, ok := model.file.mdTOC.CurrentLineIdx()
 		require.True(t, ok, "wheel-down at bottom must leave cursor in a valid position (not invalidated)")
@@ -1126,7 +1128,7 @@ func TestModel_HandleMouse_WheelInTOCJumpsViewport(t *testing.T) {
 		require.False(t, m.wheel.renderPending)
 		require.False(t, m.wheel.tickInFlight)
 
-		result, _ := m.Update(wheelMsg(tea.MouseButtonWheelDown, 5, 3, false))
+		result, _ := m.Update(wheelMsg(tea.MouseWheelDown, 5, 3, false))
 		model := result.(Model)
 		assert.Equal(t, 0, model.wheel.gen, "TOC wheel must not bump diff wheel gen")
 		assert.False(t, model.wheel.renderPending, "TOC wheel must not set diff renderPending")
@@ -1182,7 +1184,7 @@ func TestModel_HandleMouse_WheelInDiffSyncsTOCActiveSection(t *testing.T) {
 	// cursor at line 0 is now off the top and pins to line 15, past the
 	// "## Second" header. TOC active section must follow once the debounce
 	// flushes the deferred pin + TOC sync.
-	model := updateWheelAndFlush(t, m, wheelMsg(tea.MouseButtonWheelDown, 60, 5, true))
+	model := updateWheelAndFlush(t, m, wheelMsg(tea.MouseWheelDown, 60, 5, true))
 
 	require.GreaterOrEqual(t, model.nav.diffCursor, 10, "wheel-down must scroll past the second section header")
 	model.file.mdTOC.SyncCursorToActiveSection()
@@ -1235,10 +1237,10 @@ func TestModel_HandleMouse_WheelDeferredRender_SchedulesDebounceWhenYOffsetChang
 	m.file.lines = lines
 	m.layout.viewport.SetContent(m.renderDiff())
 
-	result, cmd := m.Update(wheelMsg(tea.MouseButtonWheelDown, 60, 10, false))
+	result, cmd := m.Update(wheelMsg(tea.MouseWheelDown, 60, 10, false))
 	model := result.(Model)
 
-	assert.Equal(t, wheelStep, model.layout.viewport.YOffset, "YOffset must advance synchronously")
+	assert.Equal(t, wheelStep, model.layout.viewport.YOffset(), "YOffset must advance synchronously")
 	assert.Equal(t, 0, model.nav.diffCursor, "cursor pin is deferred — diffCursor stays at the pre-burst position")
 	assert.True(t, model.wheel.renderPending, "render must be marked pending after YOffset shift")
 	assert.Equal(t, 1, model.wheel.gen, "wheel gen must bump on each YOffset-shifting event")
@@ -1260,11 +1262,11 @@ func TestModel_HandleMouse_WheelDeferredRender_NoDebounceWhenYOffsetCannotChange
 	m := mouseTestModel(t, []string{"a.go"}, map[string][]diff.DiffLine{"a.go": lines})
 	m.file.lines = lines
 	m.layout.viewport.SetContent(m.renderDiff())
-	maxOffset := m.layout.viewport.TotalLineCount() - m.layout.viewport.Height
+	maxOffset := m.layout.viewport.TotalLineCount() - m.layout.viewport.Height()
 	require.Positive(t, maxOffset, "test requires a scrollable diff")
 	m.layout.viewport.SetYOffset(maxOffset)
 
-	result, cmd := m.Update(wheelMsg(tea.MouseButtonWheelDown, 60, 10, false))
+	result, cmd := m.Update(wheelMsg(tea.MouseWheelDown, 60, 10, false))
 	model := result.(Model)
 
 	assert.False(t, model.wheel.renderPending, "render must not be pending when YOffset cannot change")
@@ -1417,7 +1419,7 @@ func TestModel_HandleMouse_WheelBurst_OppositeDirectionProcessesImmediately(t *t
 	// just bump gen (no new tick) so the debounce-message count stays bounded.
 	model := m
 	for i := 1; i <= 5; i++ {
-		result, cmd := model.Update(wheelMsg(tea.MouseButtonWheelDown, 60, 10, false))
+		result, cmd := model.Update(wheelMsg(tea.MouseWheelDown, 60, 10, false))
 		model = result.(Model)
 		assert.Equal(t, i, model.wheel.gen, "wheel gen must bump on each YOffset-shifting event")
 		assert.True(t, model.wheel.renderPending, "render must stay pending across the burst")
@@ -1427,17 +1429,17 @@ func TestModel_HandleMouse_WheelBurst_OppositeDirectionProcessesImmediately(t *t
 			assert.Nil(t, cmd, "wheel #%d must not schedule a new tick while one is already in flight", i)
 		}
 	}
-	require.Equal(t, 5*wheelStep, model.layout.viewport.YOffset, "five wheel-down events must scroll by 5*wheelStep")
+	require.Equal(t, 5*wheelStep, model.layout.viewport.YOffset(), "five wheel-down events must scroll by 5*wheelStep")
 	assert.True(t, model.wheel.tickInFlight, "tickInFlight must stay true while the burst is alive")
 
 	// wheel-up arrives mid-burst (gen=1 tick is still in flight). the up event
 	// shifts YOffset immediately and bumps gen to 6 — no new tick scheduled
 	// because tickInFlight is still true. the in-flight gen=1 tick will fire
 	// stale and reschedule itself for gen 6.
-	result, cmd := model.Update(wheelMsg(tea.MouseButtonWheelUp, 60, 10, false))
+	result, cmd := model.Update(wheelMsg(tea.MouseWheelUp, 60, 10, false))
 	model = result.(Model)
 	assert.Nil(t, cmd, "wheel-up mid-burst must not schedule a new tick — the existing one will reschedule itself")
-	assert.Equal(t, 4*wheelStep, model.layout.viewport.YOffset, "wheel-up must shift YOffset by -wheelStep relative to last down")
+	assert.Equal(t, 4*wheelStep, model.layout.viewport.YOffset(), "wheel-up must shift YOffset by -wheelStep relative to last down")
 	assert.Equal(t, 6, model.wheel.gen, "wheel-up shifting YOffset must bump gen past the down events")
 
 	// the original gen=1 tick fires stale; handleWheelDebounce reschedules for
@@ -1475,7 +1477,7 @@ func TestModel_HandleKey_FlushesPendingWheelBeforeAction(t *testing.T) {
 
 	// simulate a wheel burst that left state deferred: YOffset advanced, cursor
 	// stale at the pre-burst position (0), renderPending+tickInFlight true.
-	result, _ := m.Update(wheelMsg(tea.MouseButtonWheelDown, 60, 10, false))
+	result, _ := m.Update(wheelMsg(tea.MouseWheelDown, 60, 10, false))
 	model := result.(Model)
 	require.True(t, model.wheel.renderPending)
 	require.True(t, model.wheel.tickInFlight)
@@ -1484,7 +1486,7 @@ func TestModel_HandleKey_FlushesPendingWheelBeforeAction(t *testing.T) {
 	// arbitrary keypress — even one with no resolved action — triggers the
 	// flush at the top of handleKey. assertions don't depend on the key's
 	// semantics, only on the flush happening before any handler runs.
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'x', Text: string('x')})
 	model = result.(Model)
 
 	assert.False(t, model.wheel.renderPending, "handleKey must flush pending wheel work before processing the key")
@@ -1505,10 +1507,10 @@ func TestModel_HandleResize_FlushesPendingWheelBeforeSync(t *testing.T) {
 	m.file.lines = lines
 	m.layout.viewport.SetContent(m.renderDiff())
 
-	result, _ := m.Update(wheelMsg(tea.MouseButtonWheelDown, 60, 10, false))
+	result, _ := m.Update(wheelMsg(tea.MouseWheelDown, 60, 10, false))
 	model := result.(Model)
 	require.True(t, model.wheel.renderPending)
-	wheeledOffset := model.layout.viewport.YOffset
+	wheeledOffset := model.layout.viewport.YOffset()
 	require.Positive(t, wheeledOffset, "wheel must advance YOffset for the test to be meaningful")
 
 	// a window resize at the same dimensions still routes through handleResize
@@ -1536,7 +1538,7 @@ func TestModel_HandleBlameLoaded_FlushesPendingWheelBeforeSync(t *testing.T) {
 	m.modes.showBlame = true
 	m.layout.viewport.SetContent(m.renderDiff())
 
-	result, _ := m.Update(wheelMsg(tea.MouseButtonWheelDown, 60, 10, false))
+	result, _ := m.Update(wheelMsg(tea.MouseWheelDown, 60, 10, false))
 	model := result.(Model)
 	require.True(t, model.wheel.renderPending)
 	require.Equal(t, 0, model.nav.diffCursor)

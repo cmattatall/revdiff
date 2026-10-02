@@ -8,11 +8,10 @@ import (
 	"path/filepath"
 	"runtime/debug"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/term"
 	"github.com/jessevdk/go-flags"
-	"github.com/muesli/termenv"
 
 	"github.com/umputun/revdiff/app/annotation"
 	"github.com/umputun/revdiff/app/diff"
@@ -110,17 +109,6 @@ func buildVersion(rev string, info *debug.BuildInfo) string {
 }
 
 func run(opts options) (int, error) {
-	// force lipgloss to truecolor when colors are enabled. revdiff's raw-ANSI
-	// helpers (style.ansiColor) always emit truecolor, but lipgloss respects
-	// the termenv-detected profile, which can downgrade to ANSI256 / ANSI in
-	// tmux or terminals where TERM/COLORTERM detection regresses. The mismatch
-	// makes lipgloss-rendered colors (pane borders, file tree fg) look wrong
-	// while raw-ANSI paths (line prefix wrap, overlay title injection) render
-	// correctly. Forcing truecolor unifies the two paths.
-	if !opts.NoColors {
-		lipgloss.SetColorProfile(termenv.TrueColor)
-	}
-
 	store := annotation.NewStore()
 	hl := highlight.New(opts.ChromaStyle, !opts.NoColors)
 	km := keymap.LoadOrDefault(resolveKeysPath(opts))
@@ -137,7 +125,11 @@ func run(opts options) (int, error) {
 		err                error
 	)
 
-	programOptions := []tea.ProgramOption{tea.WithAltScreen(), tea.WithoutSignalHandler()}
+	programOptions := []tea.ProgramOption{tea.WithoutSignalHandler()}
+	// Preserve truecolor for both raw ANSI and Lip Gloss styles, including in tmux.
+	if !opts.NoColors {
+		programOptions = append(programOptions, tea.WithColorProfile(colorprofile.TrueColor))
+	}
 	tuiOut, err := (tuiOutput{
 		stdout:     os.Stdout,
 		isTerminal: term.IsTerminal,
@@ -154,9 +146,6 @@ func run(opts options) (int, error) {
 		defer func() { _ = tuiOut.Close() }()
 	}
 	programOptions = append(programOptions, tea.WithOutput(tuiOut))
-	if !opts.NoMouse {
-		programOptions = append(programOptions, tea.WithMouseCellMotion())
-	}
 	description, err := resolveDescription(opts)
 	if err != nil {
 		return 0, err

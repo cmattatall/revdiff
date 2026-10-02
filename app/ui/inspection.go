@@ -8,7 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/umputun/revdiff/app/diff"
 	"github.com/umputun/revdiff/app/ui/overlay"
@@ -21,6 +21,7 @@ const (
 	InspectHover      InspectionOperation = "hover"
 	InspectDefinition InspectionOperation = "definition"
 	InspectReferences InspectionOperation = "references"
+	InspectSymbols    InspectionOperation = "documentSymbol"
 )
 
 // InspectionPosition uses one-based source lines and zero-based UTF-8 byte columns.
@@ -34,6 +35,12 @@ type InspectionResult struct {
 	Text      string
 	Markdown  bool
 	Locations []InspectionPosition
+	Symbols   []InspectionDocumentSymbol
+}
+
+type InspectionDocumentSymbol struct {
+	Name     string
+	Position InspectionPosition
 }
 
 type InspectionServer struct {
@@ -42,8 +49,14 @@ type InspectionServer struct {
 	Path    string
 }
 
+type InspectionSymbol struct {
+	Name   string
+	Column int
+}
+
 // CodeInspector owns language servers and filesystem access outside the UI.
 type CodeInspector interface {
+	Symbols(context.Context, InspectionPosition, string) ([]InspectionSymbol, error)
 	Query(context.Context, InspectionOperation, InspectionPosition, string) (InspectionResult, error)
 	ReadSource(context.Context, string) (string, error)
 	Servers() []InspectionServer
@@ -80,10 +93,6 @@ type inspectionLoadedMsg struct {
 	err  error
 }
 
-// Servers decide meaning. The picker only finds identifier-shaped spans and
-// preserves byte offsets, including repeated names and non-ASCII identifiers.
-var inspectionIdentifier = regexp.MustCompile(`[\pL_$][\pL\pN\pM_$]*`)
-
 func (m Model) listLanguageServers() (tea.Model, tea.Cmd) {
 	if m.inspection.provider == nil {
 		m.keys.hint = "Code inspection requires a working-tree or all-files review"
@@ -113,7 +122,7 @@ func (m Model) openInspection(op InspectionOperation) (tea.Model, tea.Cmd) {
 		m.keys.hint = "Code inspection requires a working-tree or all-files review"
 		return m, nil
 	}
-	if m.layout.focus != paneDiff {
+	if op != InspectSymbols && m.layout.focus != paneDiff {
 		m.keys.hint = "Focus the diff and select a source line to inspect"
 		return m, nil
 	}
@@ -125,26 +134,61 @@ func (m Model) openInspection(op InspectionOperation) (tea.Model, tea.Cmd) {
 		m.keys.hint = "Wait for the selected file to load"
 		return m, nil
 	}
+	if op == InspectSymbols {
+		return m.listFileSymbols()
+	}
 	line, ok := m.cursorDiffLine()
 	if !ok || line.NewNum < 1 || line.ChangeType == diff.ChangeDivider || line.ChangeType == diff.ChangeRemove || line.IsBinary || m.annot.cursorOnAnnotation {
 		m.keys.hint = "Select a current source line to inspect"
 		return m, nil
 	}
-	page := inspectionPage{kind: inspectionSymbols, sourceLine: line.Content,
-		spec: overlay.InspectionSpec{Title: "Inspect " + string(op) + " · choose symbol", Items: []string{}}}
-	for _, span := range inspectionIdentifier.FindAllStringIndex(line.Content, -1) {
-		column := span[0]
-		page.targets = append(page.targets, InspectionPosition{Path: m.file.name, Line: line.NewNum, Column: column})
-		page.spec.Items = append(page.spec.Items, fmt.Sprintf("%s · column %d", line.Content[span[0]:span[1]], utf8.RuneCountInString(line.Content[:column])+1))
-	}
-	if len(page.targets) == 0 {
-		m.keys.hint = "No identifiers on this source line"
-		return m, nil
-	}
 	m.cancelInspection()
 	m.inspection.op, m.inspection.history = op, nil
-	m.showInspection(page)
-	return m, nil
+	title := "Inspect " + string(op) + " · choose symbol"
+	m.showInspection(inspectionPage{kind: inspectionText, spec: overlay.InspectionSpec{Title: title, Text: "Loading…"}})
+	ctx, cancel := context.WithCancel(context.Background())
+	m.inspection.cancel = cancel
+	seq, provider := m.inspection.seq, m.inspection.provider
+	pos := InspectionPosition{Path: m.file.name, Line: line.NewNum}
+	return m, func() tea.Msg {
+		defer cancel()
+		symbols, err := provider.Symbols(ctx, pos, line.Content)
+		page := inspectionPage{kind: inspectionSymbols, sourceLine: line.Content,
+			spec: overlay.InspectionSpec{Title: title, Items: []string{}}}
+		for _, symbol := range symbols {
+			position := pos
+			position.Column = symbol.Column
+			page.targets = append(page.targets, position)
+			page.spec.Items = append(page.spec.Items, fmt.Sprintf("%s · column %d", symbol.Name, utf8.RuneCountInString(line.Content[:symbol.Column])+1))
+		}
+		if len(symbols) == 0 {
+			page.kind, page.spec.Items, page.spec.Text = inspectionText, nil, "No inspectable symbols on this source line"
+		}
+		return inspectionLoadedMsg{seq: seq, page: page, err: err}
+	}
+}
+
+func (m Model) listFileSymbols() (tea.Model, tea.Cmd) {
+	m.cancelInspection()
+	m.inspection.op, m.inspection.history = InspectSymbols, nil
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	m.inspection.cancel = cancel
+	seq, provider, path := m.inspection.seq, m.inspection.provider, m.file.name
+	title := "Symbols · " + path
+	m.showInspection(inspectionPage{kind: inspectionText, spec: overlay.InspectionSpec{Title: title, Text: "Loading…"}})
+	return m, func() tea.Msg {
+		defer cancel()
+		response, err := provider.Query(ctx, InspectSymbols, InspectionPosition{Path: path}, "")
+		page := inspectionPage{kind: inspectionLocations, spec: overlay.InspectionSpec{Title: title, Items: []string{}}}
+		for _, symbol := range response.Symbols {
+			page.targets = append(page.targets, symbol.Position)
+			page.spec.Items = append(page.spec.Items, fmt.Sprintf("%s · line %d", symbol.Name, symbol.Position.Line))
+		}
+		if len(response.Symbols) == 0 {
+			page.kind, page.spec.Items, page.spec.Text = inspectionText, nil, "No symbols reported for this file"
+		}
+		return inspectionLoadedMsg{seq: seq, page: page, err: err}
+	}
 }
 
 func (m *Model) showInspection(page inspectionPage) {

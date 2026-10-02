@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -57,6 +57,7 @@ func TestDefault_allExpectedBindings(t *testing.T) {
 		{"tab", ActionTogglePane}, {"h", ActionFocusTree}, {"l", ActionFocusDiff},
 		{"/", ActionSearch},
 		{"a", ActionConfirm}, {"enter", ActionConfirm},
+		{"super+enter", ActionInspectSymbol},
 		{"A", ActionAnnotateFile}, {"d", ActionDeleteAnnotation}, {"@", ActionAnnotList},
 		{"}", ActionNextAnnotation}, {"{", ActionPrevAnnotation}, {"O", ActionFlushOutput},
 		{"v", ActionToggleCollapsed}, {"C", ActionToggleCompact}, {"w", ActionToggleWrap}, {"t", ActionToggleTree},
@@ -76,23 +77,23 @@ func TestDefault_allExpectedBindings(t *testing.T) {
 func TestDefault_specialKeysMatchBubbletea(t *testing.T) {
 	// verify that our key names match what bubbletea's KeyMsg.String() actually returns
 	tests := []struct {
-		keyType tea.KeyType
+		keyType tea.KeyPressMsg
 		want    string
 	}{
-		{tea.KeyPgDown, "pgdown"},
-		{tea.KeyPgUp, "pgup"},
-		{tea.KeyUp, "up"},
-		{tea.KeyDown, "down"},
-		{tea.KeyLeft, "left"},
-		{tea.KeyRight, "right"},
-		{tea.KeyEnter, "enter"},
-		{tea.KeyEsc, "esc"},
-		{tea.KeyTab, "tab"},
+		{tea.KeyPressMsg{Code: tea.KeyPgDown}, "pgdown"},
+		{tea.KeyPressMsg{Code: tea.KeyPgUp}, "pgup"},
+		{tea.KeyPressMsg{Code: tea.KeyUp}, "up"},
+		{tea.KeyPressMsg{Code: tea.KeyDown}, "down"},
+		{tea.KeyPressMsg{Code: tea.KeyLeft}, "left"},
+		{tea.KeyPressMsg{Code: tea.KeyRight}, "right"},
+		{tea.KeyPressMsg{Code: tea.KeyEnter}, "enter"},
+		{tea.KeyPressMsg{Code: tea.KeyEsc}, "esc"},
+		{tea.KeyPressMsg{Code: tea.KeyTab}, "tab"},
 	}
 
 	km := Default()
 	for _, tt := range tests {
-		msg := tea.KeyMsg{Type: tt.keyType}
+		msg := tt.keyType
 		actual := msg.String()
 		assert.Equal(t, tt.want, actual, "bubbletea KeyType %d String() should be %q", tt.keyType, tt.want)
 		// and verify the default keymap has a binding for it
@@ -103,8 +104,8 @@ func TestDefault_specialKeysMatchBubbletea(t *testing.T) {
 
 func TestDefault_ctrlKeysMatchBubbletea(t *testing.T) {
 	// ctrl+d and ctrl+u: bubbletea represents these as KeyMsg with specific types
-	ctrlD := tea.KeyMsg{Type: tea.KeyCtrlD}
-	ctrlU := tea.KeyMsg{Type: tea.KeyCtrlU}
+	ctrlD := tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl}
+	ctrlU := tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl}
 
 	km := Default()
 	assert.Equal(t, ActionHalfPageDown, km.Resolve(ctrlD.String()))

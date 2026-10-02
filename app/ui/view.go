@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/umputun/revdiff/app/diff"
@@ -15,7 +16,16 @@ import (
 )
 
 // View renders the full TUI.
-func (m Model) View() string {
+func (m Model) View() tea.View {
+	v := tea.NewView(m.viewContent())
+	v.AltScreen = true
+	if m.cfg.mouseTracking {
+		v.MouseMode = tea.MouseModeCellMotion
+	}
+	return v
+}
+
+func (m Model) viewContent() string {
 	if !m.ready {
 		return "loading..."
 	}
@@ -67,8 +77,8 @@ func (m Model) View() string {
 		// tree pane hidden (user toggle or single-file without TOC): diff uses full width
 		diffContent = m.padContentBg(diffContent, diffPaneW, m.resolver.Color(style.ColorKeyDiffPaneBg))
 		diffPane := m.resolver.Style(style.StyleKeyDiffPaneActive).
-			Width(diffPaneW).
-			Height(ph).
+			Width(diffPaneW + 2).
+			Height(ph + 2).
 			Render(diffContent)
 		mainView = m.applyScrollbar(diffPane)
 
@@ -152,14 +162,14 @@ func (m Model) renderTwoPaneLayout(leftContent, diffContent string, leftScroll s
 	diffContent = m.padContentBg(diffContent, diffPaneW, m.resolver.Color(style.ColorKeyDiffPaneBg))
 
 	leftPane := treeStyle.
-		Width(m.layout.treeWidth).
-		Height(ph).
+		Width(m.layout.treeWidth + 2).
+		Height(ph + 2).
 		Render(leftContent)
 	leftPane = m.applyNavigationScrollbar(leftPane, leftScroll)
 
 	diffPane := diffStyle.
-		Width(diffPaneW).
-		Height(ph).
+		Width(diffPaneW + 2).
+		Height(ph + 2).
 		Render(diffContent)
 	diffPane = m.applyScrollbar(diffPane)
 

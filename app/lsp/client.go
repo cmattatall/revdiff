@@ -22,9 +22,10 @@ import (
 type Operation string
 
 const (
-	Hover      Operation = "hover"
-	Definition Operation = "definition"
-	References Operation = "references"
+	Hover           Operation = "hover"
+	Definition      Operation = "definition"
+	References      Operation = "references"
+	DocumentSymbols Operation = "documentSymbol"
 )
 
 type Position struct {
@@ -37,6 +38,7 @@ type Result struct {
 	Text      string
 	Markdown  bool
 	Locations []Position
+	Symbols   []DocumentSymbol
 }
 
 // Server configures one language-server process. LanguageIDs maps file
@@ -109,7 +111,7 @@ func (c *Client) Query(ctx context.Context, operation Operation, position Positi
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
-	if operation != Hover && operation != Definition && operation != References {
+	if operation != Hover && operation != Definition && operation != References && operation != DocumentSymbols {
 		return Result{}, fmt.Errorf("lsp: unsupported operation %q", operation)
 	}
 	path, serverIndex, languageID, err := c.queryPath(position.Path)
@@ -131,15 +133,18 @@ func (c *Client) Query(ctx context.Context, operation Operation, position Positi
 		return Result{}, err
 	}
 	lines := splitLines(source)
-	if position.Line < 1 || position.Line > len(lines) {
-		return Result{}, fmt.Errorf("lsp: line %d is out of range", position.Line)
-	}
-	line := lines[position.Line-1]
-	if line != expectedLine {
-		return Result{}, errors.New("lsp: source changed since diff was loaded")
-	}
-	if position.Column < 0 || position.Column > len(line) || !utf8.ValidString(line[:position.Column]) {
-		return Result{}, errors.New("lsp: column is not a UTF-8 boundary")
+	var line string
+	if operation != DocumentSymbols {
+		if position.Line < 1 || position.Line > len(lines) {
+			return Result{}, fmt.Errorf("lsp: line %d is out of range", position.Line)
+		}
+		line = lines[position.Line-1]
+		if line != expectedLine {
+			return Result{}, errors.New("lsp: source changed since diff was loaded")
+		}
+		if position.Column < 0 || position.Column > len(line) || !utf8.ValidString(line[:position.Column]) {
+			return Result{}, errors.New("lsp: column is not a UTF-8 boundary")
+		}
 	}
 
 	conn, err := c.connection(ctx, serverIndex, s)
@@ -173,7 +178,9 @@ func (c *Client) Query(ctx context.Context, operation Operation, position Positi
 
 	params := map[string]any{
 		"textDocument": map[string]any{"uri": uri},
-		"position":     map[string]any{"line": position.Line - 1, "character": byteToUTF16(line, position.Column)},
+	}
+	if operation != DocumentSymbols {
+		params["position"] = map[string]any{"line": position.Line - 1, "character": byteToUTF16(line, position.Column)}
 	}
 	method := "textDocument/" + string(operation)
 	if operation == References {
@@ -183,6 +190,9 @@ func (c *Client) Query(ctx context.Context, operation Operation, position Positi
 	if err != nil {
 		c.dropConnection(s, conn)
 		return Result{}, err
+	}
+	if operation == DocumentSymbols {
+		return c.decodeDocumentSymbols(raw, path, source)
 	}
 	return c.decodeResult(operation, raw)
 }
@@ -324,6 +334,7 @@ func (c *Client) connection(ctx context.Context, index int, s *session) (*connec
 				"synchronization": map[string]any{"dynamicRegistration": false, "didSave": false},
 				"hover":           map[string]any{"contentFormat": []string{"markdown", "plaintext"}},
 				"definition":      map[string]any{"linkSupport": true},
+				"documentSymbol":  map[string]any{"hierarchicalDocumentSymbolSupport": true},
 			},
 		},
 	}

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -29,12 +29,12 @@ func TestModel_MarkReviewedFromTreePane(t *testing.T) {
 	m.layout.focus = paneTree
 
 	// space bar toggles reviewed
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: ' ', Text: string(' ')})
 	model := result.(Model)
 	assert.Equal(t, 1, model.tree.ReviewedCount(), "space should mark current file as reviewed")
 
 	// space again toggles off
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: ' ', Text: string(' ')})
 	model = result.(Model)
 	assert.Equal(t, 0, model.tree.ReviewedCount(), "space should unmark reviewed file")
 }
@@ -50,11 +50,11 @@ func TestModel_UnreviewedFilterAdvancesAsFilesAreReviewed(t *testing.T) {
 	m.file.lines = lines["a.go"]
 	m.layout.focus = paneTree
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'F'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'F', Text: string('F')})
 	model := result.(Model)
 	require.True(t, model.tree.UnreviewedFilterActive())
 
-	result, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
+	result, cmd := model.Update(tea.KeyPressMsg{Code: ' ', Text: string(' ')})
 	model = result.(Model)
 	assert.True(t, model.tree.IsReviewed("a.go"))
 	assert.Equal(t, "b.go", model.tree.SelectedFile())
@@ -65,7 +65,7 @@ func TestModel_UnreviewedFilterAdvancesAsFilesAreReviewed(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "b.go", loaded.file)
 
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'F'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'F', Text: string('F')})
 	assert.False(t, result.(Model).tree.UnreviewedFilterActive())
 }
 
@@ -79,7 +79,7 @@ func TestModel_MarkReviewedFromTreePaneUsesSelectedFile(t *testing.T) {
 	m.layout.focus = paneTree
 	m.tree.Move(sidepane.MotionDown) // cursor -> b.go while the diff pane still shows a.go
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: ' ', Text: string(' ')})
 	model := result.(Model)
 	require.NotNil(t, cmd)
 	result, _ = model.Update(cmd())
@@ -100,7 +100,7 @@ func TestModel_MarkReviewedFromDiffPane(t *testing.T) {
 	m.layout.focus = paneDiff
 
 	// space from diff pane marks currFile
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: ' ', Text: string(' ')})
 	model := result.(Model)
 	assert.Equal(t, 1, model.tree.ReviewedCount(), "space in diff pane should mark currFile as reviewed")
 }
@@ -113,7 +113,7 @@ func TestModel_MarkReviewedDropsAsyncResultFromStaleFileList(t *testing.T) {
 	m.layout.focus = paneTree
 	m.tree.Move(sidepane.MotionDown)
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: ' ', Text: string(' ')})
 	model := result.(Model)
 	require.NotNil(t, cmd)
 	model.filesLoadSeq++ // another file-list generation starts before the fingerprint returns
@@ -134,7 +134,7 @@ func TestModel_MarkReviewedDropsAsyncResultForPathRemovedDuringReload(t *testing
 	m.tree.Move(sidepane.MotionDown)
 	m.filesLoadSeq++ // reload begins; the old tree remains visible until filesLoadedMsg arrives
 
-	result, markCmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
+	result, markCmd := m.Update(tea.KeyPressMsg{Code: ' ', Text: string(' ')})
 	model := result.(Model)
 	require.NotNil(t, markCmd)
 	result, _ = model.Update(filesLoadedMsg{
@@ -160,7 +160,7 @@ func TestModel_MarkReviewedKeepsAsyncResultForPathSurvivingReload(t *testing.T) 
 	m.tree.Move(sidepane.MotionDown)
 	m.filesLoadSeq++
 
-	result, markCmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
+	result, markCmd := m.Update(tea.KeyPressMsg{Code: ' ', Text: string(' ')})
 	model := result.(Model)
 	require.NotNil(t, markCmd)
 	result, _ = model.Update(filesLoadedMsg{
@@ -211,7 +211,7 @@ func TestModel_FKeyFilterToggle(t *testing.T) {
 
 	t.Run("toggle filter on and off from tree pane", func(t *testing.T) {
 		m.layout.focus = paneTree
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'f', Text: string('f')})
 		model := result.(Model)
 		assert.True(t, model.tree.FilterActive())
 
@@ -220,7 +220,7 @@ func TestModel_FKeyFilterToggle(t *testing.T) {
 		assert.False(t, model.tree.HasFile(sidepane.DirectionNext), "no next file when only one annotated")
 
 		// toggle filter off
-		result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+		result, _ = model.Update(tea.KeyPressMsg{Code: 'f', Text: string('f')})
 		model = result.(Model)
 		assert.False(t, model.tree.FilterActive())
 	})
@@ -229,7 +229,7 @@ func TestModel_FKeyFilterToggle(t *testing.T) {
 		m.layout.focus = paneDiff
 		// filter should be off after previous subtest toggled it off
 		require.False(t, m.tree.FilterActive(), "precondition: filter must be off")
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'f', Text: string('f')})
 		model := result.(Model)
 		assert.True(t, model.tree.FilterActive())
 	})
@@ -238,7 +238,7 @@ func TestModel_FKeyFilterToggle(t *testing.T) {
 		m2 := testModel([]string{"a.go", "b.go"}, nil)
 		m2.tree = testNewFileTree([]string{"a.go", "b.go"})
 		// no annotations added
-		result, _ := m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+		result, _ := m2.Update(tea.KeyPressMsg{Code: 'f', Text: string('f')})
 		model := result.(Model)
 		assert.False(t, model.tree.FilterActive(), "filter should not toggle when no annotated files")
 	})
@@ -259,7 +259,7 @@ func TestModel_FilterToggleLoadsDiffForNewSelection(t *testing.T) {
 	m.store.Add(annotation.Annotation{File: "a.go", Line: 1, Type: "+", Comment: "note on a"})
 
 	// toggle filter on — should select a.go (the only annotated file)
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'f', Text: string('f')})
 	model := result.(Model)
 	assert.True(t, model.tree.FilterActive())
 
@@ -325,7 +325,7 @@ func TestModel_HandleEscKeyClearsSearch(t *testing.T) {
 	m.search.cursor = 0
 	m.layout.focus = paneDiff
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	model := result.(Model)
 	assert.Empty(t, model.search.term, "esc should clear search term")
 	assert.Nil(t, model.search.matches, "esc should clear search matches")
@@ -338,7 +338,7 @@ func TestModel_HandleEscKeyUnavailableTree(t *testing.T) {
 		m.layout.focus = paneDiff
 		m.file.singleFile = singleFile
 		m.layout.treeHidden = !singleFile
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+		result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 		model := result.(Model)
 		assert.Equal(t, paneDiff, model.layout.focus, "do not focus an unavailable tree")
 	}
@@ -464,7 +464,7 @@ func TestModel_ReloadHint_ClearsOnNextKey(t *testing.T) {
 	m := testModel([]string{"a.go"}, nil)
 	m.reload.hint = "some hint"
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'j', Text: string('j')})
 	model := result.(Model)
 	assert.Empty(t, model.reload.hint, "any key press must clear the reload hint")
 }
@@ -491,7 +491,7 @@ func TestModel_ActionReload_StdinGuard(t *testing.T) {
 	m := testModel([]string{"a.go"}, nil)
 	m.reload.applicable = false // stdin mode
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'R', Text: string('R')})
 	model := result.(Model)
 	assert.Equal(t, "Reload not available in stdin mode", model.reload.hint)
 	assert.False(t, model.reload.pending)
@@ -510,7 +510,7 @@ func TestModel_ActionReload_NoAnnotations_DirectReload(t *testing.T) {
 		ModelConfig{ReloadApplicable: true})
 	initialSeq := m.filesLoadSeq
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'R', Text: string('R')})
 	model := result.(Model)
 	assert.False(t, model.reload.pending, "no confirmation needed without annotations")
 	assert.Equal(t, "Reloaded", model.reload.hint)
@@ -524,7 +524,7 @@ func TestModel_ActionReload_WithAnnotations_SetsPending(t *testing.T) {
 	m := testNewModel(t, plainRenderer(), store, noopHighlighter(),
 		ModelConfig{ReloadApplicable: true})
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'R', Text: string('R')})
 	model := result.(Model)
 	assert.True(t, model.reload.pending, "confirmation must be requested when annotations exist")
 	assert.Equal(t, "Annotations will be dropped — press y to confirm, any other key to cancel", model.reload.hint)
@@ -547,12 +547,12 @@ func TestModel_ActionReload_YConfirms(t *testing.T) {
 		ModelConfig{ReloadApplicable: true})
 
 	// first R: sets pending
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'R', Text: string('R')})
 	model := result.(Model)
 	require.True(t, model.reload.pending)
 
 	// y: confirms
-	result, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	result, cmd := model.Update(tea.KeyPressMsg{Code: 'y', Text: string('y')})
 	model = result.(Model)
 	assert.False(t, model.reload.pending, "pending must be cleared after confirmation")
 	assert.Equal(t, 0, store.Count(), "annotations must be cleared after confirmation")
@@ -567,12 +567,12 @@ func TestModel_ActionReload_OtherKeyCancels(t *testing.T) {
 		ModelConfig{ReloadApplicable: true})
 
 	// first R: sets pending
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'R', Text: string('R')})
 	model := result.(Model)
 	require.True(t, model.reload.pending)
 
 	// j: cancels
-	result, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	result, cmd := model.Update(tea.KeyPressMsg{Code: 'j', Text: string('j')})
 	model = result.(Model)
 	assert.False(t, model.reload.pending, "pending must be cleared on cancel")
 	assert.Equal(t, "Reload canceled", model.reload.hint)
@@ -593,7 +593,7 @@ func TestModel_ActionReload_NoConfirmReload_DirectReload(t *testing.T) {
 		ModelConfig{ReloadApplicable: true, NoConfirmReload: true})
 	require.True(t, m.cfg.noConfirmReload, "noConfirmReload must be wired from ModelConfig")
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'R', Text: string('R')})
 	model := result.(Model)
 	assert.False(t, model.reload.pending, "no confirmation when noConfirmReload is set")
 	assert.Equal(t, "Reloaded", model.reload.hint)
@@ -612,7 +612,7 @@ func TestModel_HandleFilterToggle_TurnsOffWhenNoAnnotations(t *testing.T) {
 
 	// add annotation and turn filter on
 	m.store.Add(annotation.Annotation{File: "a.go", Line: 1, Type: "+", Comment: "note"})
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'f', Text: string('f')})
 	model := result.(Model)
 	require.True(t, model.tree.FilterActive(), "precondition: filter must be active after 'f' with annotation")
 
@@ -622,7 +622,7 @@ func TestModel_HandleFilterToggle_TurnsOffWhenNoAnnotations(t *testing.T) {
 	require.Empty(t, model.annotatedFiles(), "precondition: annotatedFiles() must return empty")
 
 	// pressing f again must toggle the filter off via the FilterActive() branch
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'f', Text: string('f')})
 	model = result.(Model)
 	assert.False(t, model.tree.FilterActive(),
 		"filter must toggle off even when no annotations remain — guards the || m.tree.FilterActive() branch")
@@ -644,7 +644,7 @@ func TestModel_ToggleCompactMode_FlipsModeAndRefetches(t *testing.T) {
 	m.file.name = "a.go"
 
 	// pressing C flips compact on and issues a re-fetch of the current file
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'C'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'C', Text: string('C')})
 	model := result.(Model)
 	assert.True(t, model.modes.compact, "C should flip compact mode on when applicable")
 	require.NotNil(t, cmd, "C should issue a re-fetch command for the current file")
@@ -653,7 +653,7 @@ func TestModel_ToggleCompactMode_FlipsModeAndRefetches(t *testing.T) {
 	assert.Empty(t, model.compact.hint, "applicable path must not set a hint")
 
 	// pressing C again flips compact off and re-fetches
-	result, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'C'}})
+	result, cmd = model.Update(tea.KeyPressMsg{Code: 'C', Text: string('C')})
 	model = result.(Model)
 	assert.False(t, model.modes.compact, "C should flip compact mode off on second press")
 	require.NotNil(t, cmd, "second press must also issue a re-fetch")
@@ -676,7 +676,7 @@ func TestModel_ToggleCompactMode_NoOpWhenNotApplicable(t *testing.T) {
 	m.file.name = "a.go"
 	beforeSeq := m.file.loadSeq
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'C'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'C', Text: string('C')})
 	model := result.(Model)
 	assert.False(t, model.modes.compact, "non-applicable toggle must leave mode unchanged")
 	assert.Nil(t, cmd, "no-op path must not issue a command")
@@ -695,7 +695,7 @@ func TestModel_CompactHint_ClearsOnNextKey(t *testing.T) {
 	m := testModel([]string{"a.go"}, nil)
 	m.compact.hint = "some hint"
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'j', Text: string('j')})
 	model := result.(Model)
 	assert.Empty(t, model.compact.hint, "any key press must clear the compact hint")
 }
@@ -740,7 +740,7 @@ func TestModel_ToggleCompactMode_DoesNotReloadFilesOrCommits(t *testing.T) {
 	beforeFilesSeq := m.filesLoadSeq
 	beforeCommitsSeq := m.commits.loadSeq
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'C'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'C', Text: string('C')})
 	model := result.(Model)
 	require.NotNil(t, cmd)
 	cmd()
@@ -779,7 +779,7 @@ func TestModel_ToggleCompactMode_PreservesCursorAcrossToggle(t *testing.T) {
 	m.file.lines = fullDiff
 	m.nav.diffCursor = 3 // on the added line (NewNum 41)
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'C'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'C', Text: string('C')})
 	model := result.(Model)
 	require.NotNil(t, cmd)
 	result, _ = model.Update(cmd())
@@ -816,7 +816,7 @@ func TestModel_ToggleCompactMode_FallsBackToHunkWhenAnchorLineDropped(t *testing
 	m.file.lines = fullDiff
 	m.nav.diffCursor = 2 // context line NewNum 5, dropped in compact
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'C'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'C', Text: string('C')})
 	model := result.(Model)
 	require.NotNil(t, cmd)
 	result, _ = model.Update(cmd())
@@ -847,7 +847,7 @@ func TestModel_ToggleCompactMode_ResetsToTopWhenNoAnchor(t *testing.T) {
 	m.file.name = "a.go"
 	m.nav.diffCursor = 999 // no lines set → cursor out of range → no anchor captured
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'C'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'C', Text: string('C')})
 	model := result.(Model)
 	require.NotNil(t, cmd)
 	result, _ = model.Update(cmd())
@@ -885,7 +885,7 @@ func TestModel_ToggleCompactMode_PreservesCursorCompactToFull(t *testing.T) {
 	m.file.lines = compactDiff
 	m.nav.diffCursor = 2 // on the added line (NewNum 41)
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'C'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'C', Text: string('C')})
 	model := result.(Model)
 	require.NotNil(t, cmd)
 	result, _ = model.Update(cmd())
@@ -948,7 +948,7 @@ func TestBuildHelpSpec_PaletteCommands(t *testing.T) {
 			}
 		}
 	}
-	require.Equal(t, []string{"Navigation", "Annotations", "Harness", "File/Hunk", "Pane", "Markdown TOC (single-file full-context mode)", "Search", "View", "Miscellaneous", "Inspection"}, sectionNames)
+	require.Equal(t, []string{"Navigation", "Annotations", "Harness", "File/Hunk", "Inspection", "Pane", "Markdown TOC (single-file full-context mode)", "Search", "View", "Miscellaneous"}, sectionNames)
 	for _, description := range []string{"scroll left", "scroll right / focus diff", "scroll diff down", "scroll diff up", "next file / search match", "prev file / search match"} {
 		require.NotEmpty(t, motions[description].Keys, "motion help keeps its keybindings: %s", description)
 	}
@@ -1105,15 +1105,15 @@ func TestModel_HelpOverlayScrollsOnSmallTerminal(t *testing.T) {
 	m.overlay.OpenHelp(m.buildHelpSpec())
 	require.True(t, m.overlay.Active())
 
-	top := m.View()
+	top := m.View().Content
 	require.NotContains(t, top, "dismiss / cancel", "last section must start below the fold at 100x40")
 
 	scrolled := m
 	for range 4 {
-		result, _ := scrolled.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+		result, _ := scrolled.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 		scrolled = result.(Model)
 	}
-	view := scrolled.View()
+	view := scrolled.View().Content
 
 	assert.NotEqual(t, top, view, "page-down must scroll the help body")
 	assert.Contains(t, view, "dismiss / cancel", "paging must reach the last section")
@@ -1121,7 +1121,7 @@ func TestModel_HelpOverlayScrollsOnSmallTerminal(t *testing.T) {
 }
 
 func TestModel_HelpOverlayNeverExceedsTerminal(t *testing.T) {
-	// a height assertion on m.View() would be unfalsifiable: overlayCenter only
+	// a height assertion on m.View().Content would be unfalsifiable: overlayCenter only
 	// assigns into existing background lines and drops the rest, so the view is
 	// always exactly the terminal height however tall the popup is. Clipping
 	// shows up as missing content instead, which is what #304 reported.
@@ -1141,7 +1141,7 @@ func TestModel_HelpOverlayNeverExceedsTerminal(t *testing.T) {
 			m.layout.width, m.layout.height = sz.w, sz.h
 			m.overlay.OpenHelp(m.buildHelpSpec())
 
-			view := m.View()
+			view := m.View().Content
 			assert.Contains(t, view, "Navigation", "the popup's first row must not be clipped off the top")
 			if sz.overflows {
 				assert.Contains(t, view, "↑/↓ scroll", "the hint is the popup's last row, so its absence means the bottom was clipped")

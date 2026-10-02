@@ -3,8 +3,8 @@ package ui
 import (
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/umputun/revdiff/app/diff"
 )
@@ -26,11 +26,11 @@ func (m *Model) startSearch() tea.Cmd {
 	ti.Placeholder = "search"
 	cmd := ti.Focus()
 	ti.CharLimit = 200
-	ti.Width = max(1, m.layout.width-5)
+	ti.SetWidth(max(1, m.layout.width-5))
 	m.search.input = ti
 	m.search.active = true
 	m.search.historyIdx = len(m.search.history)
-	m.layout.viewport.Height = m.paneHeight() - 1
+	m.layout.viewport.SetHeight(m.paneHeight() - 1)
 	return cmd
 }
 
@@ -132,7 +132,7 @@ func (m *Model) prevSearchMatch() {
 func (m *Model) cancelSearch() {
 	m.search.active = false
 	m.search.input.Blur()
-	m.layout.viewport.Height = m.paneHeight() - 1
+	m.layout.viewport.SetHeight(m.paneHeight() - 1)
 }
 
 // appendSearchHistory records query in the in-session history. consecutive
@@ -226,19 +226,19 @@ func (m Model) buildSearchMatchSet() map[int]bool {
 }
 
 // handleSearchKey handles key messages during search input mode.
-func (m Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.Type {
-	case tea.KeyEnter:
+func (m Model) handleSearchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "enter":
 		cmd := m.submitSearch()
 		m.layout.viewport.SetContent(m.renderDiff()) // refresh viewport to clear/update highlights
 		return m, cmd
-	case tea.KeyEsc, tea.KeyCtrlC:
+	case "esc", "ctrl+c":
 		m.cancelSearch()
 		return m, nil
-	case tea.KeyUp, tea.KeyCtrlP:
+	case "up", "ctrl+p":
 		m.recallHistory(-1)
 		return m, nil
-	case tea.KeyDown, tea.KeyCtrlN:
+	case "down", "ctrl+n":
 		m.recallHistory(+1)
 		return m, nil
 	default:

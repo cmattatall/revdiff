@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // outputState holds transient feedback for the O in-session output flush.
@@ -18,11 +18,10 @@ type outputState struct {
 }
 
 type postFlushFinishedMsg struct {
-	err          error
-	content      string
-	successHint  string
-	failureHint  string
-	restoreMouse bool
+	err         error
+	content     string
+	successHint string
+	failureHint string
 }
 
 // handleFlushOutput exports the current annotations through the configured
@@ -82,28 +81,23 @@ func (m Model) handleFlushOutput() (tea.Model, tea.Cmd) {
 	m.output.hint = runningHint
 	return m, tea.ExecProcess(cmd, func(runErr error) tea.Msg {
 		return postFlushFinishedMsg{
-			err:          runErr,
-			content:      content,
-			successHint:  successHint,
-			failureHint:  failureHint,
-			restoreMouse: m.cfg.mouseTracking,
+			err:         runErr,
+			content:     content,
+			successHint: successHint,
+			failureHint: failureHint,
 		}
 	})
 }
 
 func (m Model) handlePostFlushFinished(msg postFlushFinishedMsg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
-	if msg.restoreMouse {
-		cmd = tea.EnableMouseCellMotion
-	}
 	if msg.err != nil {
 		log.Printf("[WARN] post-flush command failed: %v", msg.err)
 		m.output.hint = msg.failureHint
-		return m, cmd
+		return m, nil
 	}
 	m.output.saved = msg.content
 	m.output.hint = msg.successHint
-	return m, cmd
+	return m, nil
 }
 
 func (m Model) quitError(force bool) string {

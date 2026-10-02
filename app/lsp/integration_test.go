@@ -79,6 +79,15 @@ func TestInstalledServers(t *testing.T) {
 				}
 			}
 			require.True(t, foundUse, "references must include the call site: %+v", references)
+			symbols, err := client.Query(ctx, lsp.DocumentSymbols, lsp.Position{Path: tc.path}, "")
+			require.NoError(t, err)
+			var foundDefinition bool
+			for _, symbol := range symbols.Symbols {
+				if strings.Contains(symbol.Name, "twice") && symbol.Position.Line == tc.definition {
+					foundDefinition = true
+				}
+			}
+			require.True(t, foundDefinition, "document symbols must include the function declaration: %+v", symbols)
 		})
 	}
 }

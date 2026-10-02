@@ -3,8 +3,8 @@ package ui
 import (
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/umputun/revdiff/app/ui/style"
 )
@@ -33,14 +33,14 @@ func (m Model) openHarnessMessage() (tea.Model, tea.Cmd) {
 	input.Prompt = "Message: "
 	input.Placeholder = "Send a general message to the harness"
 	input.CharLimit = annotCharLimit
-	input.Width = max(1, m.layout.width-4-len(input.Prompt))
+	input.SetWidth(max(1, m.layout.width-4-len(input.Prompt)))
 	input.SetValue(m.message.draft)
 	if m.live.content != "" {
 		input.SetValue(m.live.content)
 	}
 	focus := input.Focus()
 	m.message = harnessMessageState{active: true, input: input, draft: m.message.draft}
-	m.layout.viewport.Height = m.paneHeight() - 1
+	m.layout.viewport.SetHeight(m.paneHeight() - 1)
 	model, discover := m.discoverFeedback(false)
 	return model, tea.Batch(focus, discover)
 }
@@ -49,7 +49,7 @@ func (m *Model) closeHarnessMessage() {
 	m.message.draft = m.message.input.Value()
 	m.message.active = false
 	m.message.input.Blur()
-	m.layout.viewport.Height = m.paneHeight() - 1
+	m.layout.viewport.SetHeight(m.paneHeight() - 1)
 }
 
 func (m *Model) updateHarnessMessageInput(msg tea.Msg) tea.Cmd {
@@ -65,12 +65,12 @@ func (m *Model) updateHarnessMessageInput(msg tea.Msg) tea.Cmd {
 	return cmd
 }
 
-func (m Model) handleHarnessMessageKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.Type {
-	case tea.KeyEsc, tea.KeyCtrlC:
+func (m Model) handleHarnessMessageKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "ctrl+c":
 		m.closeHarnessMessage()
 		return m, nil
-	case tea.KeyEnter:
+	case "enter":
 		return m.sendHarnessMessage()
 	default:
 		cmd := m.updateHarnessMessageInput(msg)
@@ -100,7 +100,9 @@ func (m Model) sendHarnessMessage() (tea.Model, tea.Cmd) {
 
 func (m Model) harnessMessageView() string {
 	input := m.message.input
-	input.PlaceholderStyle = m.resolver.Style(style.StyleKeyAnnotInputPlaceholder)
+	styles := input.Styles()
+	styles.Focused.Placeholder = m.resolver.Style(style.StyleKeyAnnotInputPlaceholder)
+	input.SetStyles(styles)
 	help := "Harness message · Enter send · Esc close (draft kept)"
 	if m.live.content != "" {
 		help = "Delivery unconfirmed · Enter retry · Esc close"

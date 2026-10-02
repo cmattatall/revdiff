@@ -6,7 +6,7 @@ package mocks
 import (
 	"sync"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"github.com/umputun/revdiff/app/diff"
 	"github.com/umputun/revdiff/app/ui/style"
 )

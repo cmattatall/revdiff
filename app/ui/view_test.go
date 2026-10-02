@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -53,15 +53,15 @@ func TestModel_SessionPanel(t *testing.T) {
 	m = resized.(Model)
 	require.Equal(t, []string{"Harness: waiting"}, m.sessionPanelLines())
 	require.Equal(t, 2, m.statusBarHeight())
-	require.Equal(t, 25, m.layout.viewport.Height)
+	require.Equal(t, 25, m.layout.viewport.Height())
 	connected, _ := m.handleFeedbackDiscovered(feedbackDiscoveredMsg{sender: sender})
 	m = connected.(Model)
-	require.Equal(t, 25, m.layout.viewport.Height, "late connection must preserve viewport geometry")
+	require.Equal(t, 25, m.layout.viewport.Height(), "late connection must preserve viewport geometry")
 	require.Equal(t, []string{"Harness (amp): Review installer T-01a0f870-8501-7158-bd5f-36a7bcca868a"}, m.sessionPanelLines())
 
 	m.annot.annotating = true
 	m.output.hint = "Feedback sent"
-	view := ansi.Strip(m.View())
+	view := ansi.Strip(m.View().Content)
 	require.Contains(t, view, "Harness (amp): Review installer T-01a0f870-8501-7158-bd5f-36a7bcca868a")
 	require.Equal(t, 1, strings.Count(view, "Harness (amp):"), "identity and connection state share one row")
 	require.NotContains(t, view, "connected")
@@ -127,7 +127,7 @@ func TestModel_ResizeInSingleFileMode(t *testing.T) {
 	model := result.(Model)
 
 	assert.Equal(t, 0, model.layout.treeWidth, "treeWidth stays 0 after resize in single-file mode")
-	assert.Equal(t, 78, model.layout.viewport.Width, "viewport width should be new width - 2")
+	assert.Equal(t, 78, model.layout.viewport.Width(), "viewport width should be new width - 2")
 }
 
 func TestModel_StatusBarFilterIndicator(t *testing.T) {
@@ -655,7 +655,7 @@ func TestModel_ViewNoStatusBar(t *testing.T) {
 	m.layout.width = 120
 	m.layout.height = 40
 	m.layout.treeWidth = 24
-	view := m.View()
+	view := m.View().Content
 	assert.NotContains(t, view, "quit", "status bar should be hidden")
 	assert.Contains(t, view, "a.go", "tree content should still appear")
 }
@@ -694,7 +694,7 @@ func TestModel_ViewSingleFileMode(t *testing.T) {
 		m.cfg.noStatusBar = true
 		m.ready = true
 
-		view := m.View()
+		view := m.View().Content
 		assert.Contains(t, view, "main.go")
 
 		// every rendered line must be full terminal width (diff pane uses m.layout.width - 2 + 2 border = m.layout.width)
@@ -720,7 +720,7 @@ func TestModel_ViewSingleFileMode(t *testing.T) {
 		m.cfg.noStatusBar = true
 		m.ready = true
 
-		view := m.View()
+		view := m.View().Content
 		stripped := ansi.Strip(view)
 		assert.Contains(t, stripped, "a.go")
 		assert.Contains(t, stripped, "b.go")
@@ -742,7 +742,7 @@ func TestModel_ViewRenameHeader(t *testing.T) {
 		m.cfg.noStatusBar = true
 		m.ready = true
 
-		view := ansi.Strip(m.View())
+		view := ansi.Strip(m.View().Content)
 		assert.Contains(t, view, "old.go → new.go")
 	})
 
@@ -756,7 +756,7 @@ func TestModel_ViewRenameHeader(t *testing.T) {
 		m.cfg.noStatusBar = true
 		m.ready = true
 
-		view := ansi.Strip(m.View())
+		view := ansi.Strip(m.View().Content)
 		assert.Contains(t, view, "main.go")
 		assert.NotContains(t, view, "→")
 	})
@@ -809,14 +809,14 @@ func TestModel_SingleFileKeysNoOp(t *testing.T) {
 
 	t.Run("tab is no-op in single-file mode", func(t *testing.T) {
 		m := setup()
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+		result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 		model := result.(Model)
 		assert.Equal(t, paneDiff, model.layout.focus, "tab should not switch pane in single-file mode")
 	})
 
 	t.Run("h is no-op in single-file mode", func(t *testing.T) {
 		m := setup()
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'h', Text: string('h')})
 		model := result.(Model)
 		assert.Equal(t, paneDiff, model.layout.focus, "h should not switch to tree in single-file mode")
 	})
@@ -824,7 +824,7 @@ func TestModel_SingleFileKeysNoOp(t *testing.T) {
 	t.Run("f is no-op in single-file mode", func(t *testing.T) {
 		m := setup()
 		m.store.Add(annotation.Annotation{File: "main.go", Line: 1, Type: "+", Comment: "test"})
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'f', Text: string('f')})
 		model := result.(Model)
 		assert.False(t, model.tree.FilterActive(), "f should not toggle filter in single-file mode")
 	})
@@ -832,7 +832,7 @@ func TestModel_SingleFileKeysNoOp(t *testing.T) {
 	t.Run("p is no-op in single-file mode", func(t *testing.T) {
 		m := setup()
 		selected := m.tree.SelectedFile()
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'p', Text: string('p')})
 		model := result.(Model)
 		assert.Equal(t, selected, model.tree.SelectedFile(), "p should not change file in single-file mode")
 	})
@@ -840,7 +840,7 @@ func TestModel_SingleFileKeysNoOp(t *testing.T) {
 	t.Run("n is no-op for file nav in single-file mode", func(t *testing.T) {
 		m := setup()
 		selected := m.tree.SelectedFile()
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'n', Text: string('n')})
 		model := result.(Model)
 		assert.Equal(t, selected, model.tree.SelectedFile(), "n should not advance file in single-file mode")
 	})
@@ -864,13 +864,13 @@ func TestModel_SingleFileSearchNavStillWorks(t *testing.T) {
 	model.nav.diffCursor = 0
 
 	// n should navigate to next search match
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'n', Text: string('n')})
 	model = result.(Model)
 	assert.Equal(t, 1, model.search.cursor, "n should advance search cursor in single-file mode")
 	assert.Equal(t, 2, model.nav.diffCursor, "cursor should move to second match")
 
 	// n should navigate to previous search match
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'N'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'N', Text: string('N')})
 	model = result.(Model)
 	assert.Equal(t, 0, model.search.cursor, "N should go back in single-file mode")
 	assert.Equal(t, 0, model.nav.diffCursor, "cursor should return to first match")
@@ -892,13 +892,13 @@ func TestModel_SingleFileWrapModeWorks(t *testing.T) {
 	assert.False(t, model.modes.wrap, "wrap should be off initially")
 
 	// toggle wrap on
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'w', Text: string('w')})
 	model = result.(Model)
 	assert.True(t, model.modes.wrap, "w should toggle wrap on in single-file mode")
 	assert.Equal(t, 0, model.layout.scrollX, "wrap should reset horizontal scroll")
 
 	// toggle wrap off
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'w', Text: string('w')})
 	model = result.(Model)
 	assert.False(t, model.modes.wrap, "w should toggle wrap off in single-file mode")
 }
@@ -920,12 +920,12 @@ func TestModel_SingleFileCollapsedModeWorks(t *testing.T) {
 	assert.False(t, model.modes.collapsed.enabled, "collapsed should be off initially")
 
 	// toggle collapsed on
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'v', Text: string('v')})
 	model = result.(Model)
 	assert.True(t, model.modes.collapsed.enabled, "v should toggle collapsed on in single-file mode")
 
 	// toggle collapsed off
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'v', Text: string('v')})
 	model = result.(Model)
 	assert.False(t, model.modes.collapsed.enabled, "v should toggle collapsed off in single-file mode")
 }
@@ -946,19 +946,19 @@ func TestModel_SingleFileMultiFileModeUnchanged(t *testing.T) {
 	// tab should switch panes
 	model.layout.focus = paneTree
 	model.file.name = "a.go"
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyTab})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	model = result.(Model)
 	assert.Equal(t, paneDiff, model.layout.focus, "tab should switch to diff pane in multi-file mode")
 
 	// tab back to tree
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyTab})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	model = result.(Model)
 	assert.Equal(t, paneTree, model.layout.focus, "tab should switch back to tree in multi-file mode")
 
 	// f should toggle filter (with annotations present)
 	model.store.Add(annotation.Annotation{File: "a.go", Line: 1, Type: "+", Comment: "note"})
 	model.layout.focus = paneDiff
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'f', Text: string('f')})
 	model = result.(Model)
 	assert.True(t, model.tree.FilterActive(), "f should toggle filter in multi-file mode")
 }
@@ -980,7 +980,7 @@ func TestModel_ResizeWithTOCActive(t *testing.T) {
 
 		expectedTreeWidth := max(minTreeWidth, 100*model.cfg.treeWidthRatio/10)
 		assert.Equal(t, expectedTreeWidth, model.layout.treeWidth, "treeWidth should be ratio-based when TOC is active")
-		assert.Equal(t, 100-expectedTreeWidth-4, model.layout.viewport.Width, "viewport width accounts for TOC pane")
+		assert.Equal(t, 100-expectedTreeWidth-4, model.layout.viewport.Width(), "viewport width accounts for TOC pane")
 	})
 
 	t.Run("resize sets treeWidth=0 when single-file without TOC", func(t *testing.T) {
@@ -992,7 +992,7 @@ func TestModel_ResizeWithTOCActive(t *testing.T) {
 		model := result.(Model)
 
 		assert.Equal(t, 0, model.layout.treeWidth, "treeWidth should be 0 for single-file without TOC")
-		assert.Equal(t, 78, model.layout.viewport.Width, "viewport width should be width - 2")
+		assert.Equal(t, 78, model.layout.viewport.Width(), "viewport width should be width - 2")
 	})
 }
 
@@ -1024,7 +1024,7 @@ func TestModel_ViewWithTOCPane(t *testing.T) {
 		}
 		m.file.mdTOC = sidepane.ParseTOC(tocLines, "README.md")
 
-		view := m.View()
+		view := m.View().Content
 		stripped := ansi.Strip(view)
 
 		// TOC pane should contain header titles
@@ -1045,7 +1045,7 @@ func TestModel_ViewWithTOCPane(t *testing.T) {
 		m.cfg.noStatusBar = true
 		m.ready = true
 
-		view := m.View()
+		view := m.View().Content
 		stripped := ansi.Strip(view)
 		assert.Contains(t, stripped, "main.go")
 
@@ -1064,7 +1064,7 @@ func TestModel_ViewWithTOCPane(t *testing.T) {
 		m.ready = true
 		m.file.mdTOC = sidepane.ParseTOC([]diff.DiffLine{{NewNum: 1, Content: "# Title", ChangeType: diff.ChangeContext}}, "README.md")
 
-		view := m.View()
+		view := m.View().Content
 		stripped := ansi.Strip(view)
 		assert.Contains(t, stripped, "Title")
 		// two-pane layout present
@@ -1116,12 +1116,12 @@ func TestModel_TabTogglingWithTOC(t *testing.T) {
 		m.layout.focus = paneDiff
 
 		// tab from diff -> TOC (paneTree)
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+		result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 		model := result.(Model)
 		assert.Equal(t, paneTree, model.layout.focus)
 
 		// tab from TOC -> diff
-		result, _ = model.Update(tea.KeyMsg{Type: tea.KeyTab})
+		result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 		model = result.(Model)
 		assert.Equal(t, paneDiff, model.layout.focus)
 	})
@@ -1133,7 +1133,7 @@ func TestModel_TabTogglingWithTOC(t *testing.T) {
 		m.file.name = "main.go"
 		m.layout.focus = paneDiff
 
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+		result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 		model := result.(Model)
 		assert.Equal(t, paneDiff, model.layout.focus, "tab should be no-op without TOC in single-file mode")
 	})
@@ -1154,7 +1154,7 @@ func TestModel_HKeySwitchesToTOC(t *testing.T) {
 		m.file.lines = mdLines
 		m.layout.focus = paneDiff
 
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'h', Text: string('h')})
 		model := result.(Model)
 		assert.Equal(t, paneTree, model.layout.focus, "h key should switch to TOC pane")
 	})
@@ -1166,7 +1166,7 @@ func TestModel_HKeySwitchesToTOC(t *testing.T) {
 		m.file.name = "main.go"
 		m.layout.focus = paneDiff
 
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'h', Text: string('h')})
 		model := result.(Model)
 		assert.Equal(t, paneDiff, model.layout.focus, "h key should be no-op without TOC")
 	})
@@ -1199,7 +1199,7 @@ func TestModel_TOCPaneNavigation(t *testing.T) {
 		m := setup(t)
 		assert.Equal(t, 0, tocLineIdx(t, m.file.mdTOC)) // starts on "top" entry (lineIdx=0)
 
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'j', Text: string('j')})
 		model := result.(Model)
 		assert.Equal(t, 0, tocLineIdx(t, model.file.mdTOC)) // First entry also at lineIdx=0
 		assert.Equal(t, 0, model.nav.diffCursor, "diff cursor should jump to # First at index 0")
@@ -1210,7 +1210,7 @@ func TestModel_TOCPaneNavigation(t *testing.T) {
 		m := setup(t)
 		moveTOCTo(m.file.mdTOC, 3) // on "Third"
 
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'k', Text: string('k')})
 		model := result.(Model)
 		assert.Equal(t, 2, tocLineIdx(t, model.file.mdTOC), "should be on Second (lineIdx=2)")
 		assert.Equal(t, 2, model.nav.diffCursor, "diff cursor should jump to ## Second at index 2")
@@ -1221,7 +1221,7 @@ func TestModel_TOCPaneNavigation(t *testing.T) {
 		m := setup(t)
 		moveTOCTo(m.file.mdTOC, 3) // last entry (Third)
 
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'j', Text: string('j')})
 		model := result.(Model)
 		assert.Equal(t, 4, tocLineIdx(t, model.file.mdTOC), "should stay on Third (lineIdx=4)")
 	})
@@ -1230,7 +1230,7 @@ func TestModel_TOCPaneNavigation(t *testing.T) {
 		m := setup(t)
 		assert.Equal(t, 0, tocLineIdx(t, m.file.mdTOC)) // starts at top (lineIdx=0)
 
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'k', Text: string('k')})
 		model := result.(Model)
 		assert.Equal(t, 0, tocLineIdx(t, model.file.mdTOC), "should stay at top (lineIdx=0)")
 	})
@@ -1240,7 +1240,7 @@ func TestModel_TOCPaneNavigation(t *testing.T) {
 		m.keymap.Bind("home", keymap.ActionHome)
 		moveTOCTo(m.file.mdTOC, 3)
 
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyHome})
+		result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyHome})
 		model := result.(Model)
 		assert.Equal(t, 0, tocLineIdx(t, model.file.mdTOC), "should be at top (lineIdx=0)")
 	})
@@ -1250,7 +1250,7 @@ func TestModel_TOCPaneNavigation(t *testing.T) {
 		m.keymap.Bind("end", keymap.ActionEnd)
 		assert.Equal(t, 0, tocLineIdx(t, m.file.mdTOC)) // starts at top (lineIdx=0)
 
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnd})
+		result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnd})
 		model := result.(Model)
 		assert.Equal(t, 4, tocLineIdx(t, model.file.mdTOC), "should be on Third (lineIdx=4)")
 	})
@@ -1258,7 +1258,7 @@ func TestModel_TOCPaneNavigation(t *testing.T) {
 	t.Run("l switches to diff pane", func(t *testing.T) {
 		m := setup(t)
 
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'l', Text: string('l')})
 		model := result.(Model)
 		assert.Equal(t, paneDiff, model.layout.focus)
 	})
@@ -1267,7 +1267,7 @@ func TestModel_TOCPaneNavigation(t *testing.T) {
 		m := setup(t)
 		assert.Equal(t, 0, tocLineIdx(t, m.file.mdTOC)) // starts at top
 
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+		result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 		model := result.(Model)
 		assert.Equal(t, 4, tocLineIdx(t, model.file.mdTOC), "pgdn should move to last entry (lineIdx=4)")
 	})
@@ -1276,7 +1276,7 @@ func TestModel_TOCPaneNavigation(t *testing.T) {
 		m := setup(t)
 		moveTOCTo(m.file.mdTOC, 3)
 
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+		result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyPgUp})
 		model := result.(Model)
 		assert.Equal(t, 0, tocLineIdx(t, model.file.mdTOC), "pgup should move to first entry")
 	})
@@ -1288,7 +1288,7 @@ func TestModel_TOCPaneNavigation(t *testing.T) {
 		m.file.mdTOC.UpdateActiveSection(4) // diff scrolled to Third section (lineIdx=4 → entry 3)
 		m.nav.diffCursor = 4                // cursor on Third header line
 
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+		result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 		model := result.(Model)
 		assert.Equal(t, paneTree, model.layout.focus)
 		assert.Equal(t, 4, tocLineIdx(t, model.file.mdTOC), "TOC cursor should sync to active section on tab back (lineIdx=4)")
@@ -1300,7 +1300,7 @@ func TestModel_TOCPaneNavigation(t *testing.T) {
 		moveTOCTo(m.file.mdTOC, 0)
 		m.file.mdTOC.UpdateActiveSection(2) // second section (lineIdx=2 → entry 2)
 
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'h', Text: string('h')})
 		model := result.(Model)
 		assert.Equal(t, paneTree, model.layout.focus)
 		assert.Equal(t, 2, tocLineIdx(t, model.file.mdTOC), "TOC cursor should sync to active section on h key (lineIdx=2)")
@@ -1312,7 +1312,7 @@ func TestModel_TOCPaneNavigation(t *testing.T) {
 		moveTOCTo(m.file.mdTOC, 1)          // on First
 		m.file.mdTOC.UpdateActiveSection(0) // entry 1 has lineIdx=0; UpdateActiveSection(0) → activeSection=1
 
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'n', Text: string('n')})
 		model := result.(Model)
 		assert.Equal(t, 2, tocLineIdx(t, model.file.mdTOC), "n should advance TOC cursor to Second (lineIdx=2)")
 		assert.Equal(t, 2, model.nav.diffCursor, "diff cursor should jump to ## Second at index 2")
@@ -1325,7 +1325,7 @@ func TestModel_TOCPaneNavigation(t *testing.T) {
 		moveTOCTo(m.file.mdTOC, 3)          // on Third
 		m.file.mdTOC.UpdateActiveSection(4) // entry 3 has lineIdx=4
 
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'p', Text: string('p')})
 		model := result.(Model)
 		assert.Equal(t, 2, tocLineIdx(t, model.file.mdTOC), "p should move TOC cursor to Second (lineIdx=2)")
 		assert.Equal(t, 2, model.nav.diffCursor, "diff cursor should jump to ## Second at index 2")
@@ -1338,7 +1338,7 @@ func TestModel_TOCPaneNavigation(t *testing.T) {
 		moveTOCTo(m.file.mdTOC, 3)          // last entry
 		m.file.mdTOC.UpdateActiveSection(4) // entry 3 has lineIdx=4
 
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'n', Text: string('n')})
 		model := result.(Model)
 		assert.Equal(t, 4, tocLineIdx(t, model.file.mdTOC), "should stay on Third (lineIdx=4)")
 	})
@@ -1348,7 +1348,7 @@ func TestModel_TOCPaneNavigation(t *testing.T) {
 		m.layout.focus = paneDiff
 		moveTOCTo(m.file.mdTOC, 0) // cursor at first entry
 
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'p', Text: string('p')})
 		model := result.(Model)
 		assert.Equal(t, 0, tocLineIdx(t, model.file.mdTOC), "should stay at top (lineIdx=0)")
 	})
@@ -1376,7 +1376,7 @@ func TestModel_EnterInTOCPane(t *testing.T) {
 
 		// move cursor to third entry (## Second at lineIdx=3), accounting for top entry at [0]
 		moveTOCTo(m.file.mdTOC, 2)
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 		model := result.(Model)
 
 		assert.Equal(t, 3, model.nav.diffCursor, "diffCursor should jump to Second header at index 3")
@@ -1395,7 +1395,7 @@ func TestModel_EnterInTOCPane(t *testing.T) {
 		m.layout.focus = paneTree
 		moveTOCTo(m.file.mdTOC, 3) // ### Third at lineIdx=5, accounting for top entry at [0]
 
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 		model := result.(Model)
 
 		assert.Equal(t, 5, model.nav.diffCursor, "diffCursor should jump to Third header at index 5")
@@ -1421,7 +1421,7 @@ func TestModel_MarkdownNoHeadersFallback(t *testing.T) {
 	assert.Equal(t, 0, model.layout.treeWidth, "treeWidth should be 0 in fallback mode")
 
 	// tab should be no-op in single-file mode without TOC
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyTab})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	model = result.(Model)
 	assert.Equal(t, paneDiff, model.layout.focus, "tab should be no-op without TOC")
 }
@@ -1532,14 +1532,14 @@ func TestModel_ViewOutput(t *testing.T) {
 
 	// tree pane focused - should show file tree and help hint
 	m.layout.focus = paneTree
-	view := m.View()
+	view := m.View().Content
 	assert.Contains(t, view, "a.go")
 	assert.Contains(t, view, "b.go")
 	assert.Contains(t, view, "? help")
 
 	// diff pane focused - should show help hint
 	m.layout.focus = paneDiff
-	view = m.View()
+	view = m.View().Content
 	assert.Contains(t, view, "? help")
 }
 
@@ -1547,11 +1547,11 @@ func TestModel_ViewNotReady(t *testing.T) {
 	m := testModel(nil, nil)
 	m.ready = false
 
-	assert.Equal(t, "loading...", m.View())
+	assert.Equal(t, "loading...", m.View().Content)
 }
 
 func TestModel_ViewScrollbarThumb(t *testing.T) {
-	// testModel does not dispatch a WindowSizeMsg, so viewport.Height defaults
+	// testModel does not dispatch a WindowSizeMsg, so viewport.Height() defaults
 	// to 0; set it manually to make the scrollbar code path active.
 	const vh = 30
 	const vw = 80
@@ -1561,11 +1561,11 @@ func TestModel_ViewScrollbarThumb(t *testing.T) {
 		m.tree = testNewFileTree([]string{"a.go"})
 		m.file.name = "a.go"
 		m.layout.focus = paneDiff
-		m.layout.viewport.Width = vw
-		m.layout.viewport.Height = vh
+		m.layout.viewport.SetWidth(vw)
+		m.layout.viewport.SetHeight(vh)
 		m.layout.viewport.SetContent(strings.Repeat("filler line\n", 200))
 
-		view := m.View()
+		view := m.View().Content
 		assert.Contains(t, view, scrollbarThumbRune, "scrollbar thumb should appear when content exceeds viewport")
 	})
 
@@ -1574,11 +1574,11 @@ func TestModel_ViewScrollbarThumb(t *testing.T) {
 		m.tree = testNewFileTree([]string{"a.go"})
 		m.file.name = "a.go"
 		m.layout.focus = paneDiff
-		m.layout.viewport.Width = vw
-		m.layout.viewport.Height = vh
+		m.layout.viewport.SetWidth(vw)
+		m.layout.viewport.SetHeight(vh)
 		m.layout.viewport.SetContent("one\ntwo\nthree\n")
 
-		view := m.View()
+		view := m.View().Content
 		assert.NotContains(t, view, scrollbarThumbRune, "no thumb when content fits in viewport")
 	})
 
@@ -1589,11 +1589,11 @@ func TestModel_ViewScrollbarThumb(t *testing.T) {
 		m.layout.treeWidth = 0
 		m.file.name = "main.go"
 		m.layout.focus = paneDiff
-		m.layout.viewport.Width = m.layout.width - 2
-		m.layout.viewport.Height = vh
+		m.layout.viewport.SetWidth(m.layout.width - 2)
+		m.layout.viewport.SetHeight(vh)
 		m.layout.viewport.SetContent(strings.Repeat("filler\n", 200))
 
-		view := m.View()
+		view := m.View().Content
 		assert.Contains(t, view, scrollbarThumbRune, "single-file mode should also show thumb")
 	})
 
@@ -1602,8 +1602,8 @@ func TestModel_ViewScrollbarThumb(t *testing.T) {
 		m.tree = testNewFileTree([]string{"a.go"})
 		m.file.name = "a.go"
 		m.layout.focus = paneDiff
-		m.layout.viewport.Width = vw
-		m.layout.viewport.Height = vh
+		m.layout.viewport.SetWidth(vw)
+		m.layout.viewport.SetHeight(vh)
 		// 501 total lines, vh=30, thumbSize = 30*30/501 = 1
 		m.layout.viewport.SetContent(strings.Repeat("filler\n", 500))
 
@@ -1618,12 +1618,12 @@ func TestModel_ViewScrollbarThumb(t *testing.T) {
 		}
 
 		m.layout.viewport.SetYOffset(0)
-		topRows := collect(m.View())
+		topRows := collect(m.View().Content)
 		require.Len(t, topRows, 1, "thumb size must be 1 row")
 		assert.Equal(t, diffScrollbarFirstViewportRow, topRows[0], "yOff=0 must put thumb on first viewport row")
 
 		m.layout.viewport.SetYOffset(471) // fully scrolled (total - vh = 471)
-		bottomRows := collect(m.View())
+		bottomRows := collect(m.View().Content)
 		require.Len(t, bottomRows, 1, "thumb size invariant under offset")
 		assert.Equal(t, diffScrollbarFirstViewportRow+vh-1, bottomRows[0], "fully-scrolled must put thumb on last viewport row")
 	})
@@ -1638,11 +1638,11 @@ func TestModel_ViewScrollbarThumb(t *testing.T) {
 		m.tree = testNewFileTree([]string{"a.go"})
 		m.file.name = "a.go"
 		m.layout.focus = paneTree
-		m.layout.viewport.Width = vw
-		m.layout.viewport.Height = vh
+		m.layout.viewport.SetWidth(vw)
+		m.layout.viewport.SetHeight(vh)
 		m.layout.viewport.SetContent(strings.Repeat("filler line\n", 200))
 
-		view := m.View()
+		view := m.View().Content
 		assert.Contains(t, view, scrollbarThumbRune, "scrollbar thumb must appear even when tree pane has focus")
 	})
 
@@ -1655,11 +1655,11 @@ func TestModel_ViewScrollbarThumb(t *testing.T) {
 		m.tree = testNewFileTree(files)
 		m.file.name = files[0]
 		m.layout.focus = paneTree
-		m.layout.viewport.Width = vw
-		m.layout.viewport.Height = vh
+		m.layout.viewport.SetWidth(vw)
+		m.layout.viewport.SetHeight(vh)
 		m.layout.viewport.SetContent("diff fits\n")
 
-		rows := thumbRows(m.View())
+		rows := thumbRows(m.View().Content)
 		require.Len(t, rows, 1, "only the navigation pane should have a thumb")
 		assert.Equal(t, navigationScrollbarFirstViewportRow, rows[0], "tree thumb starts on first content row")
 	})
@@ -1674,11 +1674,11 @@ func TestModel_ViewScrollbarThumb(t *testing.T) {
 		m.tree.Move(sidepane.MotionLast)
 		m.file.name = files[0]
 		m.layout.focus = paneTree
-		m.layout.viewport.Width = vw
-		m.layout.viewport.Height = vh
+		m.layout.viewport.SetWidth(vw)
+		m.layout.viewport.SetHeight(vh)
 		m.layout.viewport.SetContent("diff fits\n")
 
-		rows := thumbRows(m.View())
+		rows := thumbRows(m.View().Content)
 		require.Len(t, rows, 1, "only the navigation pane should have a thumb")
 		assert.Equal(t, navigationScrollbarFirstViewportRow+m.paneHeight()-1, rows[0], "tree thumb reaches last content row")
 	})
@@ -1695,11 +1695,11 @@ func TestModel_ViewScrollbarThumb(t *testing.T) {
 		m.tree = testNewFileTree(files)
 		m.file.name = files[0]
 		m.layout.focus = paneDiff
-		m.layout.viewport.Width = vw
-		m.layout.viewport.Height = vh
+		m.layout.viewport.SetWidth(vw)
+		m.layout.viewport.SetHeight(vh)
 		m.layout.viewport.SetContent("diff fits\n")
 
-		view := m.View()
+		view := m.View().Content
 		assert.Contains(t, view, scrollbarThumbRune, "navigation thumb must appear even when diff pane has focus")
 	})
 
@@ -1715,11 +1715,11 @@ func TestModel_ViewScrollbarThumb(t *testing.T) {
 		require.NotNil(t, m.file.mdTOC)
 		m.file.name = "plan.md"
 		m.layout.focus = paneTree
-		m.layout.viewport.Width = vw
-		m.layout.viewport.Height = vh
+		m.layout.viewport.SetWidth(vw)
+		m.layout.viewport.SetHeight(vh)
 		m.layout.viewport.SetContent("diff fits\n")
 
-		rows := thumbRows(m.View())
+		rows := thumbRows(m.View().Content)
 		require.Len(t, rows, 1, "only the TOC pane should have a thumb")
 		assert.Equal(t, navigationScrollbarFirstViewportRow, rows[0], "TOC thumb starts on first content row")
 	})
@@ -1739,11 +1739,11 @@ func TestModel_ViewScrollbarThumb(t *testing.T) {
 		require.NotNil(t, m.file.mdTOC, "test factory must produce a TOC")
 		m.file.name = "plan.md"
 		m.layout.focus = paneDiff
-		m.layout.viewport.Width = vw
-		m.layout.viewport.Height = vh
+		m.layout.viewport.SetWidth(vw)
+		m.layout.viewport.SetHeight(vh)
 		m.layout.viewport.SetContent(strings.Repeat("body\n", 200))
 
-		view := m.View()
+		view := m.View().Content
 		assert.Contains(t, view, scrollbarThumbRune, "scrollbar must work in markdown TOC layout")
 	})
 
@@ -1756,12 +1756,12 @@ func TestModel_ViewScrollbarThumb(t *testing.T) {
 		m.tree = testNewFileTree([]string{"a.go"})
 		m.file.name = strings.Repeat("very/long/path/segment-", 40) + "structure.go"
 		m.layout.focus = paneDiff
-		m.layout.viewport.Width = vw
-		m.layout.viewport.Height = vh
+		m.layout.viewport.SetWidth(vw)
+		m.layout.viewport.SetHeight(vh)
 		m.layout.viewport.SetContent(strings.Repeat("filler\n", 200))
 		m.layout.viewport.SetYOffset(0)
 
-		view := m.View()
+		view := m.View().Content
 		thumbRowsFound := []int{}
 		for i, line := range strings.Split(view, "\n") {
 			if strings.Contains(line, scrollbarThumbRune) {
@@ -1997,16 +1997,16 @@ func TestModel_TreePaneToggle(t *testing.T) {
 	m.file.name = "a.go"
 	m.file.lines = lines
 	m.layout.focus = paneTree
-	m.layout.viewport = viewport.New(80, 30)
+	m.layout.viewport = viewport.New(viewport.WithWidth(80), viewport.WithHeight(30))
 	origTreeWidth := m.layout.treeWidth
 
 	t.Run("t hides tree pane", func(t *testing.T) {
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 't', Text: string('t')})
 		model := result.(Model)
 		assert.True(t, model.layout.treeHidden)
 		assert.Equal(t, 0, model.layout.treeWidth)
 		assert.Equal(t, paneDiff, model.layout.focus, "focus should move to diff when hiding tree")
-		assert.Equal(t, model.layout.width-2, model.layout.viewport.Width, "diff should use full width")
+		assert.Equal(t, model.layout.width-2, model.layout.viewport.Width(), "diff should use full width")
 	})
 
 	t.Run("t shows tree pane again", func(t *testing.T) {
@@ -2014,7 +2014,7 @@ func TestModel_TreePaneToggle(t *testing.T) {
 		m2.layout.treeHidden = true
 		m2.layout.treeWidth = 0
 		m2.layout.focus = paneDiff
-		result, _ := m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+		result, _ := m2.Update(tea.KeyPressMsg{Code: 't', Text: string('t')})
 		model := result.(Model)
 		assert.False(t, model.layout.treeHidden)
 		assert.Equal(t, origTreeWidth, model.layout.treeWidth)
@@ -2024,7 +2024,7 @@ func TestModel_TreePaneToggle(t *testing.T) {
 		m2 := m
 		m2.layout.treeHidden = true
 		m2.layout.focus = paneDiff
-		result, _ := m2.Update(tea.KeyMsg{Type: tea.KeyTab})
+		result, _ := m2.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 		model := result.(Model)
 		assert.Equal(t, paneDiff, model.layout.focus, "tab should not switch pane when tree hidden")
 	})
@@ -2033,7 +2033,7 @@ func TestModel_TreePaneToggle(t *testing.T) {
 		m2 := m
 		m2.layout.treeHidden = true
 		m2.layout.focus = paneDiff
-		result, _ := m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
+		result, _ := m2.Update(tea.KeyPressMsg{Code: 'h', Text: string('h')})
 		model := result.(Model)
 		assert.Equal(t, paneDiff, model.layout.focus, "h should not switch to tree when hidden")
 	})
@@ -2041,8 +2041,8 @@ func TestModel_TreePaneToggle(t *testing.T) {
 	t.Run("no-op in single-file mode without TOC", func(t *testing.T) {
 		m2 := testModel([]string{"a.go"}, map[string][]diff.DiffLine{"a.go": lines})
 		m2.file.singleFile = true
-		m2.layout.viewport = viewport.New(80, 30)
-		result, _ := m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+		m2.layout.viewport = viewport.New(viewport.WithWidth(80), viewport.WithHeight(30))
+		result, _ := m2.Update(tea.KeyPressMsg{Code: 't', Text: string('t')})
 		model := result.(Model)
 		assert.False(t, model.layout.treeHidden, "t should be no-op in single-file mode without TOC")
 	})
@@ -2052,9 +2052,9 @@ func TestModel_TreePaneToggle(t *testing.T) {
 		m2.file.singleFile = true
 		m2.file.mdTOC = sidepane.ParseTOC([]diff.DiffLine{{NewNum: 1, Content: "# Header", ChangeType: diff.ChangeContext}}, "readme.md")
 		m2.layout.treeWidth = max(minTreeWidth, m2.layout.width*m2.cfg.treeWidthRatio/10)
-		m2.layout.viewport = viewport.New(80, 30)
+		m2.layout.viewport = viewport.New(viewport.WithWidth(80), viewport.WithHeight(30))
 		m2.layout.focus = paneTree
-		result, _ := m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+		result, _ := m2.Update(tea.KeyPressMsg{Code: 't', Text: string('t')})
 		model := result.(Model)
 		assert.True(t, model.layout.treeHidden, "t should hide TOC pane in single-file markdown mode")
 		assert.Equal(t, 0, model.layout.treeWidth)

@@ -437,7 +437,7 @@ The shared `Client` owns stdio JSON-RPC, lazy per-server/workspace sessions, doc
 UTF-8/UTF-16 position conversion, cancellation, shutdown, and bounded local source reads.
 `golang/`, `typescript/`, `python/`, and `rust/` each supply a `Server` descriptor with executable,
 arguments, file extensions, root markers, language IDs, and an explicit install command. No language is a
-transport default. Hover, definition, and references are the only semantic requests. Server
+transport default. Hover, definition, references, and document symbols are the semantic requests. Server
 requests to apply edits are rejected.
 
 Root selection follows Helix's outermost-marker approach, bounded by the review root. For example,
@@ -445,7 +445,13 @@ Root selection follows Helix's outermost-marker approach, bounded by the review 
 separate sessions. The selected root is used for both the process working directory and LSP initialization.
 
 `app/revdiff/inspection.go` adapts this to the UI's `CodeInspector` contract and gates inspection
-to current working files. The UI selects an identifier on the current line, then displays a
+to current working files. `Client.Symbols` tokenizes the current source with the language's
+Chroma lexer, excluding keywords, comments, and string contents while retaining built-in types.
+It reads whole-file context asynchronously without starting a server. Byte columns preserve
+repeated names and Unicode. Command+Enter and `:lsp symbol inspect` use the same action.
+`:lsp symbol list` uses the server's document symbols, flattens nested declarations with
+qualified names, and opens a fuzzy-searchable list leading to the existing source preview.
+The UI selects a name on the current line, then displays a
 filterable location list or read-only text/source preview through `overlay.KindInspection`.
 Query commands sanitize content before applying the injected syntax highlighter. Hover code
 fences supply language names, while source previews use filenames. The overlay preserves
@@ -755,9 +761,9 @@ make state ownership explicit without splitting into mini-models.
 
 | Library | Purpose |
 |---------|---------|
-| `charmbracelet/bubbletea` | TUI framework (Elm architecture) |
-| `charmbracelet/lipgloss` | Terminal styling |
-| `charmbracelet/bubbles` | TUI components (viewport, textinput) |
+| `charm.land/bubbletea/v2` | TUI framework (Elm architecture), enhanced keyboard input |
+| `charm.land/lipgloss/v2` | Terminal styling |
+| `charm.land/bubbles/v2` | TUI components (viewport, textinput) |
 | `jessevdk/go-flags` | CLI flag parsing with INI config support |
 | `alecthomas/chroma/v2` | Syntax highlighting |
 | `stretchr/testify` | Test assertions |

@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/mattn/go-runewidth"
 	"github.com/stretchr/testify/assert"
@@ -779,7 +779,7 @@ func TestModel_PlainStyles(t *testing.T) {
 	m.ready = true
 	m.filesLoaded = true
 	// plain styles should not panic and should render
-	output := m.View()
+	output := m.View().Content
 	assert.NotEmpty(t, output)
 }
 
@@ -1174,8 +1174,8 @@ func TestModel_WordDiffOptIn(t *testing.T) {
 		m.ready = true
 		m.layout.width = 200
 		m.layout.height = 30
-		m.layout.viewport.Width = 196
-		m.layout.viewport.Height = 28
+		m.layout.viewport.SetWidth(196)
+		m.layout.viewport.SetHeight(28)
 		result, _ := m.Update(fileLoadedMsg{file: "a.go", lines: lines})
 		m = result.(Model)
 		m.layout.focus = paneDiff
@@ -1207,8 +1207,8 @@ func TestModel_WordDiffOptIn(t *testing.T) {
 		m.ready = true
 		m.layout.width = 200
 		m.layout.height = 30
-		m.layout.viewport.Width = 196
-		m.layout.viewport.Height = 28
+		m.layout.viewport.SetWidth(196)
+		m.layout.viewport.SetHeight(28)
 		result, _ := m.Update(fileLoadedMsg{file: "a.go", lines: lines})
 		m = result.(Model)
 		m.layout.focus = paneDiff
@@ -1216,12 +1216,12 @@ func TestModel_WordDiffOptIn(t *testing.T) {
 		require.False(t, m.modes.wordDiff, "initial state: off")
 		require.Nil(t, m.file.intraRanges, "initial state: no ranges")
 
-		result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'W'}})
+		result, _ = m.Update(tea.KeyPressMsg{Code: 'W', Text: string('W')})
 		m = result.(Model)
 		assert.True(t, m.modes.wordDiff, "W key should enable wordDiff")
 		assert.NotNil(t, m.file.intraRanges, "ranges should be computed after W")
 
-		result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'W'}})
+		result, _ = m.Update(tea.KeyPressMsg{Code: 'W', Text: string('W')})
 		m = result.(Model)
 		assert.False(t, m.modes.wordDiff, "second W should disable wordDiff")
 		assert.Nil(t, m.file.intraRanges, "ranges should be cleared after second W")
@@ -1414,7 +1414,7 @@ func BenchmarkModel_View(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for range b.N {
-				sink = m.View()
+				sink = m.View().Content
 			}
 		})
 	}
@@ -1733,13 +1733,13 @@ func BenchmarkModel_AnnotatedKeystroke(b *testing.B) {
 			}
 			m.invalidateRenderCaches()
 			m.startAnnotation()
-			key := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}}
+			key := tea.KeyPressMsg{Code: 'x', Text: string('x')}
 			b.ReportAllocs()
 			b.ResetTimer()
 			for range b.N {
 				res, _ := m.Update(key)
 				m = res.(Model)
-				sink = m.View()
+				sink = m.View().Content
 			}
 		})
 	}

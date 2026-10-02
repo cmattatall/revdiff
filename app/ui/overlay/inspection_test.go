@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
 
@@ -17,12 +17,12 @@ import (
 func TestInspectionFilteredSelection(t *testing.T) {
 	m := NewManager()
 	m.OpenInspection(InspectionSpec{Title: "Inspect references", Items: []string{"first.go:7:4", "second.go:12:8", "third.go:4:1"}})
-	m.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("second")}, "")
-	out := m.HandleKey(tea.KeyMsg{Type: tea.KeyEnter}, keymap.ActionConfirm)
+	m.HandleKey(tea.KeyPressMsg{Text: "second"}, "")
+	out := m.HandleKey(tea.KeyPressMsg{Code: tea.KeyEnter}, keymap.ActionConfirm)
 	require.Equal(t, OutcomeInspectionChosen, out.Kind)
 	require.Equal(t, 1, out.InspectionIndex, "selection uses the original list, not the filtered index")
 	require.True(t, m.Active())
-	out = m.HandleKey(tea.KeyMsg{Type: tea.KeyEsc}, "")
+	out = m.HandleKey(tea.KeyPressMsg{Code: tea.KeyEsc}, "")
 	require.Equal(t, OutcomeInspectionBack, out.Kind)
 }
 
@@ -37,14 +37,14 @@ func TestInspectionSourceAndResize(t *testing.T) {
 	view := m.inspect.render(ctx, m)
 	require.Contains(t, view, "   40  source line 40")
 	require.LessOrEqual(t, lipgloss.Height(view), ctx.Height)
-	m.HandleKey(tea.KeyMsg{Type: tea.KeyPgDown}, keymap.ActionPageDown)
+	m.HandleKey(tea.KeyPressMsg{Code: tea.KeyPgDown}, keymap.ActionPageDown)
 	view = m.inspect.render(ctx, m)
 	require.Contains(t, view, "   51  source line 51")
 	ctx.Width, ctx.Height = 34, 14
 	view = m.inspect.render(ctx, m)
 	require.LessOrEqual(t, lipgloss.Width(view), ctx.Width)
 	require.LessOrEqual(t, lipgloss.Height(view), ctx.Height)
-	m.HandleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress})
+	m.HandleMouse(tea.MouseWheelMsg{Button: tea.MouseWheelUp})
 	view = m.inspect.render(ctx, m)
 	require.Contains(t, view, "source line 47")
 }
@@ -81,4 +81,15 @@ func TestInspectionPreservesTokenColors(t *testing.T) {
 		ctx.Width = 80
 		require.Contains(t, m.inspect.render(ctx, m), code, "resize must reflow the highlighted text")
 	}
+}
+
+func TestInspectionWrappedTokenRetainsColorWhenScrolled(t *testing.T) {
+	m := NewManager()
+	const color = "\x1b[38;2;249;38;114m"
+	m.OpenInspection(InspectionSpec{Highlighted: color + strings.Repeat("x", 120) + "\x1b[39m"})
+	ctx := RenderCtx{Width: 28, Height: 10, Resolver: style.PlainResolver()}
+	_ = m.inspect.render(ctx, m)
+	m.inspect.offset = 2
+	view := m.inspect.render(ctx, m)
+	require.Contains(t, view, color+strings.Repeat("x", 20), "the opening color was on a row scrolled out of view")
 }

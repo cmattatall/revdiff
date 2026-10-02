@@ -3,7 +3,7 @@ package ui
 import (
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/umputun/revdiff/app/ui/overlay"
 	"github.com/umputun/revdiff/app/ui/sidepane"
@@ -132,11 +132,11 @@ func (m Model) hitTest(x, y int) hitZone {
 
 // handleMouse routes a tea.MouseMsg through the modal-state checks and into
 // per-button dispatch. mouse events are only generated when
-// tea.WithMouseCellMotion is enabled (i.e. --no-mouse is off), so this
+// View.MouseMode is enabled (i.e. --no-mouse is off), so this
 // handler never runs in the opted-out path. wheel routing is by pointer
 // position, not by current focus — this matches terminal conventions where
 // scrolling follows the cursor.
-func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleMouse(event tea.MouseMsg) (tea.Model, tea.Cmd) {
 	// swallow during modal states — input belongs to the modal, not the
 	// viewport beneath. hints are preserved here so the modal prompt (e.g.
 	// reload's "press y to confirm") stays visible while the event is
@@ -147,8 +147,14 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.overlay.Active() {
-		return m.handleOverlayMouse(msg)
+		return m.handleOverlayMouse(event)
 	}
+	switch event.(type) {
+	case tea.MouseClickMsg, tea.MouseWheelMsg:
+	default:
+		return m, nil
+	}
+	msg := event.Mouse()
 
 	// reload, output, compact-mode, and editor hints persist for exactly one
 	// render cycle; any mouse event that reaches this point dismisses them,
@@ -159,8 +165,8 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	m.editorState.hint = ""
 
 	zone := m.hitTest(msg.X, msg.Y)
-	if wt, ok := m.tree.(*workingTree); ok && zone == hitTree && msg.Action == tea.MouseActionPress &&
-		(msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown) {
+	if wt, ok := m.tree.(*workingTree); ok && zone == hitTree &&
+		(msg.Button == tea.MouseWheelUp || msg.Button == tea.MouseWheelDown) {
 		top, _ := wt.bodyHeights(m.paneHeight())
 		row := msg.Y - m.treeTopRow()
 		if row == top+1 {
@@ -170,24 +176,15 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg.Button {
-	case tea.MouseButtonWheelUp:
-		if msg.Action != tea.MouseActionPress {
-			return m, nil // guard against non-press wheel emissions for symmetry with left-click
-		}
-		return m.handleWheel(zone, -m.wheelStepFor(msg.Shift))
-	case tea.MouseButtonWheelDown:
-		if msg.Action != tea.MouseActionPress {
-			return m, nil
-		}
-		return m.handleWheel(zone, m.wheelStepFor(msg.Shift))
-	case tea.MouseButtonWheelLeft, tea.MouseButtonWheelRight:
+	case tea.MouseWheelUp:
+		return m.handleWheel(zone, -m.wheelStepFor(msg.Mod.Contains(tea.ModShift)))
+	case tea.MouseWheelDown:
+		return m.handleWheel(zone, m.wheelStepFor(msg.Mod.Contains(tea.ModShift)))
+	case tea.MouseWheelLeft, tea.MouseWheelRight:
 		// horizontal wheel is intentionally swallowed — horizontal scroll
 		// stays keyboard-driven so users keep a single mental model.
 		return m, nil
-	case tea.MouseButtonLeft:
-		if msg.Action != tea.MouseActionPress {
-			return m, nil // ignore release and motion while holding
-		}
+	case tea.MouseLeft:
 		switch zone {
 		case hitTree:
 			return m.clickTree(msg.Y)
@@ -242,7 +239,7 @@ func (m Model) wheelStepFor(shift bool) int {
 	if !shift {
 		return wheelStep
 	}
-	return max(1, m.layout.viewport.Height/2)
+	return max(1, m.layout.viewport.Height()/2)
 }
 
 // handleWheel routes a vertical wheel event to the pane under the pointer.
@@ -391,8 +388,8 @@ func (m *Model) scrollDiffViewportBy(delta int) bool {
 	if m.file.name == "" {
 		return false
 	}
-	maxOffset := max(0, m.layout.viewport.TotalLineCount()-m.layout.viewport.Height)
-	current := m.layout.viewport.YOffset
+	maxOffset := max(0, m.layout.viewport.TotalLineCount()-m.layout.viewport.Height())
+	current := m.layout.viewport.YOffset()
 	target := max(0, min(current+delta, maxOffset))
 	if target == current {
 		return false
@@ -429,7 +426,7 @@ func (m *Model) flushWheelPending() {
 	if !m.wheel.renderPending {
 		return
 	}
-	if m.pinDiffCursorTo(m.layout.viewport.YOffset) {
+	if m.pinDiffCursorTo(m.layout.viewport.YOffset()) {
 		m.syncTOCActiveSection()
 		m.layout.viewport.SetContent(m.renderDiff())
 	}
@@ -461,7 +458,7 @@ func (m *Model) pinDiffCursorTo(newOffset int) bool {
 	}
 	cursorTop, cursorBottom := m.cursorVisualRange()
 	viewTop := newOffset
-	viewBottom := newOffset + m.layout.viewport.Height - 1
+	viewBottom := newOffset + m.layout.viewport.Height() - 1
 	if cursorTop >= viewTop && cursorTop <= viewBottom {
 		return false // cursor marker already visible
 	}
@@ -493,7 +490,7 @@ func (m Model) clickDiff(y int) (tea.Model, tea.Cmd) {
 	if m.file.name == "" {
 		return m, nil // no file loaded — nothing to focus or point at
 	}
-	row := (y - m.diffTopRow()) + m.layout.viewport.YOffset
+	row := (y - m.diffTopRow()) + m.layout.viewport.YOffset()
 	idx, onAnnot := m.visualRowToDiffLine(row)
 	m.layout.focus = paneDiff
 	m.nav.diffCursor = idx

@@ -4,7 +4,7 @@ import (
 	"slices"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/umputun/revdiff/app/diff"
 	"github.com/umputun/revdiff/app/keymap"
@@ -14,18 +14,19 @@ import (
 
 // helpKeyDisplay maps bubbletea key names to user-friendly display names.
 var helpKeyDisplay = map[string]string{
-	"pgdown": "PgDn",
-	"pgup":   "PgUp",
-	"left":   "←",
-	"right":  "→",
-	"home":   "Home",
-	"end":    "End",
-	"enter":  "Enter",
-	"esc":    "Esc",
-	"tab":    "Tab",
-	"up":     "↑",
-	"down":   "↓",
-	" ":      "Space",
+	"pgdown":      "PgDn",
+	"pgup":        "PgUp",
+	"left":        "←",
+	"right":       "→",
+	"home":        "Home",
+	"end":         "End",
+	"enter":       "Enter",
+	"super+enter": "Cmd+Enter",
+	"esc":         "Esc",
+	"tab":         "Tab",
+	"up":          "↑",
+	"down":        "↓",
+	" ":           "Space",
 }
 
 // displayKeyName returns a user-friendly display name for a bubbletea key.

@@ -5,7 +5,7 @@ import (
 	"os/exec"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/require"
 
 	"github.com/umputun/revdiff/app/annotation"
@@ -61,7 +61,7 @@ func TestModel_ShellCommandPreservesText(t *testing.T) {
 		m.startCommand()
 		m.command.input.SetValue(`! printf '%s' 'Mixed Case; $HOME' | cat`)
 		require.Empty(t, m.commandMatches())
-		model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		model, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 		m = model.(Model)
 		require.NotNil(t, cmd)
 		require.False(t, m.command.active)
@@ -88,7 +88,7 @@ func TestModel_ShellCommandGuards(t *testing.T) {
 		}
 		m.startCommand()
 		m.command.input.SetValue(tc.command)
-		model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		model, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 		m = model.(Model)
 		require.Nil(t, cmd)
 		require.True(t, m.command.active)
@@ -106,7 +106,7 @@ func TestModel_GitCommand(t *testing.T) {
 		for _, input := range []string{`git log --format='%s' --grep='Mixed Case'`, "!!"} {
 			m.startCommand()
 			m.command.input.SetValue(input)
-			model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			model, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 			m = model.(Model)
 			require.NotNil(t, cmd)
 			require.False(t, m.command.active)
@@ -126,14 +126,14 @@ func TestModel_ShellBackedCommandCompletion(t *testing.T) {
 	matches := m.commandMatches()
 	require.NotEmpty(t, matches)
 	require.Equal(t, "git", matches[0].name)
-	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	model, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	m = model.(Model)
 	require.Equal(t, "git", m.command.input.Value())
 	m.command.input.SetValue("git  log  --grep='Mixed Case' | cat")
 	require.Empty(t, m.commandMatches())
-	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	model, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	m = model.(Model)
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	require.NotNil(t, cmd)
 	require.Equal(t, "git  log  --grep='Mixed Case' | cat", runner.command)
 }
@@ -145,7 +145,7 @@ func TestModel_RepeatShellCommand(t *testing.T) {
 	for _, input := range []string{`! printf '%s' 'Mixed Case; $HOME' | cat`, "set number", "!!", "!!"} {
 		m.startCommand()
 		m.command.input.SetValue(input)
-		model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		model, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 		m = model.(Model)
 		require.Empty(t, m.command.err)
 		require.False(t, m.command.active)
@@ -166,5 +166,6 @@ func TestModel_ShellFinishedPreservesAnnotations(t *testing.T) {
 	m = model.(Model)
 	require.Contains(t, m.keys.hint, "exit status 7")
 	require.Equal(t, 1, m.store.Count())
-	require.NotNil(t, cmd, "restore mouse tracking after terminal handoff")
+	require.Nil(t, cmd)
+	require.Equal(t, tea.MouseModeCellMotion, m.View().MouseMode)
 }

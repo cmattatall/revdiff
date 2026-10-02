@@ -1,11 +1,9 @@
 package overlay
 
 import (
-	"github.com/charmbracelet/bubbles/cursor"
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/umputun/revdiff/app/ui/style"
 )
@@ -27,22 +25,21 @@ func (f *filterInput) open() {
 	f.identity = new(int)
 	f.Prompt = ""
 	f.Placeholder = "type to filter..."
-	f.Cursor.SetMode(cursor.CursorStatic)
+	styles := f.Styles()
+	styles.Cursor.Blink = false
+	f.SetStyles(styles)
 	f.Focus()
 }
 
 // handleKey reserves editing keys and printable input before list keybindings.
 // Up/Down and Enter/Esc remain the responsibility of the enclosing popup.
-func (f *filterInput) handleKey(msg tea.KeyMsg) (bool, tea.Cmd) {
+func (f *filterInput) handleKey(msg tea.KeyPressMsg) (bool, tea.Cmd) {
 	// Terminals can encode Backspace as either DEL or Ctrl+H.
-	if msg.Alt && msg.Type == tea.KeyCtrlH {
-		msg.Type = tea.KeyBackspace
-	}
-	if msg.Type == tea.KeySpace && !msg.Alt {
-		msg.Runes = []rune{' '}
+	if msg.String() == "ctrl+alt+h" {
+		msg = tea.KeyPressMsg{Code: tea.KeyBackspace, Mod: tea.ModAlt}
 	}
 	k := f.KeyMap
-	if (msg.Type == tea.KeyRunes || msg.Type == tea.KeySpace) && !msg.Alt || key.Matches(msg,
+	if msg.Text != "" || key.Matches(msg,
 		k.CharacterForward, k.CharacterBackward, k.WordForward, k.WordBackward,
 		k.DeleteWordBackward, k.DeleteWordForward, k.DeleteAfterCursor, k.DeleteBeforeCursor,
 		k.DeleteCharacterBackward, k.DeleteCharacterForward, k.LineStart, k.LineEnd, k.Paste) {
@@ -58,10 +55,12 @@ func (f *filterInput) handleKey(msg tea.KeyMsg) (bool, tea.Cmd) {
 }
 
 func (f *filterInput) render(width int, resolver Resolver) string {
-	f.Width = max(width-2, 1)
-	f.TextStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(resolver.Color(style.ColorKeyNormalFg)))
-	f.PlaceholderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(resolver.Color(style.ColorKeyMutedFg)))
-	f.Cursor.Style = lipgloss.NewStyle().Foreground(lipgloss.Color(resolver.Color(style.ColorKeyAccentFg)))
-	f.Cursor.TextStyle = f.TextStyle
+	f.SetWidth(max(width-2, 1))
+	styles := f.Styles()
+	styles.Focused.Text = resolver.Style(style.StyleKeyAnnotInputText)
+	styles.Focused.Placeholder = resolver.Style(style.StyleKeyAnnotInputPlaceholder)
+	styles.Cursor.Color = resolver.Style(style.StyleKeyAnnotInputCursor).GetForeground()
+	styles.Blurred = styles.Focused
+	f.SetStyles(styles)
 	return "  " + f.View()
 }

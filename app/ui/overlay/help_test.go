@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -173,7 +173,7 @@ func TestHelpOverlay_HandleKey_ToggleClose(t *testing.T) {
 	mgr.OpenHelp(helpSpec())
 	require.True(t, mgr.Active())
 
-	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}}, keymap.ActionHelp)
+	out := mgr.HandleKey(tea.KeyPressMsg{Code: '?', Text: string('?')}, keymap.ActionHelp)
 	assert.Equal(t, OutcomeClosed, out.Kind)
 	assert.False(t, mgr.Active(), "help should be closed after toggle")
 }
@@ -182,7 +182,7 @@ func TestHelpOverlay_HandleKey_EscClose(t *testing.T) {
 	mgr := NewManager()
 	mgr.OpenHelp(helpSpec())
 
-	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyEsc}, keymap.ActionDismiss)
+	out := mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyEsc}, keymap.ActionDismiss)
 	assert.Equal(t, OutcomeClosed, out.Kind)
 	assert.False(t, mgr.Active())
 }
@@ -191,7 +191,7 @@ func TestHelpOverlay_HandleKey_EscHardcoded(t *testing.T) {
 	mgr := NewManager()
 	mgr.OpenHelp(helpSpec())
 
-	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyEsc}, "")
+	out := mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyEsc}, "")
 	assert.Equal(t, OutcomeClosed, out.Kind)
 	assert.False(t, mgr.Active(), "esc should close even without ActionDismiss")
 }
@@ -201,15 +201,15 @@ func TestHelpOverlay_HandleKey_OtherKeysBlocked(t *testing.T) {
 	mgr.OpenHelp(helpSpec())
 
 	keys := []struct {
-		msg    tea.KeyMsg
+		msg    tea.KeyPressMsg
 		action keymap.Action
 	}{
-		{tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}, keymap.ActionDown},
-		{tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}}, keymap.ActionUp},
-		{tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}}, keymap.ActionNextItem},
-		{tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}, keymap.ActionQuit},
-		{tea.KeyMsg{Type: tea.KeyTab}, keymap.ActionTogglePane},
-		{tea.KeyMsg{Type: tea.KeyEnter}, keymap.ActionConfirm},
+		{tea.KeyPressMsg{Code: 'j', Text: string('j')}, keymap.ActionDown},
+		{tea.KeyPressMsg{Code: 'k', Text: string('k')}, keymap.ActionUp},
+		{tea.KeyPressMsg{Code: 'n', Text: string('n')}, keymap.ActionNextItem},
+		{tea.KeyPressMsg{Code: 'q', Text: string('q')}, keymap.ActionQuit},
+		{tea.KeyPressMsg{Code: tea.KeyTab}, keymap.ActionTogglePane},
+		{tea.KeyPressMsg{Code: tea.KeyEnter}, keymap.ActionConfirm},
 	}
 
 	for _, k := range keys {
@@ -223,11 +223,11 @@ func TestHelpOverlay_HandleMouse_ConsumedWithoutClosing(t *testing.T) {
 	mgr := NewManager()
 	mgr.OpenHelp(helpSpec())
 
-	events := []tea.MouseMsg{
-		{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress},
-		{Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress},
-		{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress, Shift: true},
-		{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress},
+	events := []tea.MouseClickMsg{
+		{Button: tea.MouseWheelDown},
+		{Button: tea.MouseWheelUp},
+		{Button: tea.MouseWheelDown, Mod: tea.ModShift},
+		{Button: tea.MouseLeft},
 	}
 	for _, ev := range events {
 		out := mgr.HandleMouse(ev)
@@ -240,7 +240,7 @@ func TestHelpOverlay_HandleKey_DismissAction(t *testing.T) {
 	mgr := NewManager()
 	mgr.OpenHelp(helpSpec())
 
-	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}}, keymap.ActionDismiss)
+	out := mgr.HandleKey(tea.KeyPressMsg{Code: 'x', Text: string('x')}, keymap.ActionDismiss)
 	assert.Equal(t, OutcomeClosed, out.Kind)
 	assert.False(t, mgr.Active())
 }
@@ -313,13 +313,13 @@ func TestHelpOverlay_ScrollKeys(t *testing.T) {
 
 	tests := []struct {
 		name   string
-		msg    tea.KeyMsg
+		msg    tea.KeyPressMsg
 		action keymap.Action
 		want   int
 	}{
-		{"down", tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}, keymap.ActionDown, 1},
-		{"page down", tea.KeyMsg{Type: tea.KeyPgDown}, keymap.ActionPageDown, 11},
-		{"half page down", tea.KeyMsg{Type: tea.KeyCtrlD}, keymap.ActionHalfPageDown, 5},
+		{"down", tea.KeyPressMsg{Code: 'j', Text: string('j')}, keymap.ActionDown, 1},
+		{"page down", tea.KeyPressMsg{Code: tea.KeyPgDown}, keymap.ActionPageDown, 11},
+		{"half page down", tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl}, keymap.ActionHalfPageDown, 5},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -330,17 +330,17 @@ func TestHelpOverlay_ScrollKeys(t *testing.T) {
 	}
 
 	mgr.help.offset = 0
-	mgr.HandleKey(tea.KeyMsg{Type: tea.KeyEnd}, keymap.ActionEnd)
+	mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyEnd}, keymap.ActionEnd)
 	assert.Contains(t, mgr.help.render(ctx, mgr), "Section7", "End must reach the last section")
 
-	mgr.HandleKey(tea.KeyMsg{Type: tea.KeyHome}, keymap.ActionHome)
+	mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyHome}, keymap.ActionHome)
 	assert.Equal(t, 0, mgr.help.offset)
 	assert.Contains(t, mgr.help.render(ctx, mgr), "Section0", "Home must return to the top")
 
-	mgr.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}}, "")
+	mgr.HandleKey(tea.KeyPressMsg{Code: 'G', Text: string('G')}, "")
 	assert.Contains(t, mgr.help.render(ctx, mgr), "Section7", "G must reach the last section")
 
-	mgr.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}}, "")
+	mgr.HandleKey(tea.KeyPressMsg{Code: 'g', Text: string('g')}, "")
 	assert.Equal(t, 0, mgr.help.offset)
 }
 
@@ -351,7 +351,7 @@ func TestHelpOverlay_ScrollKeysClampAtTop(t *testing.T) {
 
 	for _, action := range []keymap.Action{keymap.ActionUp, keymap.ActionPageUp, keymap.ActionHalfPageUp} {
 		mgr.help.offset = 0
-		mgr.HandleKey(tea.KeyMsg{Type: tea.KeyUp}, action)
+		mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyUp}, action)
 		assert.Equal(t, 0, mgr.help.offset, "%s must not scroll above the first row", action)
 	}
 }
@@ -362,17 +362,17 @@ func TestHelpOverlay_ScrollWheel(t *testing.T) {
 	mgr.OpenHelp(helpTallSpec())
 	mgr.help.render(ctx, mgr)
 
-	mgr.HandleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
+	mgr.HandleMouse(tea.MouseWheelMsg{Button: tea.MouseWheelDown})
 	assert.Equal(t, WheelStep, mgr.help.offset)
 
-	mgr.HandleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress})
+	mgr.HandleMouse(tea.MouseWheelMsg{Button: tea.MouseWheelUp})
 	assert.Equal(t, 0, mgr.help.offset)
 
-	mgr.HandleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress, Shift: true})
+	mgr.HandleMouse(tea.MouseWheelMsg{Button: tea.MouseWheelDown, Mod: tea.ModShift})
 	assert.Equal(t, 5, mgr.help.offset, "shift+wheel moves by half a page")
 
 	mgr.help.offset = 4
-	mgr.HandleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionRelease})
+	mgr.HandleMouse(tea.MouseReleaseMsg{Button: tea.MouseWheelDown})
 	assert.Equal(t, 4, mgr.help.offset, "non-press wheel events must not scroll")
 }
 
@@ -391,7 +391,7 @@ func TestHelpOverlay_OpenResetsScroll(t *testing.T) {
 	mgr := NewManager()
 	mgr.OpenHelp(helpTallSpec())
 	mgr.help.render(RenderCtx{Width: 80, Height: 20, Resolver: style.PlainResolver()}, mgr)
-	mgr.HandleKey(tea.KeyMsg{Type: tea.KeyEnd}, keymap.ActionEnd)
+	mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyEnd}, keymap.ActionEnd)
 	require.NotZero(t, mgr.help.offset)
 
 	mgr.OpenHelp(helpTallSpec())
@@ -405,7 +405,7 @@ func TestHelpOverlay_BoxWidthStableWhileScrolling(t *testing.T) {
 
 	want := lipgloss.Width(mgr.help.render(ctx, mgr))
 	for range 6 {
-		mgr.HandleKey(tea.KeyMsg{Type: tea.KeyPgDown}, keymap.ActionPageDown)
+		mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyPgDown}, keymap.ActionPageDown)
 		assert.Equal(t, want, lipgloss.Width(mgr.help.render(ctx, mgr)),
 			"popup width must not change as the body scrolls")
 	}
@@ -434,7 +434,7 @@ func TestHelpOverlay_AllSectionsReachableOnSmallTerminal(t *testing.T) {
 				}
 			}
 		}
-		mgr.HandleKey(tea.KeyMsg{Type: tea.KeyPgDown}, keymap.ActionPageDown)
+		mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyPgDown}, keymap.ActionPageDown)
 	}
 
 	for _, sec := range spec.Sections {

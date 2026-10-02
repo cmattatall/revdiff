@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -341,7 +342,7 @@ func TestTOC_Render(t *testing.T) {
 			{title: "H3", level: 3, lineIdx: 10},
 		}, cursor: 0, activeSection: -1}
 		got := toc.Render(TOCRender{Width: 40, Height: 10, Focused: false, Resolver: res})
-		lines := strings.Split(got, "\n")
+		lines := strings.Split(ansi.Strip(got), "\n")
 		require.Len(t, lines, 3)
 		// h1 has no indent (level-1=0), h2 has 2 spaces, h3 has 4 spaces
 		assert.True(t, strings.HasPrefix(lines[0], "  H1"), "h1 should have prefix spaces only: %q", lines[0])

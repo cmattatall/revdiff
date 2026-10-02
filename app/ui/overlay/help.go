@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/mattn/go-runewidth"
 
@@ -249,8 +249,8 @@ func (h *helpOverlay) padLine(line string, width int) string {
 
 // handleKey dispatches overlay keys: navigation updates offset, dismissal keys
 // close the overlay. offset is clamped on the next render.
-func (h *helpOverlay) handleKey(msg tea.KeyMsg, action keymap.Action) Outcome {
-	if action == keymap.ActionHelp || action == keymap.ActionDismiss || msg.Type == tea.KeyEsc {
+func (h *helpOverlay) handleKey(msg tea.KeyPressMsg, action keymap.Action) Outcome {
+	if action == keymap.ActionHelp || action == keymap.ActionDismiss || msg.String() == "esc" {
 		return Outcome{Kind: OutcomeClosed}
 	}
 
@@ -284,13 +284,11 @@ func (h *helpOverlay) handleKey(msg tea.KeyMsg, action keymap.Action) Outcome {
 	}
 
 	// vim-style g / G accepted without requiring a keymap binding.
-	if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
-		switch msg.Runes[0] {
-		case 'g':
-			h.offset = 0
-		case 'G':
-			h.offset = scrollEndSentinel
-		}
+	switch msg.String() {
+	case "g":
+		h.offset = 0
+	case "G":
+		h.offset = scrollEndSentinel
 	}
 	return Outcome{Kind: OutcomeNone}
 }
@@ -298,18 +296,19 @@ func (h *helpOverlay) handleKey(msg tea.KeyMsg, action keymap.Action) Outcome {
 // handleMouse scrolls the help body in response to wheel events. plain wheel
 // moves by WheelStep rows, shift+wheel by half a page. clicks and other buttons
 // are consumed so they do not leak through to the diff/tree panes underneath.
-func (h *helpOverlay) handleMouse(msg tea.MouseMsg) Outcome {
-	if msg.Action != tea.MouseActionPress {
+func (h *helpOverlay) handleMouse(event tea.MouseMsg) Outcome {
+	msg, ok := event.(tea.MouseWheelMsg)
+	if !ok {
 		return Outcome{Kind: OutcomeNone}
 	}
 	step := WheelStep
-	if msg.Shift {
+	if msg.Mod.Contains(tea.ModShift) {
 		step = max(h.pageSize()/2, 1)
 	}
 	switch msg.Button {
-	case tea.MouseButtonWheelDown:
+	case tea.MouseWheelDown:
 		h.offset += step
-	case tea.MouseButtonWheelUp:
+	case tea.MouseWheelUp:
 		h.offset = max(h.offset-step, 0)
 	default:
 		return Outcome{Kind: OutcomeNone}

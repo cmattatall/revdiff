@@ -9,7 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/umputun/revdiff/app/diff"
 	"github.com/umputun/revdiff/app/editor"
@@ -48,11 +48,6 @@ type editorFinishedMsg struct {
 	line       int
 	endLine    int
 	changeType string
-
-	// restoreMouse requests mouse tracking after the editor returns.
-	// Bubble Tea disables mouse modes while the child process owns the terminal;
-	// editor setup failures never release the terminal, so they do not need this.
-	restoreMouse bool
 }
 
 // openEditor returns a tea.Cmd that suspends the program, launches the user's
@@ -93,19 +88,15 @@ func (m *Model) openEditor() tea.Cmd {
 	seed := content
 	return tea.ExecProcess(cmd, func(runErr error) tea.Msg {
 		text, finalErr := complete(runErr)
-		// Earlier setup failures return before tea.ExecProcess releases the
-		// terminal, so restoreMouse is set only on this completion path and only
-		// when the session originally enabled mouse tracking.
 		return editorFinishedMsg{
-			content:      text,
-			seed:         seed,
-			err:          finalErr,
-			restoreMouse: m.cfg.mouseTracking,
-			fileName:     fileName,
-			fileLevel:    fileLevel,
-			line:         line,
-			endLine:      endLine,
-			changeType:   changeType,
+			content:    text,
+			seed:       seed,
+			err:        finalErr,
+			fileName:   fileName,
+			fileLevel:  fileLevel,
+			line:       line,
+			endLine:    endLine,
+			changeType: changeType,
 		}
 	})
 }
@@ -116,7 +107,6 @@ type sourceEditorFinishedMsg struct {
 	err                  error
 	fileName             string
 	reloadAfterCleanExit bool
-	restoreMouse         bool
 }
 
 // sourceEditorTargetResult is the UI-side decision for one source-editor
@@ -161,7 +151,6 @@ func (m *Model) openSourceEditor() tea.Cmd {
 			err:                  runErr,
 			fileName:             result.fileName,
 			reloadAfterCleanExit: result.reloadAfterCleanExit,
-			restoreMouse:         m.cfg.mouseTracking,
 		}
 	})
 }
@@ -324,10 +313,6 @@ func (m Model) nearestCurrentLine() int {
 // failure (tty restore error post-save, non-zero exit after save), so the
 // content is saved and the error logged — preserving user work.
 func (m Model) handleEditorFinished(msg editorFinishedMsg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
-	if msg.restoreMouse {
-		cmd = tea.EnableMouseCellMotion
-	}
 	if msg.err != nil {
 		// covers editor spawn failure, non-zero exit, tty release/restore errors,
 		// temp-file creation/write failures, and post-exit file read errors.
@@ -341,44 +326,37 @@ func (m Model) handleEditorFinished(msg editorFinishedMsg) (tea.Model, tea.Cmd) 
 			// and drop. trade-off: preserving input state on ambiguous errors lets
 			// users retry. the alternative (save on any non-empty content) caused
 			// the iter-2 regression where launch-time failures silently saved seed.
-			return m, cmd
+			return m, nil
 		}
 		// fall through to save: user wrote content before the error, preserve it
 	}
 	if msg.content == "" {
 		m.cancelAnnotation()
-		return m, cmd
+		return m, nil
 	}
 	m.saveComment(msg.content, msg.fileName, msg.fileLevel, msg.line, msg.endLine, msg.changeType)
-	return m, cmd
+	return m, nil
 }
 
 func (m Model) handleSourceEditorFinished(msg sourceEditorFinishedMsg) (tea.Model, tea.Cmd) {
-	var restoreMouseCmd tea.Cmd
-	if msg.restoreMouse {
-		restoreMouseCmd = tea.EnableMouseCellMotion
-	}
 	if msg.err != nil {
 		log.Printf("[WARN] source editor session error: %v", msg.err)
 		m.editorState.hint = "Editor failed"
-		return m, restoreMouseCmd
+		return m, nil
 	}
 	m.editorState.hint = "Returned from editor"
 	if !msg.reloadAfterCleanExit {
-		return m, restoreMouseCmd
+		return m, nil
 	}
 	// Cross-file hunk navigation can advance the tree selection before the
 	// selected file load finishes. In that window, the editor returned for a
 	// stale displayed file, so leave the queued load in control.
 	if msg.fileName != m.tree.SelectedFile() {
 		m.nav.pendingHunkJump = nil
-		return m, restoreMouseCmd
+		return m, nil
 	}
 	// Tree editing may precede the selected diff's load. Supersede that load
 	// so an outstanding pre-edit snapshot cannot hide the saved changes.
 	reloadCmd := m.requestFileDiff(msg.fileName)
-	if restoreMouseCmd == nil {
-		return m, reloadCmd
-	}
-	return m, tea.Batch(restoreMouseCmd, reloadCmd)
+	return m, reloadCmd
 }

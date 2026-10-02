@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -238,7 +238,7 @@ func TestWholeFileStagingReturnsToNextChange(t *testing.T) {
 				stub.file, stub.unstageFile = nil, update
 			}
 			m.live.stager = stub
-			model, stage := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'S'}})
+			model, stage := m.Update(tea.KeyPressMsg{Code: 'S', Text: string('S')})
 			m = model.(Model)
 			require.NotNil(t, stage)
 			model, reload := m.Update(stage())

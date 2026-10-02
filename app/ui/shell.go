@@ -4,7 +4,7 @@ import (
 	"os/exec"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // ShellRunner prepares a shell command for the terminal handoff.
@@ -46,9 +46,6 @@ func (m Model) handleShellFinished(msg shellFinishedMsg) (tea.Model, tea.Cmd) {
 	m.keys.hint = "Shell command finished"
 	if msg.err != nil {
 		m.keys.hint = "Shell command failed: " + msg.err.Error()
-	}
-	if m.cfg.mouseTracking {
-		return m, tea.EnableMouseCellMotion
 	}
 	return m, nil
 }

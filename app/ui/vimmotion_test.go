@@ -3,7 +3,7 @@ package ui
 import (
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -14,8 +14,8 @@ import (
 
 // keyMsg builds a bubbletea KeyMsg for a single rune. Matches the style of
 // existing tests that construct KeyRunes messages inline.
-func keyMsg(r rune) tea.KeyMsg {
-	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}}
+func keyMsg(r rune) tea.KeyPressMsg {
+	return tea.KeyPressMsg{Code: r, Text: string(r)}
 }
 
 // vimTestModel builds a loaded Model with n context lines suitable for
@@ -120,7 +120,7 @@ func TestInterceptVimMotion_LeaderPendingEsc(t *testing.T) {
 	m.vim.leader = "g"
 	m.vim.hint = "g…"
 
-	escMsg := tea.KeyMsg{Type: tea.KeyEsc}
+	escMsg := tea.KeyPressMsg{Code: tea.KeyEsc}
 	result, _, handled := m.interceptVimMotion(escMsg)
 	require.True(t, handled, "esc during pending leader must be consumed silently")
 	model := result.(Model)
@@ -248,7 +248,7 @@ func TestInterceptVimMotion_GTreePaneFallsThrough(t *testing.T) {
 func TestInterceptVimMotion_HWithCount(t *testing.T) {
 	m := vimTestModel(t, 200)
 	m.layout.viewport.SetYOffset(50)
-	yoff := m.layout.viewport.YOffset
+	yoff := m.layout.viewport.YOffset()
 	m.vim.count = 5
 
 	result, _, handled := m.interceptVimMotion(keyMsg('H'))
@@ -262,8 +262,8 @@ func TestInterceptVimMotion_HWithCount(t *testing.T) {
 func TestInterceptVimMotion_LWithCount(t *testing.T) {
 	m := vimTestModel(t, 200)
 	m.layout.viewport.SetYOffset(20)
-	yoff := m.layout.viewport.YOffset
-	h := m.layout.viewport.Height
+	yoff := m.layout.viewport.YOffset()
+	h := m.layout.viewport.Height()
 	m.vim.count = 3
 
 	result, _, handled := m.interceptVimMotion(keyMsg('L'))
@@ -276,8 +276,8 @@ func TestInterceptVimMotion_LWithCount(t *testing.T) {
 func TestInterceptVimMotion_MIgnoresCount(t *testing.T) {
 	m := vimTestModel(t, 200)
 	m.layout.viewport.SetYOffset(20)
-	yoff := m.layout.viewport.YOffset
-	h := m.layout.viewport.Height
+	yoff := m.layout.viewport.YOffset()
+	h := m.layout.viewport.Height()
 	m.vim.count = 5
 
 	result, _, handled := m.interceptVimMotion(keyMsg('M'))
@@ -515,17 +515,17 @@ func paneName(p pane) string {
 func TestCursorCountsWithoutVimPreset(t *testing.T) {
 	for _, tc := range []struct {
 		name string
-		keys []tea.KeyMsg
+		keys []tea.KeyPressMsg
 		want int
 	}{
-		{"down", []tea.KeyMsg{keyMsg('5'), keyMsg('j')}, 12},
-		{"up", []tea.KeyMsg{keyMsg('3'), keyMsg('k')}, 4},
-		{"multi digit", []tea.KeyMsg{keyMsg('1'), keyMsg('0'), keyMsg('j')}, 17},
-		{"bottom boundary", []tea.KeyMsg{keyMsg('9'), keyMsg('9'), keyMsg('j')}, 29},
-		{"top boundary", []tea.KeyMsg{keyMsg('9'), keyMsg('k')}, 0},
-		{"consumed once", []tea.KeyMsg{keyMsg('5'), keyMsg('j'), keyMsg('k')}, 11},
-		{"cancel", []tea.KeyMsg{keyMsg('5'), {Type: tea.KeyEsc}, keyMsg('j')}, 8},
-		{"arrow", []tea.KeyMsg{keyMsg('5'), {Type: tea.KeyDown}}, 12},
+		{"down", []tea.KeyPressMsg{keyMsg('5'), keyMsg('j')}, 12},
+		{"up", []tea.KeyPressMsg{keyMsg('3'), keyMsg('k')}, 4},
+		{"multi digit", []tea.KeyPressMsg{keyMsg('1'), keyMsg('0'), keyMsg('j')}, 17},
+		{"bottom boundary", []tea.KeyPressMsg{keyMsg('9'), keyMsg('9'), keyMsg('j')}, 29},
+		{"top boundary", []tea.KeyPressMsg{keyMsg('9'), keyMsg('k')}, 0},
+		{"consumed once", []tea.KeyPressMsg{keyMsg('5'), keyMsg('j'), keyMsg('k')}, 11},
+		{"cancel", []tea.KeyPressMsg{keyMsg('5'), {Code: tea.KeyEsc}, keyMsg('j')}, 8},
+		{"arrow", []tea.KeyPressMsg{keyMsg('5'), {Code: tea.KeyDown}}, 12},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := vimTestModel(t, 30)
@@ -648,10 +648,10 @@ func TestVimMotion_FullFlow_zz(t *testing.T) {
 
 	result, _ = model.Update(keyMsg('z'))
 	model = result.(Model)
-	pageHeight := model.layout.viewport.Height
+	pageHeight := model.layout.viewport.Height()
 	require.Positive(t, pageHeight)
 	expected := max(0, model.cursorViewportY()-pageHeight/2)
-	assert.Equal(t, expected, model.layout.viewport.YOffset, "zz centers viewport on cursor")
+	assert.Equal(t, expected, model.layout.viewport.YOffset(), "zz centers viewport on cursor")
 	assert.Equal(t, 50, model.nav.diffCursor, "zz does not move cursor")
 	assert.Empty(t, model.vim.leader)
 	assert.Empty(t, model.vim.hint)
@@ -668,7 +668,7 @@ func TestVimMotion_FullFlow_zt(t *testing.T) {
 	model = result.(Model)
 
 	cursorY := model.cursorViewportY()
-	assert.Equal(t, max(0, cursorY), model.layout.viewport.YOffset, "zt places cursor at top of viewport")
+	assert.Equal(t, max(0, cursorY), model.layout.viewport.YOffset(), "zt places cursor at top of viewport")
 	assert.Equal(t, 50, model.nav.diffCursor, "zt does not move cursor")
 	assert.Empty(t, model.vim.leader)
 }
@@ -683,11 +683,11 @@ func TestVimMotion_FullFlow_zb(t *testing.T) {
 	result, _ = model.Update(keyMsg('b'))
 	model = result.(Model)
 
-	pageHeight := model.layout.viewport.Height
+	pageHeight := model.layout.viewport.Height()
 	require.Positive(t, pageHeight)
 	cursorY := model.cursorViewportY()
 	expected := max(0, cursorY-pageHeight+1)
-	assert.Equal(t, expected, model.layout.viewport.YOffset, "zb places cursor on last visible row")
+	assert.Equal(t, expected, model.layout.viewport.YOffset(), "zb places cursor on last visible row")
 	assert.Equal(t, 50, model.nav.diffCursor, "zb does not move cursor")
 	assert.Empty(t, model.vim.leader)
 }
@@ -731,7 +731,7 @@ func TestVimMotion_LeaderCancelled(t *testing.T) {
 	model := result.(Model)
 	require.Equal(t, "g", model.vim.leader)
 
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	model = result.(Model)
 	assert.Empty(t, model.vim.leader, "esc cancels leader silently")
 	assert.Empty(t, model.vim.hint, "esc leaves no hint")

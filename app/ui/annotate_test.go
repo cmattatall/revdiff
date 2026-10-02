@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	bubblecursor "github.com/charmbracelet/bubbles/cursor"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
+	bubblecursor "charm.land/bubbles/v2/cursor"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/umputun/revdiff/app/annotation"
@@ -43,7 +43,7 @@ func TestModel_AnnotateKey(t *testing.T) {
 	m.nav.diffCursor = 0
 
 	// press 'a' - should enter annotation mode
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'a', Text: string('a')})
 	model := result.(Model)
 	assert.True(t, model.annot.annotating)
 	assert.Nil(t, cmd, "annotation input cursor is static, so no blink command is scheduled")
@@ -62,7 +62,7 @@ func TestModel_EnterInDiffPaneStartsAnnotation(t *testing.T) {
 	m.nav.diffCursor = 1
 
 	// press enter in diff pane - should enter annotation mode
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model := result.(Model)
 	assert.True(t, model.annot.annotating, "enter in diff pane should start annotation mode")
 	assert.Nil(t, cmd, "annotation input cursor is static, so no blink command is scheduled")
@@ -83,22 +83,22 @@ func TestModel_EnterInDiffPaneScrollsToShowAnnotationInputAtBottom(t *testing.T)
 	m.file.name = "a.go"
 	m.file.lines = lines
 	m.nav.diffCursor = 4
-	m.layout.viewport = viewport.New(100, 3)
+	m.layout.viewport = viewport.New(viewport.WithWidth(100), viewport.WithHeight(3))
 	m.layout.viewport.SetContent(m.renderDiff())
 	m.layout.viewport.SetYOffset(2) // cursor line (y=4) is the last visible row (2,3,4)
 
-	require.Equal(t, m.layout.viewport.YOffset+m.layout.viewport.Height-1, m.cursorViewportY(),
+	require.Equal(t, m.layout.viewport.YOffset()+m.layout.viewport.Height()-1, m.cursorViewportY(),
 		"cursor should start on the last visible row")
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model := result.(Model)
 	require.True(t, model.annot.annotating, "enter should start annotation mode")
 	require.Nil(t, cmd, "annotation input cursor is static, so no blink command is scheduled")
 
 	inputY := model.cursorViewportY() + model.wrappedLineCount(model.nav.diffCursor)
-	assert.GreaterOrEqual(t, inputY, model.layout.viewport.YOffset, "input row should be within visible viewport")
-	assert.Less(t, inputY, model.layout.viewport.YOffset+model.layout.viewport.Height, "input row should be within visible viewport")
-	assert.Equal(t, 3, model.layout.viewport.YOffset, "viewport should scroll down by one row to reveal input")
+	assert.GreaterOrEqual(t, inputY, model.layout.viewport.YOffset(), "input row should be within visible viewport")
+	assert.Less(t, inputY, model.layout.viewport.YOffset()+model.layout.viewport.Height(), "input row should be within visible viewport")
+	assert.Equal(t, 3, model.layout.viewport.YOffset(), "viewport should scroll down by one row to reveal input")
 }
 
 func TestModel_AnnotateEnterSaves(t *testing.T) {
@@ -117,7 +117,7 @@ func TestModel_AnnotateEnterSaves(t *testing.T) {
 	m.annot.input.SetValue("test comment")
 
 	// press Enter - should save
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model := result.(Model)
 	assert.False(t, model.annot.annotating)
 
@@ -140,7 +140,7 @@ func TestModel_AnnotateEnterEmptyTextCancels(t *testing.T) {
 
 	m.startAnnotation()
 	// don't set any text, press Enter
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model := result.(Model)
 	assert.False(t, model.annot.annotating)
 	assert.Empty(t, model.store.Get("a.go"))
@@ -358,7 +358,7 @@ func TestModel_AnnotateEscCancels(t *testing.T) {
 	m.annot.input.SetValue("should not be saved")
 
 	// press Esc - should cancel without saving
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	model := result.(Model)
 	assert.False(t, model.annot.annotating)
 	assert.Empty(t, model.store.Get("a.go"))
@@ -376,7 +376,7 @@ func TestModel_AnnotateOnDividerIgnored(t *testing.T) {
 	m.nav.diffCursor = 0
 
 	// press 'a' on divider - should not enter annotation mode
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'a', Text: string('a')})
 	model := result.(Model)
 	assert.False(t, model.annot.annotating)
 }
@@ -394,7 +394,7 @@ func TestModel_AnnotateOnAddLine(t *testing.T) {
 	m.startAnnotation()
 	m.annot.input.SetValue("needs review")
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model := result.(Model)
 
 	anns := model.store.Get("a.go")
@@ -416,7 +416,7 @@ func TestModel_AnnotateOnRemoveLine(t *testing.T) {
 	m.startAnnotation()
 	m.annot.input.SetValue("why removed?")
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model := result.(Model)
 
 	anns := model.store.Get("a.go")
@@ -454,7 +454,7 @@ func TestModel_DeleteAnnotation(t *testing.T) {
 	m.store.Add(annotation.Annotation{File: "a.go", Line: 1, Type: " ", Comment: "test comment"})
 
 	// press 'd' - should delete annotation
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'd', Text: string('d')})
 	model := result.(Model)
 	assert.Empty(t, model.store.Get("a.go"))
 }
@@ -470,7 +470,7 @@ func TestModel_DeleteAnnotationOnDividerIgnored(t *testing.T) {
 	m.nav.diffCursor = 0
 
 	// press 'd' on divider - should not panic
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'd', Text: string('d')})
 	_ = result.(Model)
 }
 
@@ -485,7 +485,7 @@ func TestModel_DeleteAnnotationNoAnnotation(t *testing.T) {
 	m.nav.diffCursor = 0
 
 	// no annotation exists, 'd' should be harmless
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'd', Text: string('d')})
 	model := result.(Model)
 	assert.Empty(t, model.store.Get("a.go"))
 }
@@ -625,7 +625,7 @@ func TestModel_AnnotateStatusBar(t *testing.T) {
 	m.layout.focus = paneDiff
 	m.annot.annotating = true
 
-	view := m.View()
+	view := m.View().Content
 	assert.Contains(t, view, "save")
 	assert.Contains(t, view, "cancel")
 	assert.NotContains(t, view, "annotate")
@@ -641,7 +641,7 @@ func TestModel_AnnotateKeysBlockedInTreePane(t *testing.T) {
 	}
 
 	// 'a' in tree pane should not enter annotation mode
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'a', Text: string('a')})
 	model := result.(Model)
 	assert.False(t, model.annot.annotating)
 }
@@ -882,13 +882,13 @@ func TestModel_AnnotateInputEchoesCharacters(t *testing.T) {
 	model.nav.diffCursor = 0
 
 	// enter annotation mode
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'a', Text: string('a')})
 	model = result.(Model)
 	require.True(t, model.annot.annotating)
 
 	// type characters one at a time and verify each appears in viewport
 	for _, ch := range []rune{'h', 'e', 'l', 'l', 'o'} {
-		result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{ch}})
+		result, _ = model.Update(tea.KeyPressMsg{Code: ch, Text: string(ch)})
 		model = result.(Model)
 
 		// verify the typed text so far is visible in the viewport content
@@ -919,13 +919,13 @@ func TestModel_AnnotateInputVisibleBeforeEnter(t *testing.T) {
 	model.nav.diffCursor = 0
 
 	// enter annotation mode
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'a', Text: string('a')})
 	model = result.(Model)
 	require.True(t, model.annot.annotating)
 
 	// type some text
 	for _, ch := range []rune{'t', 'e', 's', 't'} {
-		result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{ch}})
+		result, _ = model.Update(tea.KeyPressMsg{Code: ch, Text: string(ch)})
 		model = result.(Model)
 	}
 
@@ -956,7 +956,7 @@ func TestModel_UpdateForwardsNonKeyMsgWhileAnnotating(t *testing.T) {
 	model.layout.focus = paneDiff
 
 	// enter annotation mode
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'a', Text: string('a')})
 	model = result.(Model)
 	require.True(t, model.annot.annotating)
 
@@ -1007,12 +1007,12 @@ func TestModel_PgDownAccountsForAnnotations(t *testing.T) {
 		model.store.Add(annotation.Annotation{File: "a.go", Line: i + 1, Type: string(diff.ChangeAdd), Comment: "annotation"})
 	}
 
-	pageHeight := model.layout.viewport.Height
+	pageHeight := model.layout.viewport.Height()
 	require.Positive(t, pageHeight)
 
 	// pgdown with annotations should move fewer cursor positions than viewport height
 	// because annotation rows and annotation sub-lines take visual space
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 	m2 := result.(Model)
 	// cursor position or annotation flag must have changed
 	assert.True(t, m2.nav.diffCursor > 0 || m2.annot.cursorOnAnnotation,
@@ -1031,7 +1031,7 @@ func TestModel_ShiftAStartsFileAnnotation(t *testing.T) {
 	m.file.lines = lines
 	m.layout.focus = paneDiff
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'A'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'A', Text: string('A')})
 	model := result.(Model)
 	assert.True(t, model.annot.annotating, "A should start annotation mode")
 	assert.True(t, model.annot.fileAnnotating, "A should set fileAnnotating=true")
@@ -1076,7 +1076,7 @@ func TestModel_AnnotationInputCharLimit(t *testing.T) {
 				require.True(t, m.annot.annotating)
 			}
 
-			m.annot.input, _ = m.annot.input.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(tt.input)})
+			m.annot.input, _ = m.annot.input.Update(tea.KeyPressMsg{Text: tt.input})
 			m.saveAnnotation()
 
 			stored := m.store.Get("a.go")
@@ -1104,14 +1104,14 @@ func TestModel_AnnotationInputWidthNarrowTerminal(t *testing.T) {
 	cmd := m.startAnnotation()
 	assert.Nil(t, cmd, "annotation input cursor is static, so no blink command is scheduled")
 	assert.True(t, m.annot.annotating)
-	assert.GreaterOrEqual(t, m.annot.input.Width, 10, "text input width should be at least 10")
+	assert.GreaterOrEqual(t, m.annot.input.Width(), 10, "text input width should be at least 10")
 
 	// file-level annotation
 	m.annot.annotating = false
 	cmd = m.startFileAnnotation()
 	assert.Nil(t, cmd, "annotation input cursor is static, so no blink command is scheduled")
 	assert.True(t, m.annot.fileAnnotating)
-	assert.GreaterOrEqual(t, m.annot.input.Width, 10, "file text input width should be at least 10")
+	assert.GreaterOrEqual(t, m.annot.input.Width(), 10, "file text input width should be at least 10")
 }
 
 func TestModel_FileAnnotationInputWidthNarrowerThanLineLevel(t *testing.T) {
@@ -1131,12 +1131,12 @@ func TestModel_FileAnnotationInputWidthNarrowerThanLineLevel(t *testing.T) {
 
 	// line-level annotation
 	m.startAnnotation()
-	lineWidth := m.annot.input.Width
+	lineWidth := m.annot.input.Width()
 
 	// file-level annotation
 	m.annot.annotating = false
 	m.startFileAnnotation()
-	fileWidth := m.annot.input.Width
+	fileWidth := m.annot.input.Width()
 
 	assert.Greater(t, lineWidth, fileWidth, "file-level input should be narrower than line-level due to wider prefix")
 	assert.Equal(t, 6, lineWidth-fileWidth, "width difference should match prefix width difference")
@@ -1172,11 +1172,11 @@ func TestModel_AnnotationInputWidthUsesMarkerWidth(t *testing.T) {
 			require.Equal(t, 84, m.diffContentWidth(), "test fixture pins absolute width")
 
 			m.startAnnotation()
-			assert.Equal(t, tt.wantLineWidth, m.annot.input.Width, "line annotation input width")
+			assert.Equal(t, tt.wantLineWidth, m.annot.input.Width(), "line annotation input width")
 
 			m.annot.annotating = false
 			m.startFileAnnotation()
-			assert.Equal(t, tt.wantFileWidth, m.annot.input.Width, "file annotation input width")
+			assert.Equal(t, tt.wantFileWidth, m.annot.input.Width(), "file annotation input width")
 		})
 	}
 }
@@ -1196,7 +1196,7 @@ func TestModel_FileAnnotationSavesWithLineZero(t *testing.T) {
 	m.annot.input.SetValue("file-level comment")
 
 	// save via Enter
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model := result.(Model)
 	assert.False(t, model.annot.annotating)
 	assert.False(t, model.annot.fileAnnotating)
@@ -1231,7 +1231,7 @@ func TestModel_FileAnnotationCancelResetsFlags(t *testing.T) {
 	assert.True(t, m.annot.fileAnnotating)
 
 	// press Esc to cancel
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	model := result.(Model)
 	assert.False(t, model.annot.annotating, "cancel should reset annotating")
 	assert.False(t, model.annot.fileAnnotating, "cancel should reset fileAnnotating")
@@ -1283,7 +1283,7 @@ func TestModel_EnterOnFileAnnotationLineTriggersFileAnnotation(t *testing.T) {
 	m.store.Add(annotation.Annotation{File: "a.go", Line: 0, Type: "", Comment: "existing note"})
 
 	// press enter on file annotation line - should start file annotation mode
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model := result.(Model)
 	assert.True(t, model.annot.annotating, "enter on file annotation line should start annotation mode")
 	assert.True(t, model.annot.fileAnnotating, "enter on file annotation line should set fileAnnotating")
@@ -1303,7 +1303,7 @@ func TestModel_EnterOnFileAnnotationLinePreFillsText(t *testing.T) {
 	m.store.Add(annotation.Annotation{File: "a.go", Line: 0, Type: "", Comment: "pre-existing comment"})
 
 	// press enter - should pre-fill with existing annotation text
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model := result.(Model)
 	assert.Equal(t, "pre-existing comment", model.annot.input.Value(), "should pre-fill with existing file annotation")
 }
@@ -1323,7 +1323,7 @@ func TestModel_EnterOnRegularDiffLineStillTriggersLineAnnotation(t *testing.T) {
 	m.store.Add(annotation.Annotation{File: "a.go", Line: 0, Type: "", Comment: "file note"})
 
 	// press enter on regular line - should start line annotation, not file annotation
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model := result.(Model)
 	assert.True(t, model.annot.annotating, "enter on regular line should start annotation mode")
 	assert.False(t, model.annot.fileAnnotating, "enter on regular line should not set fileAnnotating")
@@ -1343,7 +1343,7 @@ func TestModel_DeleteFileAnnotationViaD(t *testing.T) {
 	m.nav.diffCursor = -1 // on file annotation line
 
 	// press 'd' to delete file-level annotation
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'd', Text: string('d')})
 	model := result.(Model)
 	assert.Empty(t, model.store.Get("a.go"), "file-level annotation should be deleted")
 	assert.GreaterOrEqual(t, model.nav.diffCursor, 0, "cursor should move to first valid diff line after deletion")
@@ -1364,7 +1364,7 @@ func TestModel_DeleteFileAnnotationCursorNotOnFileLine(t *testing.T) {
 	m.annot.cursorOnAnnotation = true // on the annotation sub-line for line 1
 
 	// press 'd' should delete the line annotation, not the file annotation
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'd', Text: string('d')})
 	model := result.(Model)
 	anns := model.store.Get("a.go")
 	require.Len(t, anns, 1, "should only delete the line annotation")
@@ -1391,7 +1391,7 @@ func TestModel_DeleteFileAnnotationFilterShiftsSelection(t *testing.T) {
 	require.True(t, m.tree.FilterActive())
 
 	// press 'd' to delete file-level annotation on a.go
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'd', Text: string('d')})
 	model := result.(Model)
 
 	// a.go no longer has annotations, filter should shift selection to b.go
@@ -1670,7 +1670,7 @@ func TestModel_QKeyDoesNotQuitOrDropAnnotations(t *testing.T) {
 	m := testModel([]string{"a.go"}, nil)
 	m.store.Add(annotation.Annotation{File: "a.go", Line: 1, Type: "+", Comment: "test"})
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'Q'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'Q', Text: string('Q')})
 	require.Nil(t, cmd)
 	assert.Equal(t, 1, result.(Model).store.Count())
 }
@@ -1688,12 +1688,12 @@ func TestModel_QKeyDuringAnnotationIgnored(t *testing.T) {
 	model.nav.diffCursor = 0
 
 	// enter annotation mode
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'a', Text: string('a')})
 	model = result.(Model)
 	require.True(t, model.annot.annotating)
 
 	// press Q - should be handled as text input, not discard
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'Q'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'Q', Text: string('Q')})
 	model = result.(Model)
 	assert.True(t, model.annot.annotating, "should still be annotating")
 	assert.Contains(t, model.annot.input.Value(), "Q", "Q should be typed into input")
@@ -1717,22 +1717,22 @@ func TestModel_SingleFileAnnotationWorks(t *testing.T) {
 	model.renderer = style.NewRenderer(res)
 
 	// press enter to start annotation
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model = result.(Model)
 	assert.True(t, model.annot.annotating, "enter should start annotation in single-file mode")
 
 	// type annotation text
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 't', Text: string('t')})
 	model = result.(Model)
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'e', Text: string('e')})
 	model = result.(Model)
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 's', Text: string('s')})
 	model = result.(Model)
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 't', Text: string('t')})
 	model = result.(Model)
 
 	// press enter to save
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model = result.(Model)
 	assert.False(t, model.annot.annotating, "annotation should be saved")
 	assert.Equal(t, 1, model.store.Count(), "annotation should be stored")
@@ -1759,7 +1759,7 @@ func TestModel_AnnotationsWithTOCActive(t *testing.T) {
 		model.nav.diffCursor = 1 // on "some text" line
 
 		// press 'a' to start annotation
-		result, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+		result, cmd := model.Update(tea.KeyPressMsg{Code: 'a', Text: string('a')})
 		model = result.(Model)
 		assert.True(t, model.annot.annotating, "should enter annotation mode in diff pane with TOC")
 		assert.Nil(t, cmd, "annotation input cursor is static, so no blink command is scheduled")
@@ -1777,7 +1777,7 @@ func TestModel_AnnotationsWithTOCActive(t *testing.T) {
 		model.layout.focus = paneDiff
 
 		// press 'A' for file annotation
-		result, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'A'}})
+		result, cmd := model.Update(tea.KeyPressMsg{Code: 'A', Text: string('A')})
 		model = result.(Model)
 		assert.True(t, model.annot.annotating, "should enter file annotation mode with TOC")
 		assert.True(t, model.annot.fileAnnotating, "should be file-level annotation")
@@ -1800,7 +1800,7 @@ func TestModel_AnnotationsWithTOCActive(t *testing.T) {
 		model.store.Add(annotation.Annotation{File: "README.md", Line: 2, Type: " ", Comment: "test annotation"})
 
 		// press '@' to open annotation list
-		result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'@'}})
+		result, _ = model.Update(tea.KeyPressMsg{Code: '@', Text: string('@')})
 		model = result.(Model)
 		assert.True(t, model.overlay.Active(), "annotation list should open with TOC active")
 		assert.Equal(t, overlay.KindAnnotList, model.overlay.Kind())
@@ -1818,7 +1818,7 @@ func TestModel_AnnotationsWithTOCActive(t *testing.T) {
 		model.layout.focus = paneTree // TOC pane
 
 		// press 'a' in TOC pane - should not start annotation
-		result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+		result, _ = model.Update(tea.KeyPressMsg{Code: 'a', Text: string('a')})
 		model = result.(Model)
 		assert.False(t, model.annot.annotating, "annotation should not start from TOC pane")
 	})
@@ -1830,7 +1830,7 @@ func TestModel_ShiftAIgnoredWithoutFile(t *testing.T) {
 	m.file.name = ""
 	m.layout.focus = paneTree
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'A'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'A', Text: string('A')})
 	model := result.(Model)
 	assert.False(t, model.annot.annotating, "A without currFile should not start annotation")
 	assert.Nil(t, cmd)
@@ -1847,7 +1847,7 @@ func TestModel_ShiftAOnlyWorksFromDiffPane(t *testing.T) {
 	m.file.name = "a.go"
 	m.file.lines = lines
 	m.layout.focus = paneTree
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'A'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'A', Text: string('A')})
 	model := result.(Model)
 	assert.False(t, model.annot.annotating, "A from tree pane should not start annotation")
 	assert.False(t, model.annot.fileAnnotating)
@@ -1859,7 +1859,7 @@ func TestModel_ShiftAOnlyWorksFromDiffPane(t *testing.T) {
 	m2.file.name = "a.go"
 	m2.file.lines = lines
 	m2.layout.focus = paneDiff
-	result, cmd = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'A'}})
+	result, cmd = m2.Update(tea.KeyPressMsg{Code: 'A', Text: string('A')})
 	model = result.(Model)
 	assert.True(t, model.annot.annotating, "A should work from diff pane")
 	assert.True(t, model.annot.fileAnnotating)
@@ -1952,7 +1952,7 @@ func TestModel_AnnotateCtrlEOpensEditor(t *testing.T) {
 	m.startAnnotation()
 	m.annot.input.SetValue("seeded text")
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}, Alt: true})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'e', Mod: tea.ModAlt})
 	model := result.(Model)
 	require.NotNil(t, cmd, "Alt+E should return a tea.Cmd for ExecProcess")
 	require.Len(t, fake.CommandCalls(), 1, "editor.Command should be called once")
@@ -1981,7 +1981,7 @@ func TestModel_AnnotateCtrlEOpensEditorFileLevel(t *testing.T) {
 	m.startFileAnnotation()
 	m.annot.input.SetValue("file seed")
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}, Alt: true})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'e', Mod: tea.ModAlt})
 	model := result.(Model)
 	require.NotNil(t, cmd, "Alt+E should return a tea.Cmd for ExecProcess on file-level path")
 	require.Len(t, fake.CommandCalls(), 1, "editor.Command should be called once on file-level path")
@@ -2044,7 +2044,7 @@ func TestModel_EditorFinishedErrorPreservesState(t *testing.T) {
 	// just value-aliased state. A default-branch key in handleAnnotateKey must
 	// append to the textinput, which would silently fail if the model weren't
 	// actually in annotation mode.
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'!'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: '!', Text: string('!')})
 	model = result.(Model)
 	assert.Equal(t, "in-progress note!", model.annot.input.Value(), "annotation mode must accept typed keys after editor error path")
 }
@@ -2089,7 +2089,7 @@ func TestModel_EditorFinishedRetryAfterErrorReSeedsWithPreservedInput(t *testing
 	m.annot.input.SetValue("retry content")
 
 	// first Alt+E
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}, Alt: true})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'e', Mod: tea.ModAlt})
 	model := result.(Model)
 	require.NotNil(t, cmd)
 	require.Len(t, fake.CommandCalls(), 1)
@@ -2103,7 +2103,7 @@ func TestModel_EditorFinishedRetryAfterErrorReSeedsWithPreservedInput(t *testing
 	assert.Equal(t, "retry content", model.annot.input.Value(), "input preserved after error")
 
 	// second Alt+E — editor must be re-invoked with the preserved content
-	result, cmd2 := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}, Alt: true})
+	result, cmd2 := model.Update(tea.KeyPressMsg{Code: 'e', Mod: tea.ModAlt})
 	model = result.(Model)
 	require.NotNil(t, cmd2)
 	require.Len(t, fake.CommandCalls(), 2, "editor must be invoked again on retry")
@@ -2237,7 +2237,7 @@ func TestModel_ReAnnotateMultiLineKeepsInputEmptyAndStashesOriginal(t *testing.T
 	assert.Contains(t, m.annot.input.Placeholder, "existing multi-line", "placeholder should hint that content is stored")
 
 	// Enter with empty input must not touch the stored annotation
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model := result.(Model)
 	anns := model.store.Get("a.go")
 	require.Len(t, anns, 1)
@@ -2268,7 +2268,7 @@ func TestModel_ReAnnotateMultiLineCtrlESeedsFromStash(t *testing.T) {
 	require.Empty(t, m.annot.input.Value())
 	require.Equal(t, "top\nmiddle\nbottom", m.annot.existingMultiline)
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}, Alt: true})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'e', Mod: tea.ModAlt})
 	model := result.(Model)
 	require.NotNil(t, cmd)
 	require.Len(t, fake.CommandCalls(), 1)
@@ -2294,7 +2294,7 @@ func TestModel_ReAnnotateMultiLineTypedOverwriteWins(t *testing.T) {
 	m.startAnnotation()
 	m.annot.input.SetValue("new one-liner")
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model := result.(Model)
 	anns := model.store.Get("a.go")
 	require.Len(t, anns, 1)
@@ -2339,14 +2339,14 @@ func TestModel_ReAnnotateFileLevelMultiLineStashedNotFlattened(t *testing.T) {
 
 	fake := mockEditor("", nil)
 	m.editor = fake
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}, Alt: true})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'e', Mod: tea.ModAlt})
 	model := result.(Model)
 	require.NotNil(t, cmd)
 	require.Len(t, fake.CommandCalls(), 1)
 	assert.Equal(t, "file\nnote\nspans", fake.CommandCalls()[0].Content, "file-level Alt+E seeds from stash")
 
 	// Esc must clear the stash so it doesn't leak to a later annotation on a different line
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	model = result.(Model)
 	assert.False(t, model.annot.annotating)
 	assert.Empty(t, model.annot.existingMultiline, "Esc clears existingMultiline")
@@ -2436,11 +2436,11 @@ func TestModel_EditorFinishedScrollsToShowMultilineAnnotation(t *testing.T) {
 	m.file.lines = lines
 	m.nav.diffCursor = 3
 	// viewport height of 4 fits 1-row diff line + 3 annotation rows only if sync scrolls.
-	m.layout.viewport = viewport.New(80, 4)
+	m.layout.viewport = viewport.New(viewport.WithWidth(80), viewport.WithHeight(4))
 	m.layout.viewport.SetContent(m.renderDiff())
 	m.layout.viewport.SetYOffset(0)
 
-	require.Equal(t, m.layout.viewport.YOffset+m.layout.viewport.Height-1, m.cursorViewportY(),
+	require.Equal(t, m.layout.viewport.YOffset()+m.layout.viewport.Height()-1, m.cursorViewportY(),
 		"cursor should start on the last visible row")
 
 	msg := editorFinishedMsg{
@@ -2456,11 +2456,11 @@ func TestModel_EditorFinishedScrollsToShowMultilineAnnotation(t *testing.T) {
 	cursorTop := model.cursorViewportY()
 	annotRows := model.wrappedAnnotationLineCount(model.annotationKey(4, " "))
 	cursorBottom := cursorTop + 1 + annotRows - 1 // 1 diff row + annotation rows
-	expectedOffset := cursorBottom - model.layout.viewport.Height + 1
-	assert.Equal(t, expectedOffset, model.layout.viewport.YOffset,
+	expectedOffset := cursorBottom - model.layout.viewport.Height() + 1
+	assert.Equal(t, expectedOffset, model.layout.viewport.YOffset(),
 		"YOffset should pin the annotation's visual bottom to the viewport bottom after editor save")
-	assert.GreaterOrEqual(t, cursorTop, model.layout.viewport.YOffset, "cursor top must be visible")
-	assert.Less(t, cursorBottom, model.layout.viewport.YOffset+model.layout.viewport.Height,
+	assert.GreaterOrEqual(t, cursorTop, model.layout.viewport.YOffset(), "cursor top must be visible")
+	assert.Less(t, cursorBottom, model.layout.viewport.YOffset()+model.layout.viewport.Height(),
 		"last annotation row must be visible after editor save")
 }
 
@@ -2479,7 +2479,7 @@ func TestModel_EditorFinishedFileLevelGoesToTop(t *testing.T) {
 	m.file.name = "a.go"
 	m.file.lines = lines
 	m.nav.diffCursor = 3
-	m.layout.viewport = viewport.New(80, 3)
+	m.layout.viewport = viewport.New(viewport.WithWidth(80), viewport.WithHeight(3))
 	m.layout.viewport.SetContent(m.renderDiff())
 	m.layout.viewport.SetYOffset(2)
 
@@ -2493,7 +2493,7 @@ func TestModel_EditorFinishedFileLevelGoesToTop(t *testing.T) {
 	anns := model.store.Get("a.go")
 	require.Len(t, anns, 1, "file-level annotation must be saved")
 	assert.Equal(t, 0, anns[0].Line, "saved annotation should be file-level (Line=0)")
-	assert.Equal(t, 0, model.layout.viewport.YOffset,
+	assert.Equal(t, 0, model.layout.viewport.YOffset(),
 		"viewport should be at top after file-level save (GotoTop path)")
 	assert.Equal(t, -1, model.nav.diffCursor,
 		"cursor should park on file annotation line (-1)")
@@ -2537,21 +2537,21 @@ func TestModel_AnnotationStandardTextEditing(t *testing.T) {
 
 	for _, tt := range []struct {
 		name string
-		key  tea.KeyType
+		key  tea.KeyPressMsg
 		want string
 		pos  int
 	}{
-		{"home", tea.KeyCtrlA, "αβ γδ", 0},
-		{"end", tea.KeyCtrlE, "αβ γδ", 5},
-		{"back", tea.KeyCtrlB, "αβ γδ", 2},
-		{"forward", tea.KeyCtrlF, "αβ γδ", 4},
-		{"delete word before cursor", tea.KeyCtrlW, "γδ", 0},
-		{"delete before cursor", tea.KeyCtrlU, "γδ", 0},
-		{"delete after cursor", tea.KeyCtrlK, "αβ ", 3},
+		{"home", tea.KeyPressMsg{Code: 'a', Mod: tea.ModCtrl}, "αβ γδ", 0},
+		{"end", tea.KeyPressMsg{Code: 'e', Mod: tea.ModCtrl}, "αβ γδ", 5},
+		{"back", tea.KeyPressMsg{Code: 'b', Mod: tea.ModCtrl}, "αβ γδ", 2},
+		{"forward", tea.KeyPressMsg{Code: 'f', Mod: tea.ModCtrl}, "αβ γδ", 4},
+		{"delete word before cursor", tea.KeyPressMsg{Code: 'w', Mod: tea.ModCtrl}, "γδ", 0},
+		{"delete before cursor", tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl}, "γδ", 0},
+		{"delete after cursor", tea.KeyPressMsg{Code: 'k', Mod: tea.ModCtrl}, "αβ ", 3},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			m := newModel()
-			result, _ := m.Update(tea.KeyMsg{Type: tt.key})
+			result, _ := m.Update(tt.key)
 			model := result.(Model)
 			assert.Equal(t, tt.want, model.annot.input.Value())
 			assert.Equal(t, tt.pos, model.annot.input.Position())
@@ -2563,10 +2563,10 @@ func TestModel_CustomEditorBindings(t *testing.T) {
 	for _, tt := range []struct {
 		name   string
 		custom bool
-		msg    tea.KeyMsg
+		msg    tea.KeyPressMsg
 	}{
-		{"custom alt+e", false, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}, Alt: true}},
-		{"custom ctrl+e", true, tea.KeyMsg{Type: tea.KeyCtrlE}},
+		{"custom alt+e", false, tea.KeyPressMsg{Code: 'e', Mod: tea.ModAlt}},
+		{"custom ctrl+e", true, tea.KeyPressMsg{Code: 'e', Mod: tea.ModCtrl}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			lines := []diff.DiffLine{{NewNum: 1, Content: "line", ChangeType: diff.ChangeContext}}
@@ -2641,7 +2641,7 @@ func TestModel_RemappedEditorKeyOpensEditor(t *testing.T) {
 	m.startAnnotation()
 	m.annot.input.SetValue("seed")
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlG})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'g', Mod: tea.ModCtrl})
 	model := result.(Model)
 	require.NotNil(t, cmd, "remapped ctrl+g should trigger editor")
 	require.Len(t, fake.CommandCalls(), 1, "editor.Command called once")
@@ -2663,7 +2663,7 @@ func TestModel_UnboundEditorKeyFallsThrough(t *testing.T) {
 
 	m.startAnnotation()
 
-	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}, Alt: true})
+	_, _ = m.Update(tea.KeyPressMsg{Code: 'e', Mod: tea.ModAlt})
 	assert.Empty(t, fake.CommandCalls(), "unbound alt+e must not open editor")
 }
 
@@ -3439,13 +3439,13 @@ func BenchmarkModel_AnnotationKeystroke(b *testing.B) {
 		b.Run(fmt.Sprintf("lines=%d", n), func(b *testing.B) {
 			m := benchModel(b, n)
 			m.startAnnotation()
-			key := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}}
+			key := tea.KeyPressMsg{Code: 'x', Text: string('x')}
 			b.ReportAllocs()
 			b.ResetTimer()
 			for range b.N {
 				res, _ := m.Update(key)
 				m = res.(Model)
-				sink = m.View()
+				sink = m.View().Content
 			}
 		})
 	}
@@ -3465,7 +3465,7 @@ func BenchmarkModel_AnnotationBlinkTick(b *testing.B) {
 			for range b.N {
 				res, _ := m.Update(blink)
 				m = res.(Model)
-				sink = m.View()
+				sink = m.View().Content
 			}
 		})
 	}
@@ -3476,6 +3476,6 @@ func TestModel_AnnotationInputCursorIsStatic(t *testing.T) {
 	// but its timer would drive a full re-render twice a second
 	m := testModel([]string{"a.go"}, nil)
 	ti, cmd := m.newAnnotationInput("annotation...", 4)
-	assert.Equal(t, bubblecursor.CursorStatic, ti.Cursor.Mode(), "cursor must not blink")
+	assert.False(t, ti.Styles().Cursor.Blink, "cursor must not blink")
 	assert.Nil(t, cmd, "focus must not schedule a blink command")
 }

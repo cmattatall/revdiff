@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -350,19 +350,19 @@ func TestInfoOverlay_ScrollJK(t *testing.T) {
 	_ = mgr.info.render(infoRenderCtx(), mgr)
 
 	// j -> offset +1
-	mgr.info.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}, keymap.ActionDown)
+	mgr.info.handleKey(tea.KeyPressMsg{Code: 'j', Text: string('j')}, keymap.ActionDown)
 	assert.Equal(t, 1, mgr.info.offset)
 
-	mgr.info.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}, keymap.ActionDown)
+	mgr.info.handleKey(tea.KeyPressMsg{Code: 'j', Text: string('j')}, keymap.ActionDown)
 	assert.Equal(t, 2, mgr.info.offset)
 
 	// k -> offset -1
-	mgr.info.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}}, keymap.ActionUp)
+	mgr.info.handleKey(tea.KeyPressMsg{Code: 'k', Text: string('k')}, keymap.ActionUp)
 	assert.Equal(t, 1, mgr.info.offset)
 
 	// k at 0 -> stays at 0
-	mgr.info.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}}, keymap.ActionUp)
-	mgr.info.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}}, keymap.ActionUp)
+	mgr.info.handleKey(tea.KeyPressMsg{Code: 'k', Text: string('k')}, keymap.ActionUp)
+	mgr.info.handleKey(tea.KeyPressMsg{Code: 'k', Text: string('k')}, keymap.ActionUp)
 	assert.Equal(t, 0, mgr.info.offset)
 }
 
@@ -376,11 +376,11 @@ func TestInfoOverlay_ScrollPageUpDown(t *testing.T) {
 	ctx := infoRenderCtx()
 	_ = mgr.info.render(ctx, mgr)
 
-	mgr.info.handleKey(tea.KeyMsg{Type: tea.KeyPgDown}, keymap.ActionPageDown)
+	mgr.info.handleKey(tea.KeyPressMsg{Code: tea.KeyPgDown}, keymap.ActionPageDown)
 	assert.Positive(t, mgr.info.offset, "pgdown advances offset by viewport height")
 
 	firstPageOffset := mgr.info.offset
-	mgr.info.handleKey(tea.KeyMsg{Type: tea.KeyPgUp}, keymap.ActionPageUp)
+	mgr.info.handleKey(tea.KeyPressMsg{Code: tea.KeyPgUp}, keymap.ActionPageUp)
 	assert.Less(t, mgr.info.offset, firstPageOffset, "pgup rewinds offset")
 }
 
@@ -393,16 +393,16 @@ func TestInfoOverlay_ScrollHalfPageUpDown(t *testing.T) {
 	mgr.OpenInfo(InfoSpec{CommitsApplicable: true, CommitsLoaded: true, Commits: commits})
 	_ = mgr.info.render(infoRenderCtx(), mgr)
 
-	mgr.info.handleKey(tea.KeyMsg{}, keymap.ActionHalfPageDown)
+	mgr.info.handleKey(tea.KeyPressMsg{}, keymap.ActionHalfPageDown)
 	assert.Positive(t, mgr.info.offset, "half-pgdown advances offset by viewport height")
 
 	firstOffset := mgr.info.offset
-	mgr.info.handleKey(tea.KeyMsg{}, keymap.ActionHalfPageUp)
+	mgr.info.handleKey(tea.KeyPressMsg{}, keymap.ActionHalfPageUp)
 	assert.Less(t, mgr.info.offset, firstOffset, "half-pgup rewinds offset")
 
 	// half-pgup below zero should clamp to zero
 	mgr.info.offset = 1
-	mgr.info.handleKey(tea.KeyMsg{}, keymap.ActionHalfPageUp)
+	mgr.info.handleKey(tea.KeyPressMsg{}, keymap.ActionHalfPageUp)
 	assert.Equal(t, 0, mgr.info.offset, "half-pgup clamps to zero")
 }
 
@@ -416,7 +416,7 @@ func TestInfoOverlay_ScrollGG(t *testing.T) {
 	_ = mgr.info.render(infoRenderCtx(), mgr)
 
 	// G -> jump to bottom (offset clamped in render)
-	mgr.info.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}}, keymap.Action(""))
+	mgr.info.handleKey(tea.KeyPressMsg{Code: 'G', Text: string('G')}, keymap.Action(""))
 	assert.Equal(t, scrollEndSentinel, mgr.info.offset, "G sets offset to end sentinel")
 
 	_ = mgr.info.render(infoRenderCtx(), mgr)
@@ -424,7 +424,7 @@ func TestInfoOverlay_ScrollGG(t *testing.T) {
 	assert.Positive(t, mgr.info.offset)
 
 	// g -> jump to top
-	mgr.info.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}}, keymap.Action(""))
+	mgr.info.handleKey(tea.KeyPressMsg{Code: 'g', Text: string('g')}, keymap.Action(""))
 	assert.Equal(t, 0, mgr.info.offset)
 }
 
@@ -437,10 +437,10 @@ func TestInfoOverlay_ScrollHomeEnd(t *testing.T) {
 	mgr.OpenInfo(InfoSpec{CommitsApplicable: true, CommitsLoaded: true, Commits: commits})
 	_ = mgr.info.render(infoRenderCtx(), mgr)
 
-	mgr.info.handleKey(tea.KeyMsg{}, keymap.ActionEnd)
+	mgr.info.handleKey(tea.KeyPressMsg{}, keymap.ActionEnd)
 	assert.Equal(t, scrollEndSentinel, mgr.info.offset)
 
-	mgr.info.handleKey(tea.KeyMsg{}, keymap.ActionHome)
+	mgr.info.handleKey(tea.KeyPressMsg{}, keymap.ActionHome)
 	assert.Equal(t, 0, mgr.info.offset)
 }
 
@@ -466,21 +466,21 @@ func TestInfoOverlay_HandleKeyClose(t *testing.T) {
 
 	t.Run("esc closes", func(t *testing.T) {
 		mgr.OpenInfo(InfoSpec{CommitsApplicable: true, CommitsLoaded: true})
-		out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyEsc}, keymap.ActionDismiss)
+		out := mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyEsc}, keymap.ActionDismiss)
 		assert.Equal(t, OutcomeClosed, out.Kind)
 		assert.False(t, mgr.Active())
 	})
 
 	t.Run("info action closes", func(t *testing.T) {
 		mgr.OpenInfo(InfoSpec{CommitsApplicable: true, CommitsLoaded: true})
-		out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}}, keymap.ActionInfo)
+		out := mgr.HandleKey(tea.KeyPressMsg{Code: 'i', Text: string('i')}, keymap.ActionInfo)
 		assert.Equal(t, OutcomeClosed, out.Kind)
 		assert.False(t, mgr.Active())
 	})
 
 	t.Run("q closes", func(t *testing.T) {
 		mgr.OpenInfo(InfoSpec{CommitsApplicable: true, CommitsLoaded: true})
-		out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}, keymap.ActionQuit)
+		out := mgr.HandleKey(tea.KeyPressMsg{Code: 'q', Text: string('q')}, keymap.ActionQuit)
 		assert.Equal(t, OutcomeClosed, out.Kind)
 		assert.False(t, mgr.Active())
 	})
@@ -499,38 +499,38 @@ func TestInfoOverlay_HandleMouse_WheelScrollsOffset(t *testing.T) {
 
 	t.Run("wheel down advances offset by WheelStep", func(t *testing.T) {
 		mgr.info.offset = 0
-		out := mgr.HandleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
+		out := mgr.HandleMouse(tea.MouseWheelMsg{Button: tea.MouseWheelDown})
 		assert.Equal(t, OutcomeNone, out.Kind)
 		assert.Equal(t, WheelStep, mgr.info.offset)
 	})
 
 	t.Run("wheel up decreases offset and clamps at 0", func(t *testing.T) {
 		mgr.info.offset = 1
-		mgr.HandleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress})
+		mgr.HandleMouse(tea.MouseWheelMsg{Button: tea.MouseWheelUp})
 		assert.Equal(t, 0, mgr.info.offset, "clamped to zero when step exceeds offset")
 	})
 
 	t.Run("shift+wheel uses half viewport step", func(t *testing.T) {
 		mgr.info.offset = 0
-		mgr.HandleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress, Shift: true})
+		mgr.HandleMouse(tea.MouseWheelMsg{Button: tea.MouseWheelDown, Mod: tea.ModShift})
 		want := max(mgr.info.viewportHeight(mgr.info.height)/2, 1)
 		assert.Equal(t, want, mgr.info.offset)
 	})
 
 	t.Run("non-press wheel ignored", func(t *testing.T) {
 		mgr.info.offset = 5
-		mgr.HandleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionRelease})
+		mgr.HandleMouse(tea.MouseReleaseMsg{Button: tea.MouseWheelDown})
 		assert.Equal(t, 5, mgr.info.offset, "release action must not scroll")
 	})
 
 	t.Run("non-wheel button ignored", func(t *testing.T) {
 		mgr.info.offset = 5
-		mgr.HandleMouse(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+		mgr.HandleMouse(tea.MouseClickMsg{Button: tea.MouseLeft})
 		assert.Equal(t, 5, mgr.info.offset, "left click does not scroll")
 	})
 
 	t.Run("overlay stays open after wheel", func(t *testing.T) {
-		mgr.HandleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
+		mgr.HandleMouse(tea.MouseWheelMsg{Button: tea.MouseWheelDown})
 		assert.True(t, mgr.Active())
 	})
 }
@@ -538,7 +538,7 @@ func TestInfoOverlay_HandleMouse_WheelScrollsOffset(t *testing.T) {
 func TestInfoOverlay_UnhandledKey(t *testing.T) {
 	mgr := NewManager()
 	mgr.OpenInfo(InfoSpec{CommitsApplicable: true, CommitsLoaded: true})
-	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}}, keymap.Action(""))
+	out := mgr.HandleKey(tea.KeyPressMsg{Code: 'x', Text: string('x')}, keymap.Action(""))
 	assert.Equal(t, OutcomeNone, out.Kind)
 	assert.True(t, mgr.Active(), "unrecognized key does not close overlay")
 }

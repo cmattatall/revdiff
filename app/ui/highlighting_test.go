@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/require"
 
 	"github.com/umputun/revdiff/app/diff"
@@ -79,7 +79,7 @@ func TestHighlightingLatestOnlyAndPreservesViewport(t *testing.T) {
 	msg := latest().(highlightedMsg)
 	require.Len(t, h.HighlightLinesCalls(), 1)
 
-	m.layout.viewport.Height = 10
+	m.layout.viewport.SetHeight(10)
 	m.layout.viewport.SetContent(m.renderDiff())
 	m.layout.viewport.SetYOffset(25)
 	m.nav.diffCursor = 30
@@ -88,7 +88,7 @@ func TestHighlightingLatestOnlyAndPreservesViewport(t *testing.T) {
 	model, _ := m.Update(msg)
 	m = model.(Model)
 	require.Equal(t, msg.lines, m.file.highlighted)
-	require.Equal(t, 25, m.layout.viewport.YOffset)
+	require.Equal(t, 25, m.layout.viewport.YOffset())
 	require.Equal(t, 30, m.nav.diffCursor)
 	require.Equal(t, "draft", m.annot.input.Value())
 }

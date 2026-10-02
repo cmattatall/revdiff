@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -148,7 +148,7 @@ func TestModel_StartSearch(t *testing.T) {
 	model.layout.focus = paneDiff
 
 	// press / to start search
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: '/', Text: string('/')})
 	model = result.(Model)
 
 	assert.True(t, model.search.active, "should be in searching mode")
@@ -158,17 +158,17 @@ func TestModel_StartSearch(t *testing.T) {
 func TestModel_SearchStandardTextEditing(t *testing.T) {
 	for _, tt := range []struct {
 		name string
-		key  tea.KeyType
+		key  tea.KeyPressMsg
 		want string
 		pos  int
 	}{
-		{"home", tea.KeyCtrlA, "αβ γδ", 0},
-		{"end", tea.KeyCtrlE, "αβ γδ", 5},
-		{"back", tea.KeyCtrlB, "αβ γδ", 2},
-		{"forward", tea.KeyCtrlF, "αβ γδ", 4},
-		{"delete word before cursor", tea.KeyCtrlW, "γδ", 0},
-		{"delete before cursor", tea.KeyCtrlU, "γδ", 0},
-		{"delete after cursor", tea.KeyCtrlK, "αβ ", 3},
+		{"home", tea.KeyPressMsg{Code: 'a', Mod: tea.ModCtrl}, "αβ γδ", 0},
+		{"end", tea.KeyPressMsg{Code: 'e', Mod: tea.ModCtrl}, "αβ γδ", 5},
+		{"back", tea.KeyPressMsg{Code: 'b', Mod: tea.ModCtrl}, "αβ γδ", 2},
+		{"forward", tea.KeyPressMsg{Code: 'f', Mod: tea.ModCtrl}, "αβ γδ", 4},
+		{"delete word before cursor", tea.KeyPressMsg{Code: 'w', Mod: tea.ModCtrl}, "γδ", 0},
+		{"delete before cursor", tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl}, "γδ", 0},
+		{"delete after cursor", tea.KeyPressMsg{Code: 'k', Mod: tea.ModCtrl}, "αβ ", 3},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			m := testModel(nil, nil)
@@ -178,7 +178,7 @@ func TestModel_SearchStandardTextEditing(t *testing.T) {
 			m.search.input.SetValue("αβ γδ")
 			m.search.input.SetCursor(3)
 
-			result, _ := m.Update(tea.KeyMsg{Type: tt.key})
+			result, _ := m.Update(tt.key)
 			model := result.(Model)
 			assert.Equal(t, tt.want, model.search.input.Value())
 			assert.Equal(t, tt.pos, model.search.input.Position())
@@ -196,7 +196,7 @@ func TestModel_StartSearchFromTreePane(t *testing.T) {
 	model.layout.focus = paneTree
 
 	// Tree search uses the same palette with its scope identified.
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: '/', Text: string('/')})
 	model = result.(Model)
 	assert.True(t, model.search.active)
 	assert.Contains(t, ansi.Strip(model.commandPaneView()), "Search file tree")
@@ -217,17 +217,17 @@ func TestModel_SubmitSearchFindsMatches(t *testing.T) {
 	model.nav.diffCursor = 0
 
 	// start search
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: '/', Text: string('/')})
 	model = result.(Model)
 
 	// type "hello"
 	for _, ch := range "hello" {
-		result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{ch}})
+		result, _ = model.Update(tea.KeyPressMsg{Code: ch, Text: string(ch)})
 		model = result.(Model)
 	}
 
 	// submit with enter
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model = result.(Model)
 
 	assert.False(t, model.search.active, "should exit searching mode")
@@ -253,7 +253,7 @@ func TestModel_SubmitSearchCaseInsensitive(t *testing.T) {
 	model.search.input = textinput.New()
 	model.search.input.SetValue("hello")
 
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model = result.(Model)
 
 	assert.Equal(t, []int{0, 1}, model.search.matches, "should match case-insensitively")
@@ -277,7 +277,7 @@ func TestModel_SubmitSearchJumpsForwardFromCursor(t *testing.T) {
 	model.search.input = textinput.New()
 	model.search.input.SetValue("match")
 
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model = result.(Model)
 
 	assert.Equal(t, 1, model.search.cursor, "should jump to second match (index 1)")
@@ -301,7 +301,7 @@ func TestModel_SubmitSearchWrapsToFirstMatch(t *testing.T) {
 	model.search.input = textinput.New()
 	model.search.input.SetValue("match")
 
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model = result.(Model)
 
 	assert.Equal(t, 0, model.search.cursor, "should wrap to first match")
@@ -323,7 +323,7 @@ func TestModel_SubmitSearchNoMatches(t *testing.T) {
 	model.search.input = textinput.New()
 	model.search.input.SetValue("xyz")
 
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model = result.(Model)
 
 	assert.False(t, model.search.active)
@@ -352,7 +352,7 @@ func TestModel_SubmitEmptySearchClearsMatches(t *testing.T) {
 	model.search.input = textinput.New()
 	model.search.input.SetValue("")
 
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model = result.(Model)
 
 	assert.False(t, model.search.active)
@@ -372,12 +372,12 @@ func TestModel_CancelSearch(t *testing.T) {
 	model.layout.focus = paneDiff
 
 	// start search
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: '/', Text: string('/')})
 	model = result.(Model)
 	require.True(t, model.search.active)
 
 	// cancel with esc
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	model = result.(Model)
 
 	assert.False(t, model.search.active, "should exit searching mode on esc")
@@ -399,9 +399,9 @@ func TestModel_CancelSearchPreservesExistingMatches(t *testing.T) {
 	model.search.matches = []int{0}
 
 	// start and cancel new search
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: '/', Text: string('/')})
 	model = result.(Model)
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	model = result.(Model)
 
 	assert.Equal(t, "hello", model.search.term, "existing search term should be preserved on cancel")
@@ -418,12 +418,12 @@ func TestModel_SearchInputForwardsCharacters(t *testing.T) {
 	model.layout.focus = paneDiff
 
 	// start search
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: '/', Text: string('/')})
 	model = result.(Model)
 
 	// type characters
 	for _, ch := range "test" {
-		result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{ch}})
+		result, _ = model.Update(tea.KeyPressMsg{Code: ch, Text: string(ch)})
 		model = result.(Model)
 	}
 
@@ -440,11 +440,11 @@ func TestModel_SearchBlocksOtherKeysWhileActive(t *testing.T) {
 	model.layout.focus = paneDiff
 
 	// start search
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: '/', Text: string('/')})
 	model = result.(Model)
 
 	// pressing q should not quit, it should type 'q'
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'q', Text: string('q')})
 	model = result.(Model)
 
 	assert.True(t, model.search.active, "should still be searching")
@@ -461,7 +461,7 @@ func TestModel_SearchForwardsNonKeyMessages(t *testing.T) {
 	model.layout.focus = paneDiff
 
 	// start search
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: '/', Text: string('/')})
 	model = result.(Model)
 	require.True(t, model.search.active)
 
@@ -490,13 +490,13 @@ func TestModel_NextSearchMatch(t *testing.T) {
 	model.nav.diffCursor = 0
 
 	// press n to go to next match
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'n', Text: string('n')})
 	model = result.(Model)
 	assert.Equal(t, 1, model.search.cursor, "search cursor should advance to 1")
 	assert.Equal(t, 2, model.nav.diffCursor, "diff cursor should move to second match")
 
 	// press n again
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'n', Text: string('n')})
 	model = result.(Model)
 	assert.Equal(t, 2, model.search.cursor, "search cursor should advance to 2")
 	assert.Equal(t, 3, model.nav.diffCursor, "diff cursor should move to third match")
@@ -519,7 +519,7 @@ func TestModel_NextSearchMatchWrapsAround(t *testing.T) {
 	model.nav.diffCursor = 2
 
 	// press n should wrap to first match
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'n', Text: string('n')})
 	model = result.(Model)
 	assert.Equal(t, 0, model.search.cursor, "search cursor should wrap to 0")
 	assert.Equal(t, 0, model.nav.diffCursor, "diff cursor should wrap to first match")
@@ -543,7 +543,7 @@ func TestModel_PrevSearchMatch(t *testing.T) {
 	model.nav.diffCursor = 3
 
 	// press N to go to prev match
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'N'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'N', Text: string('N')})
 	model = result.(Model)
 	assert.Equal(t, 1, model.search.cursor, "search cursor should go back to 1")
 	assert.Equal(t, 2, model.nav.diffCursor, "diff cursor should move to second match")
@@ -566,7 +566,7 @@ func TestModel_PrevSearchMatchWrapsAround(t *testing.T) {
 	model.nav.diffCursor = 0
 
 	// press N should wrap to last match
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'N'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'N', Text: string('N')})
 	model = result.(Model)
 	assert.Equal(t, 1, model.search.cursor, "search cursor should wrap to last")
 	assert.Equal(t, 2, model.nav.diffCursor, "diff cursor should wrap to last match")
@@ -634,7 +634,7 @@ func TestModel_NKeyFallsThroughToNextFileWhenNoSearch(t *testing.T) {
 
 	// no search active, n should advance to next file
 	assert.Empty(t, model.search.matches)
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'n', Text: string('n')})
 	model = result.(Model)
 	assert.Equal(t, "b.go", model.tree.SelectedFile(), "n should go to next file when no search active")
 }
@@ -655,7 +655,7 @@ func TestModel_ShiftNDoesPrevMatchWhenSearchActive(t *testing.T) {
 	model.nav.diffCursor = 1
 
 	// press N (shift-n)
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'N'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'N', Text: string('N')})
 	model = result.(Model)
 	assert.Equal(t, 0, model.search.cursor, "N should go to prev match")
 	assert.Equal(t, 0, model.nav.diffCursor, "cursor should be on first match")
@@ -672,7 +672,7 @@ func TestModel_ShiftNNavigatesPrevFileWithoutSearch(t *testing.T) {
 
 	// no search active, N (prev_item) should navigate to previous file
 	assert.Empty(t, m.search.matches)
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'N'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'N', Text: string('N')})
 	model := result.(Model)
 	assert.Equal(t, "a.go", model.tree.SelectedFile(), "N should navigate to previous file")
 }
@@ -922,34 +922,34 @@ func TestModel_SearchUsesCommandPane(t *testing.T) {
 			m.live.sender = &feedbackStub{harness: "amp", display: "Review search T-review"}
 			model, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 			m = model.(Model)
-			originalHeight := m.layout.viewport.Height
+			originalHeight := m.layout.viewport.Height()
 			if fromCommand {
 				m.startCommand()
 				m.command.input.SetValue("search")
-				model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+				model, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 			} else {
-				model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+				model, _ = m.Update(tea.KeyPressMsg{Text: "/"})
 			}
 			m = model.(Model)
 			require.True(t, m.search.active)
 			require.False(t, m.command.active)
-			require.Equal(t, originalHeight-4, m.layout.viewport.Height, "one palette, not two stacked panes")
+			require.Equal(t, originalHeight-4, m.layout.viewport.Height(), "one palette, not two stacked panes")
 			m.search.history = []string{"first", "needle"}
 			m.search.historyIdx = 2
-			model, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+			model, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 			m = model.(Model)
 			require.Equal(t, "needle", m.search.input.Value())
 			for _, width := range []int{30, 100} {
 				model, _ = m.Update(tea.WindowSizeMsg{Width: width, Height: 30})
 				m = model.(Model)
 				require.Equal(t, 6, m.search.input.Position())
-				require.Equal(t, width-5, m.search.input.Width)
+				require.Equal(t, width-5, m.search.input.Width())
 				require.Equal(t, 4, lipgloss.Height(m.commandPaneView()))
 				for _, row := range strings.Split(m.commandPaneView(), "\n") {
 					require.LessOrEqual(t, ansi.StringWidth(row), width)
 				}
 			}
-			view := ansi.Strip(m.View())
+			view := ansi.Strip(m.View().Content)
 			require.Equal(t, 30, lipgloss.Height(view))
 			require.Equal(t, 1, strings.Count(view, "/needle"))
 			require.Contains(t, view, "Search · Enter find")
@@ -959,26 +959,26 @@ func TestModel_SearchUsesCommandPane(t *testing.T) {
 				require.NotContains(t, view, "Repository:")
 				require.Contains(t, m.statusBarText(), "a.go")
 			}
-			model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			model, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 			m = model.(Model)
 			require.False(t, m.search.active)
 			require.False(t, m.search.input.Focused())
-			require.Equal(t, originalHeight, m.layout.viewport.Height)
+			require.Equal(t, originalHeight, m.layout.viewport.Height())
 			require.Equal(t, []int{1, 3}, m.search.matches)
 			require.Equal(t, 1, m.nav.diffCursor)
-			model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+			model, _ = m.Update(tea.KeyPressMsg{Text: "n"})
 			m = model.(Model)
 			require.Equal(t, 3, m.nav.diffCursor)
-			for _, cancel := range []tea.KeyType{tea.KeyEsc, tea.KeyCtrlC} {
+			for _, cancel := range []tea.KeyPressMsg{tea.KeyPressMsg{Code: tea.KeyEsc}, tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}} {
 				m.startSearch()
-				model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(":quit")})
+				model, _ = m.Update(tea.KeyPressMsg{Text: ":quit"})
 				m = model.(Model)
 				require.Equal(t, ":quit", m.search.input.Value(), "commands stay literal inside search")
-				model, _ = m.Update(tea.KeyMsg{Type: cancel})
+				model, _ = m.Update(cancel)
 				m = model.(Model)
 				require.False(t, m.search.active)
 				require.Equal(t, "needle", m.search.term, "cancel preserves the previous search")
-				require.Equal(t, originalHeight, m.layout.viewport.Height)
+				require.Equal(t, originalHeight, m.layout.viewport.Height())
 			}
 		}
 	}
@@ -1354,7 +1354,7 @@ func TestModel_SearchWithTOCActive(t *testing.T) {
 		model.layout.focus = paneDiff
 
 		// press '/' to start search
-		result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+		result, _ = model.Update(tea.KeyPressMsg{Code: '/', Text: string('/')})
 		model = result.(Model)
 		assert.True(t, model.search.active, "should enter search mode in diff pane with TOC")
 	})
@@ -1373,7 +1373,7 @@ func TestModel_SearchWithTOCActive(t *testing.T) {
 		model.layout.focus = paneTree // TOC pane
 
 		// press '/' in TOC pane - should not start search
-		result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+		result, _ = model.Update(tea.KeyPressMsg{Code: '/', Text: string('/')})
 		model = result.(Model)
 		assert.False(t, model.search.active, "search should not start from TOC pane")
 	})
@@ -1394,7 +1394,7 @@ func TestModel_SearchWithTOCActive(t *testing.T) {
 		model.search.cursor = 0
 
 		// navigate to search match via 'n' key
-		result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+		result, _ = model.Update(tea.KeyPressMsg{Code: 'n', Text: string('n')})
 		model = result.(Model)
 		// active section should reflect the cursor position after search nav (Section entry at lineIdx=2)
 		assert.Equal(t, 2, tocActiveLineIdx(t, model.file.mdTOC), "TOC should track active section after search jump (lineIdx=2)")
@@ -1610,27 +1610,27 @@ func TestModel_SearchHistory_UpDownInteractive(t *testing.T) {
 	model = submitQueryThroughInput(model, "beta")
 
 	// re-enter search prompt via '/'.
-	result, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	result, _ := model.Update(tea.KeyPressMsg{Code: '/', Text: string('/')})
 	model = result.(Model)
 	require.True(t, model.search.active)
 
 	// Up: most recent = "beta".
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyUp})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 	model = result.(Model)
 	assert.Equal(t, "beta", model.search.input.Value(), "KeyUp should recall most recent")
 
 	// Up: "alpha".
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyUp})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 	model = result.(Model)
 	assert.Equal(t, "alpha", model.search.input.Value())
 
 	// Down: back to "beta".
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	model = result.(Model)
 	assert.Equal(t, "beta", model.search.input.Value())
 
 	// Down: draft slot, input cleared.
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	model = result.(Model)
 	assert.Empty(t, model.search.input.Value(), "second KeyDown should clear input at draft slot")
 }
@@ -1642,28 +1642,28 @@ func TestModel_SearchHistory_CtrlPCtrlNParity(t *testing.T) {
 	model = submitQueryThroughInput(model, "alpha")
 	model = submitQueryThroughInput(model, "beta")
 
-	result, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	result, _ := model.Update(tea.KeyPressMsg{Code: '/', Text: string('/')})
 	model = result.(Model)
 
 	// Ctrl+P = Up.
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlP})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'p', Mod: tea.ModCtrl})
 	model = result.(Model)
 	assert.Equal(t, "beta", model.search.input.Value())
 	assert.True(t, model.search.active)
 	assert.False(t, model.overlay.Active(), "Ctrl+P in search must recall history, not open the file picker")
 
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlP})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'p', Mod: tea.ModCtrl})
 	model = result.(Model)
 	assert.Equal(t, "alpha", model.search.input.Value())
 	assert.True(t, model.search.active)
 	assert.False(t, model.overlay.Active())
 
 	// Ctrl+N = Down.
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlN})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl})
 	model = result.(Model)
 	assert.Equal(t, "beta", model.search.input.Value())
 
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlN})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl})
 	model = result.(Model)
 	assert.Empty(t, model.search.input.Value(), "Ctrl+N past newest should clear input")
 }
@@ -1673,10 +1673,10 @@ func TestModel_SearchHistory_CtrlPCtrlNParity(t *testing.T) {
 func TestModel_SearchPrompt_SwallowsJumpFileKey(t *testing.T) {
 	model := newSearchHistoryModel(t)
 
-	result, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	result, _ := model.Update(tea.KeyPressMsg{Code: '/', Text: string('/')})
 	model = result.(Model)
 
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'P'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'P', Text: string('P')})
 	model = result.(Model)
 
 	assert.Equal(t, "P", model.search.input.Value(), "P must type into the search prompt")
@@ -1692,21 +1692,21 @@ func TestModel_SearchHistory_RecallThenEscThenStartFresh(t *testing.T) {
 	model = submitQueryThroughInput(model, "beta")
 
 	// '/' to enter search.
-	result, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	result, _ := model.Update(tea.KeyPressMsg{Code: '/', Text: string('/')})
 	model = result.(Model)
 
 	// Up: recalled value appears.
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyUp})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 	model = result.(Model)
 	require.Equal(t, "beta", model.search.input.Value())
 
 	// Esc: cancel without submitting.
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	model = result.(Model)
 	require.False(t, model.search.active)
 
 	// '/' again: input must be empty at draft slot, history unchanged.
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: '/', Text: string('/')})
 	model = result.(Model)
 	assert.True(t, model.search.active)
 	assert.Empty(t, model.search.input.Value(), "after recall+Esc+/, input must be empty (draft slot)")
@@ -1724,14 +1724,14 @@ func TestModel_SearchHistory_RecalledThenSubmittedAppendsAgain(t *testing.T) {
 	require.Equal(t, []string{"alpha", "beta"}, model.search.history)
 
 	// re-enter search, recall "alpha" (older), submit.
-	result, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	result, _ := model.Update(tea.KeyPressMsg{Code: '/', Text: string('/')})
 	model = result.(Model)
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyUp}) // beta
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyUp}) // beta
 	model = result.(Model)
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyUp}) // alpha
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyUp}) // alpha
 	model = result.(Model)
 	require.Equal(t, "alpha", model.search.input.Value())
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model = result.(Model)
 
 	assert.Equal(t, []string{"alpha", "beta", "alpha"}, model.search.history, "resubmitted older entry moves to most recent")
@@ -1761,7 +1761,7 @@ func treeSearchModel(t *testing.T) Model {
 
 func treeSearchKey(t *testing.T, m Model, key string) Model {
 	t.Helper()
-	model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+	model, cmd := m.Update(tea.KeyPressMsg{Text: key})
 	m = model.(Model)
 	if cmd != nil {
 		msg := cmd()
@@ -1879,7 +1879,7 @@ func TestModel_TreeSearchDiscardsSupersededResults(t *testing.T) {
 			msg := cmd()
 			switch change {
 			case "clear":
-				model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+				model, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 				m = model.(Model)
 			case "new query":
 				m.startSearch()

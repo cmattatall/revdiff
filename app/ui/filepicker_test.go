@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -34,15 +34,15 @@ func TestModel_JumpFileOpensPickerAndLoadsSelection(t *testing.T) {
 	pendingHunk := true
 	m.nav.pendingHunkJump = &pendingHunk
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'P'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'P', Text: string('P')})
 	require.Nil(t, cmd)
 	m = result.(Model)
 	assert.True(t, m.overlay.Active())
 	assert.Equal(t, overlay.KindFilePicker, m.overlay.Kind())
 
-	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	result, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	m = result.(Model)
-	result, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = result.(Model)
 
 	assert.False(t, m.overlay.Active())
@@ -61,10 +61,10 @@ func TestModel_JumpFilePrintableNavigationRunesFilter(t *testing.T) {
 	m.openFilePicker()
 
 	for _, r := range "jk" {
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
 		m = result.(Model)
 	}
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = result.(Model)
 
 	assert.Equal(t, "src/jk/file.go", m.tree.SelectedFile(),
@@ -74,25 +74,25 @@ func TestModel_JumpFilePrintableNavigationRunesFilter(t *testing.T) {
 
 func TestModel_JumpFileTerminalEditingKeys(t *testing.T) {
 	for _, tt := range []struct {
-		key  tea.KeyMsg
+		key  tea.KeyPressMsg
 		want string
 	}{
-		{tea.KeyMsg{Type: tea.KeyCtrlW}, "target file.go"},
-		{tea.KeyMsg{Type: tea.KeyBackspace, Alt: true}, "target file.go"},
-		{tea.KeyMsg{Type: tea.KeyCtrlU}, "a.go"},
+		{tea.KeyPressMsg{Code: 'w', Mod: tea.ModCtrl}, "target file.go"},
+		{tea.KeyPressMsg{Code: tea.KeyBackspace, Mod: tea.ModAlt}, "target file.go"},
+		{tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl}, "a.go"},
 	} {
 		t.Run(tt.key.String(), func(t *testing.T) {
 			m := filePickerModel([]string{"a.go", "target file.go"})
 			m.keymap.Bind("ctrl+w>x", keymap.ActionQuit)
 			m.keymap.Bind("alt+backspace", keymap.ActionJumpFile)
 			m.openFilePicker()
-			result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("target nonsense")})
+			result, _ := m.Update(tea.KeyPressMsg{Text: "target nonsense"})
 			result, cmd := result.(Model).Update(tt.key)
 			m = result.(Model)
 			assert.Nil(t, cmd)
 			require.True(t, m.overlay.Active())
 			assert.Empty(t, m.keys.chordPending, "editing must not start a configured chord")
-			result, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			result, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 			m = result.(Model)
 			assert.False(t, m.overlay.Active())
 			assert.Equal(t, tt.want, m.tree.SelectedFile())
@@ -108,7 +108,7 @@ func TestModel_JumpFileCurrentSelectionFocusesDiffWithoutReload(t *testing.T) {
 	m.nav.pendingHunkJump = &pendingHunk
 	m.openFilePicker()
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = result.(Model)
 
 	assert.Nil(t, cmd, "choosing the loaded file should not reload it")
@@ -124,16 +124,16 @@ func TestModel_JumpFileRejectsLateLoadAfterReturningToDisplayedFile(t *testing.T
 	m.file.lines = originalLines
 	m.openFilePicker()
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	m = result.(Model)
-	result, lateLoad := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, lateLoad := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = result.(Model)
 	require.NotNil(t, lateLoad)
 	assert.Equal(t, "b.go", m.tree.SelectedFile())
 	assert.Equal(t, "a.go", m.file.name, "B has not loaded yet")
 
 	m.openFilePicker()
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = result.(Model)
 	assert.Nil(t, cmd, "returning to displayed A should not reload it")
 	assert.Equal(t, "a.go", m.tree.SelectedFile())
@@ -151,9 +151,9 @@ func TestModel_JumpFilePreservesSidebarFilters(t *testing.T) {
 		require.True(t, m.tree.FilterActive())
 		m.openFilePicker()
 
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
-		result, _ = result.(Model).Update(tea.KeyMsg{Type: tea.KeyDown})
-		result, _ = result.(Model).Update(tea.KeyMsg{Type: tea.KeyEnter})
+		result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+		result, _ = result.(Model).Update(tea.KeyPressMsg{Code: tea.KeyDown})
+		result, _ = result.(Model).Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 		m = result.(Model)
 
 		assert.True(t, m.tree.FilterActive())
@@ -168,9 +168,9 @@ func TestModel_JumpFilePreservesSidebarFilters(t *testing.T) {
 		require.True(t, m.tree.UnreviewedFilterActive())
 		m.openFilePicker()
 
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
-		result, _ = result.(Model).Update(tea.KeyMsg{Type: tea.KeyDown})
-		result, _ = result.(Model).Update(tea.KeyMsg{Type: tea.KeyEnter})
+		result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+		result, _ = result.(Model).Update(tea.KeyPressMsg{Code: tea.KeyDown})
+		result, _ = result.(Model).Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 		m = result.(Model)
 
 		assert.True(t, m.tree.UnreviewedFilterActive())
@@ -188,10 +188,10 @@ func TestModel_JumpFileRevealsDistantPathInTree(t *testing.T) {
 	m.openFilePicker()
 
 	for _, r := range "59" {
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
 		m = result.(Model)
 	}
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = result.(Model)
 
 	assert.Equal(t, "dir/file-59.go", m.tree.SelectedFile())
@@ -207,12 +207,12 @@ func TestModel_JumpFileKeyFiltersInsideOpenPicker(t *testing.T) {
 	m.openFilePicker()
 	require.True(t, m.overlay.Active())
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'P'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'P', Text: string('P')})
 	m = result.(Model)
 	assert.Nil(t, cmd)
 	require.True(t, m.overlay.Active(), "printable jump_file key must filter, not close")
 
-	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = result.(Model)
 	assert.False(t, m.overlay.Active())
 	assert.Equal(t, "Parser.go", m.tree.SelectedFile(), "filter 'P' should narrow to the matching path")
@@ -227,7 +227,7 @@ func TestModel_JumpFileModifiedChordTogglesClosesPicker(t *testing.T) {
 	m.openFilePicker()
 	require.True(t, m.overlay.Active())
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}, Alt: true})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'f', Mod: tea.ModAlt})
 	m = result.(Model)
 	assert.Nil(t, cmd)
 	assert.False(t, m.overlay.Active())
@@ -241,7 +241,7 @@ func TestModel_JumpFileMouseSelectionLoadsFile(t *testing.T) {
 	_ = mgr.Compose(base, overlay.RenderCtx{Width: m.layout.width, Height: m.layout.height, Resolver: m.resolver})
 
 	// The 80-column, 8-row popup starts at (20,16). Local row 5 is b.go.
-	result, cmd := m.Update(tea.MouseMsg{X: 22, Y: 21, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	result, cmd := m.Update(tea.MouseClickMsg{X: 22, Y: 21, Button: tea.MouseLeft})
 	m = result.(Model)
 
 	assert.False(t, m.overlay.Active())
@@ -255,7 +255,7 @@ type asyncPicker struct {
 	received tea.Msg
 }
 
-func (p *asyncPicker) HandleKey(tea.KeyMsg, keymap.Action) overlay.Outcome {
+func (p *asyncPicker) HandleKey(tea.KeyPressMsg, keymap.Action) overlay.Outcome {
 	return overlay.Outcome{Cmd: func() tea.Msg { return "clipboard result" }}
 }
 
@@ -269,7 +269,7 @@ func TestModel_PickerForwardsAsyncInput(t *testing.T) {
 	m.openFilePicker()
 	picker := &asyncPicker{Manager: m.overlay.(*overlay.Manager)}
 	m.overlay = picker
-	model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlV})
+	model, cmd := m.Update(tea.KeyPressMsg{Code: 'v', Mod: tea.ModCtrl})
 	require.NotNil(t, cmd, "picker input commands must reach the Bubble Tea runtime")
 	m = model.(Model)
 	m.Update(cmd())

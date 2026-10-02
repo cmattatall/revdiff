@@ -6,10 +6,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/cursor"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/umputun/revdiff/app/annotation"
 	"github.com/umputun/revdiff/app/diff"
@@ -60,20 +59,22 @@ func (m *Model) newAnnotationInput(placeholder string, prefixWidth int) (textinp
 	// inside renderDiff, so a blink could only become visible by re-rendering every diff line
 	// (~7us per line) twice a second for a session that is otherwise idle. a static cursor is
 	// what the user already sees between blinks on a large diff.
-	ti.Cursor.SetMode(cursor.CursorStatic)
-	cmd := ti.Focus()
+	styles := ti.Styles()
+	styles.Cursor.Blink = false
 	ti.CharLimit = annotCharLimit
-	ti.Width = max(10, m.diffContentWidth()-prefixWidth)
+	ti.SetWidth(max(10, m.diffContentWidth()-prefixWidth))
 
 	// set DiffBg on all textinput sub-styles so View() output inherits the pane background.
 	// wrapping View() externally doesn't work because lipgloss Render emits \033[0m resets.
 	inputStyle := m.resolver.Style(style.StyleKeyAnnotInputText)
-	ti.PromptStyle = inputStyle
-	ti.TextStyle = inputStyle
+	styles.Focused.Prompt = inputStyle
+	styles.Focused.Text = inputStyle
 	cursorStyle := m.resolver.Style(style.StyleKeyAnnotInputCursor)
-	ti.Cursor.TextStyle = cursorStyle
-	ti.Cursor.Style = cursorStyle
-	ti.PlaceholderStyle = m.resolver.Style(style.StyleKeyAnnotInputPlaceholder)
+	styles.Cursor.Color = cursorStyle.GetForeground()
+	styles.Focused.Placeholder = m.resolver.Style(style.StyleKeyAnnotInputPlaceholder)
+	styles.Blurred = styles.Focused
+	ti.SetStyles(styles)
+	cmd := ti.Focus()
 
 	return ti, cmd
 }
@@ -169,7 +170,7 @@ func (m *Model) startHunkAnnotation() tea.Cmd {
 // the cursor line visible is not always sufficient when cursor is on the last
 // visible row.
 func (m *Model) ensureLineAnnotationInputVisible() {
-	if !m.annot.annotating || m.annot.fileAnnotating || m.layout.viewport.Height <= 0 {
+	if !m.annot.annotating || m.annot.fileAnnotating || m.layout.viewport.Height() <= 0 {
 		return
 	}
 	if m.nav.diffCursor < 0 || m.nav.diffCursor >= len(m.file.lines) {
@@ -178,10 +179,10 @@ func (m *Model) ensureLineAnnotationInputVisible() {
 
 	inputY := m.cursorViewportY() + m.wrappedLineCount(m.nav.diffCursor)
 	switch {
-	case inputY < m.layout.viewport.YOffset:
+	case inputY < m.layout.viewport.YOffset():
 		m.layout.viewport.SetYOffset(inputY)
-	case inputY >= m.layout.viewport.YOffset+m.layout.viewport.Height:
-		m.layout.viewport.SetYOffset(inputY - m.layout.viewport.Height + 1)
+	case inputY >= m.layout.viewport.YOffset()+m.layout.viewport.Height():
+		m.layout.viewport.SetYOffset(inputY - m.layout.viewport.Height() + 1)
 	}
 }
 
@@ -402,12 +403,12 @@ func (m Model) multiLinePlaceholder() string {
 }
 
 // handleAnnotateKey handles key messages during annotation input mode.
-func (m Model) handleAnnotateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.Type {
-	case tea.KeyEnter:
+func (m Model) handleAnnotateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "enter":
 		m.saveAnnotation()
 		return m, nil
-	case tea.KeyEsc:
+	case "esc":
 		m.cancelAnnotation()
 		return m, nil
 	default:

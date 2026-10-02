@@ -336,7 +336,7 @@ func TestRun_RedirectedStdoutUsesTTY(t *testing.T) {
 	require.NoError(t, os.WriteFile(keysPath, []byte("map q quit\n"), 0o600))
 	capturePath := filepath.Join(t.TempDir(), "stdout.txt")
 	wrapperPath := filepath.Join(t.TempDir(), "run-revdiff.sh")
-	wrapper := "#!/bin/sh\n\"$REVDIFF_TEST_BINARY\" -test.run '^TestRun_RedirectedStdoutUsesTTY$' | cat > \"$REVDIFF_TEST_CAPTURE\"\n"
+	wrapper := "#!/bin/sh\nstty rows 24 cols 100\n\"$REVDIFF_TEST_BINARY\" -test.run '^TestRun_RedirectedStdoutUsesTTY$' | cat > \"$REVDIFF_TEST_CAPTURE\"\n"
 	require.NoError(t, os.WriteFile(wrapperPath, []byte(wrapper), 0o600))
 	require.NoError(t, os.Chmod(wrapperPath, 0o700)) //nolint:gosec // executable test fixture
 	transcriptPath := filepath.Join(t.TempDir(), "terminal.fifo")

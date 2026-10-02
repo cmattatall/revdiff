@@ -53,8 +53,8 @@ type scrollbarSpec struct {
 func (m Model) applyScrollbar(rendered string) string {
 	return m.applyPaneScrollbar(rendered, scrollbarSpec{
 		total:            m.layout.viewport.TotalLineCount(),
-		height:           m.layout.viewport.Height,
-		offset:           m.layout.viewport.YOffset,
+		height:           m.layout.viewport.Height(),
+		offset:           m.layout.viewport.YOffset(),
 		firstViewportRow: diffScrollbarFirstViewportRow,
 	})
 }

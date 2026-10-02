@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/umputun/revdiff/app/diff"
@@ -213,6 +213,8 @@ func (m Model) paletteCommand(action keymap.Action) string {
 		return "w"
 	case keymap.ActionOpenFileInEditor:
 		return "edit"
+	case keymap.ActionInspectSymbol:
+		return "lsp symbol inspect"
 	case keymap.ActionFocusDiff:
 		return "focus diff"
 	case keymap.ActionFocusTree:
@@ -255,12 +257,12 @@ func (m Model) commandEntries() []paletteCommand {
 		tuiCommand{commandEntry: commandEntry{name: "annotate hunk", description: "annotate the change hunk under the diff cursor", section: "Annotations"}, scope: commandScopeHunk, run: (*Model).annotateScope},
 		tuiCommand{commandEntry: commandEntry{name: "blame view", description: "inspect the current line's commit and associated GitHub PR", aliases: []string{"bv"}, section: "View"},
 			run: func(m *Model, _ commandScope) (tea.Model, tea.Cmd) { return m.openBlameView() }},
-		tuiCommand{commandEntry: commandEntry{name: "inspect hover", description: "show a symbol's type and documentation", section: "Inspection"},
-			run: func(m *Model, _ commandScope) (tea.Model, tea.Cmd) { return m.openInspection(InspectHover) }},
-		tuiCommand{commandEntry: commandEntry{name: "inspect definition", description: "preview a symbol's definition", section: "Inspection"},
+		tuiCommand{commandEntry: commandEntry{name: "lsp symbol definition", description: "preview a symbol's definition", section: "Inspection"},
 			run: func(m *Model, _ commandScope) (tea.Model, tea.Cmd) { return m.openInspection(InspectDefinition) }},
-		tuiCommand{commandEntry: commandEntry{name: "inspect references", description: "find and preview a symbol's references", section: "Inspection"},
+		tuiCommand{commandEntry: commandEntry{name: "lsp symbol references", description: "find and preview a symbol's references", section: "Inspection"},
 			run: func(m *Model, _ commandScope) (tea.Model, tea.Cmd) { return m.openInspection(InspectReferences) }},
+		tuiCommand{commandEntry: commandEntry{name: "lsp symbol list", description: "fuzzy-search symbols in the active file", section: "Inspection"},
+			run: func(m *Model, _ commandScope) (tea.Model, tea.Cmd) { return m.openInspection(InspectSymbols) }},
 		tuiCommand{commandEntry: commandEntry{name: "lsp list", description: "list language servers and PATH availability", section: "Inspection"},
 			run: func(m *Model, _ commandScope) (tea.Model, tea.Cmd) { return m.listLanguageServers() }},
 		shellCommand{commandEntry: commandEntry{name: "git", description: "run git through the shell", section: "Miscellaneous"}, prefix: "git"},
@@ -346,50 +348,50 @@ func (m *Model) startCommand() tea.Cmd {
 	ti.Prompt = ":"
 	ti.Placeholder = "action or line number"
 	ti.CharLimit = 128
-	ti.Width = max(1, m.layout.width-5) // borders, padding, and ':'
+	ti.SetWidth(max(1, m.layout.width-5)) // borders, padding, and ':'
 	cmd := ti.Focus()
 	m.command = commandState{active: true, input: ti, history: m.command.history,
 		lastShell: m.command.lastShell}
 	// The command pane remains independent of --no-status-bar.
-	m.layout.viewport.Height = m.paneHeight() - 1
+	m.layout.viewport.SetHeight(m.paneHeight() - 1)
 	return cmd
 }
 
 func (m *Model) closeCommand() {
 	m.command.active = false
 	m.command.input.Blur()
-	m.layout.viewport.Height = m.paneHeight() - 1
+	m.layout.viewport.SetHeight(m.paneHeight() - 1)
 }
 
-func (m Model) handleCommandKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleCommandKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.command.historySearch {
 		return m.handleCommandHistoryKey(msg)
 	}
-	switch msg.Type {
-	case tea.KeyCtrlR:
+	switch msg.String() {
+	case "ctrl+r":
 		m.command.historySearch = true
 		m.command.searchDraft = m.command.input.Value()
 		m.command.selected = 0
 		m.command.err = ""
-		m.layout.viewport.Height = m.paneHeight() - 1
+		m.layout.viewport.SetHeight(m.paneHeight() - 1)
 		return m, nil
-	case tea.KeyEsc, tea.KeyCtrlC:
+	case "esc", "ctrl+c":
 		m.closeCommand()
 		return m, nil
-	case tea.KeyEnter:
+	case "enter":
 		return m.submitCommand()
-	case tea.KeyUp, tea.KeyDown, tea.KeyTab:
+	case "up", "down", "tab":
 		matches := m.commandMatches()
 		if len(matches) == 0 {
 			return m, nil
 		}
 		m.command.err = ""
-		switch msg.Type {
-		case tea.KeyUp:
+		switch msg.String() {
+		case "up":
 			m.command.selected = (m.command.selected + len(matches) - 1) % len(matches)
-		case tea.KeyDown:
+		case "down":
 			m.command.selected = (m.command.selected + 1) % len(matches)
-		case tea.KeyTab:
+		case "tab":
 			m.command.input.SetValue(matches[m.command.selected].name)
 			m.command.input.CursorEnd()
 			m.command.selected = 0
@@ -583,7 +585,10 @@ func (m Model) commandPaneView() string {
 	if m.search.active {
 		input = m.search.input
 	}
-	input.PlaceholderStyle = m.resolver.Style(style.StyleKeyAnnotInputPlaceholder)
+	styles := input.Styles()
+	styles.Focused.Placeholder = m.resolver.Style(style.StyleKeyAnnotInputPlaceholder)
+	styles.Focused.Suggestion = styles.Focused.Placeholder
+	input.SetStyles(styles)
 	if m.search.active {
 		scope := "Search"
 		if m.layout.focus == paneTree && m.file.mdTOC == nil {
@@ -594,13 +599,12 @@ func (m Model) commandPaneView() string {
 	if m.command.historySearch {
 		return m.commandHistoryView()
 	}
-	input.CompletionStyle = input.PlaceholderStyle
 	help := ""
 	if matches := m.commandMatches(); len(matches) > 0 {
 		entry := matches[m.command.selected]
 		// Suggestions are render-only. Tab accepts the same selected action;
 		// moving within the input or scrolling it hides the ghost suffix.
-		input.ShowSuggestions = input.Position() == len([]rune(input.Value())) && ansi.StringWidth(input.Value()) < input.Width
+		input.ShowSuggestions = input.Position() == len([]rune(input.Value())) && ansi.StringWidth(input.Value()) < input.Width()
 		input.SetSuggestions([]string{entry.name})
 		help = fmt.Sprintf("%s (%d/%d) · %s",
 			entry.name, m.command.selected+1, len(matches), entry.description)
@@ -624,5 +628,5 @@ func (m Model) inputPaneView(input, help string) string {
 	inputView := ansi.Truncate(input, width, "")
 	help = ansi.Truncate(help, width, "…")
 	return m.resolver.Style(style.StyleKeyDiffPaneActive).
-		Padding(0, 1).Width(max(0, m.layout.width-2)).Render(inputView + "\n" + help)
+		Padding(0, 1).Width(m.layout.width).Render(inputView + "\n" + help)
 }

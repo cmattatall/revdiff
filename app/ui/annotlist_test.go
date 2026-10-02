@@ -3,7 +3,7 @@ package ui
 import (
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -72,7 +72,7 @@ func TestModel_AnnotListOpenClose(t *testing.T) {
 		m := testModel([]string{"a.go"}, nil)
 		m.store.Add(annotation.Annotation{File: "a.go", Line: 5, Type: "+", Comment: "note"})
 
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'@'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: '@', Text: string('@')})
 		model := result.(Model)
 		assert.True(t, model.overlay.Active())
 		assert.Equal(t, overlay.KindAnnotList, model.overlay.Kind())
@@ -82,7 +82,7 @@ func TestModel_AnnotListOpenClose(t *testing.T) {
 		m := testModel([]string{"a.go"}, nil)
 		m.overlay.OpenAnnotList(m.buildAnnotListSpec())
 
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'@'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: '@', Text: string('@')})
 		model := result.(Model)
 		assert.False(t, model.overlay.Active())
 	})
@@ -91,7 +91,7 @@ func TestModel_AnnotListOpenClose(t *testing.T) {
 		m := testModel([]string{"a.go"}, nil)
 		m.overlay.OpenAnnotList(m.buildAnnotListSpec())
 
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+		result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 		model := result.(Model)
 		assert.False(t, model.overlay.Active())
 	})
@@ -240,14 +240,14 @@ func TestModel_JumpToAnnotation_StalePendingGuard(t *testing.T) {
 	t.Run("n key clears pending jump", func(t *testing.T) {
 		m.pendingAnnotJump = &annotation.Annotation{File: "b.go", Line: 1, Type: "+"}
 		m.layout.focus = paneDiff
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'n', Text: string('n')})
 		model := result.(Model)
 		assert.Nil(t, model.pendingAnnotJump)
 	})
 
 	t.Run("p key clears pending jump", func(t *testing.T) {
 		m.pendingAnnotJump = &annotation.Annotation{File: "b.go", Line: 1, Type: "+"}
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'p', Text: string('p')})
 		model := result.(Model)
 		assert.Nil(t, model.pendingAnnotJump)
 	})
@@ -268,14 +268,14 @@ func TestModel_PendingAnnotJump_ClearedByTreeNav(t *testing.T) {
 
 	t.Run("tree j clears pending jump", func(t *testing.T) {
 		m.pendingAnnotJump = &annotation.Annotation{File: "b.go", Line: 1, Type: "+"}
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'j', Text: string('j')})
 		model := result.(Model)
 		assert.Nil(t, model.pendingAnnotJump)
 	})
 
 	t.Run("tree k clears pending jump", func(t *testing.T) {
 		m.pendingAnnotJump = &annotation.Annotation{File: "b.go", Line: 1, Type: "+"}
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'k', Text: string('k')})
 		model := result.(Model)
 		assert.Nil(t, model.pendingAnnotJump)
 	})
@@ -297,7 +297,7 @@ func TestModel_PendingAnnotJump_ClearedByFilterToggle(t *testing.T) {
 	m.store.Add(annotation.Annotation{File: "a.go", Line: 1, Type: "+", Comment: "note"})
 	m.pendingAnnotJump = &annotation.Annotation{File: "b.go", Line: 1, Type: "+"}
 	m.layout.focus = paneDiff
-	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	result, _ = m.Update(tea.KeyPressMsg{Code: 'f', Text: string('f')})
 	model := result.(Model)
 	assert.Nil(t, model.pendingAnnotJump)
 }

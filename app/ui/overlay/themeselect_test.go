@@ -4,7 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -67,7 +68,7 @@ func TestThemeSelectOverlay_RenderFilterPlaceholder(t *testing.T) {
 	mgr := NewManager()
 	mgr.OpenThemeSelect(themeSpec())
 	result := mgr.themeSel.render(themeRenderCtx(), mgr)
-	assert.Contains(t, result, "type to filter...")
+	assert.Contains(t, ansi.Strip(result), "type to filter...")
 }
 
 func TestThemeSelectOverlay_RenderFilterInput(t *testing.T) {
@@ -148,7 +149,7 @@ func TestThemeSelectOverlay_HandleKey_NavigateDown(t *testing.T) {
 	mgr.OpenThemeSelect(themeSpec())
 	assert.Equal(t, 0, mgr.themeSel.cursor)
 
-	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyDown}, "")
+	out := mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyDown}, "")
 	assert.Equal(t, OutcomeThemePreview, out.Kind)
 	require.NotNil(t, out.ThemeChoice)
 	assert.Equal(t, "catppuccin-mocha", out.ThemeChoice.Name)
@@ -162,7 +163,7 @@ func TestThemeSelectOverlay_HandleKey_NavigateUp(t *testing.T) {
 	mgr.themeSel.cursor = 2
 	mgr.themeSel.lastPreviewedName = "dracula"
 
-	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyUp}, "")
+	out := mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyUp}, "")
 	assert.Equal(t, OutcomeThemePreview, out.Kind)
 	require.NotNil(t, out.ThemeChoice)
 	assert.Equal(t, "catppuccin-mocha", out.ThemeChoice.Name)
@@ -174,7 +175,7 @@ func TestThemeSelectOverlay_HandleKey_DownBounds(t *testing.T) {
 	mgr.OpenThemeSelect(themeSpec())
 	mgr.themeSel.cursor = len(themeItems()) - 1
 
-	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyDown}, "")
+	out := mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyDown}, "")
 	assert.Equal(t, OutcomeNone, out.Kind)
 	assert.Equal(t, len(themeItems())-1, mgr.themeSel.cursor)
 }
@@ -183,7 +184,7 @@ func TestThemeSelectOverlay_HandleKey_UpBounds(t *testing.T) {
 	mgr := NewManager()
 	mgr.OpenThemeSelect(themeSpec())
 
-	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyUp}, "")
+	out := mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyUp}, "")
 	assert.Equal(t, OutcomeNone, out.Kind)
 	assert.Equal(t, 0, mgr.themeSel.cursor)
 }
@@ -193,7 +194,7 @@ func TestThemeSelectOverlay_HandleKey_EnterConfirm(t *testing.T) {
 	mgr.OpenThemeSelect(themeSpec())
 	mgr.themeSel.cursor = 2
 
-	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyEnter}, "")
+	out := mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyEnter}, "")
 	assert.Equal(t, OutcomeThemeConfirmed, out.Kind)
 	require.NotNil(t, out.ThemeChoice)
 	assert.Equal(t, "dracula", out.ThemeChoice.Name)
@@ -206,7 +207,7 @@ func TestThemeSelectOverlay_HandleKey_EnterEmptyList(t *testing.T) {
 	mgr.themeSel.filter.SetValue("nonexistent")
 	mgr.themeSel.applyFilter()
 
-	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyEnter}, "")
+	out := mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyEnter}, "")
 	assert.Equal(t, OutcomeThemeCanceled, out.Kind)
 	assert.False(t, mgr.Active())
 }
@@ -215,7 +216,7 @@ func TestThemeSelectOverlay_HandleKey_EscCancelNoFilter(t *testing.T) {
 	mgr := NewManager()
 	mgr.OpenThemeSelect(themeSpec())
 
-	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyEsc}, "")
+	out := mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyEsc}, "")
 	assert.Equal(t, OutcomeThemeCanceled, out.Kind)
 	assert.False(t, mgr.Active())
 }
@@ -227,7 +228,7 @@ func TestThemeSelectOverlay_HandleKey_EscClearsFilterFirst(t *testing.T) {
 	mgr.themeSel.applyFilter()
 	mgr.themeSel.lastPreviewedName = ""
 
-	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyEsc}, "")
+	out := mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyEsc}, "")
 	assert.NotEqual(t, OutcomeThemeCanceled, out.Kind, "first esc should clear filter, not cancel")
 	assert.True(t, mgr.Active(), "overlay should stay open after clearing filter")
 	assert.Empty(t, mgr.themeSel.filter.Value())
@@ -241,12 +242,12 @@ func TestThemeSelectOverlay_HandleKey_EscTwoPress(t *testing.T) {
 	mgr.themeSel.applyFilter()
 
 	// first esc clears filter
-	mgr.HandleKey(tea.KeyMsg{Type: tea.KeyEsc}, "")
+	mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyEsc}, "")
 	assert.True(t, mgr.Active())
 	assert.Empty(t, mgr.themeSel.filter.Value())
 
 	// second esc cancels
-	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyEsc}, "")
+	out := mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyEsc}, "")
 	assert.Equal(t, OutcomeThemeCanceled, out.Kind)
 	assert.False(t, mgr.Active())
 }
@@ -255,7 +256,7 @@ func TestThemeSelectOverlay_HandleKey_FilterInput(t *testing.T) {
 	mgr := NewManager()
 	mgr.OpenThemeSelect(themeSpec())
 
-	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}}, "")
+	out := mgr.HandleKey(tea.KeyPressMsg{Code: 'd', Text: string('d')}, "")
 	assert.True(t, mgr.Active())
 	assert.Equal(t, "d", mgr.themeSel.filter.Value())
 	assert.Len(t, mgr.themeSel.entries, 2) // dracula + revdiff (contains 'd')
@@ -270,7 +271,7 @@ func TestThemeSelectOverlay_HandleKey_Backspace(t *testing.T) {
 	mgr.themeSel.applyFilter()
 	mgr.themeSel.lastPreviewedName = ""
 
-	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyBackspace}, "")
+	out := mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyBackspace}, "")
 	assert.Equal(t, "dr", mgr.themeSel.filter.Value())
 	assert.Equal(t, OutcomeThemePreview, out.Kind)
 }
@@ -279,7 +280,7 @@ func TestThemeSelectOverlay_HandleKey_BackspaceEmpty(t *testing.T) {
 	mgr := NewManager()
 	mgr.OpenThemeSelect(themeSpec())
 
-	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyBackspace}, "")
+	out := mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyBackspace}, "")
 	assert.Equal(t, OutcomeNone, out.Kind)
 	assert.Empty(t, mgr.themeSel.filter.Value())
 }
@@ -288,7 +289,7 @@ func TestThemeSelectOverlay_HandleKey_ActionThemeSelectCancels(t *testing.T) {
 	mgr := NewManager()
 	mgr.OpenThemeSelect(themeSpec())
 
-	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'T'}}, keymap.ActionThemeSelect)
+	out := mgr.HandleKey(tea.KeyPressMsg{Code: 'T', Text: string('T')}, keymap.ActionThemeSelect)
 	assert.Equal(t, OutcomeThemeCanceled, out.Kind)
 	assert.False(t, mgr.Active())
 }
@@ -300,7 +301,7 @@ func TestThemeSelectOverlay_HandleMouse_WheelMovesCursor(t *testing.T) {
 		_ = mgr.themeSel.render(themeRenderCtx(), mgr) // ensure height is set for maxVisible
 		require.Equal(t, 0, mgr.themeSel.cursor)
 
-		out := mgr.HandleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
+		out := mgr.HandleMouse(tea.MouseWheelMsg{Button: tea.MouseWheelDown})
 		assert.Equal(t, OutcomeThemePreview, out.Kind)
 		require.NotNil(t, out.ThemeChoice)
 		assert.Equal(t, "catppuccin-mocha", out.ThemeChoice.Name)
@@ -315,7 +316,7 @@ func TestThemeSelectOverlay_HandleMouse_WheelMovesCursor(t *testing.T) {
 		mgr.themeSel.cursor = 2
 		mgr.themeSel.lastPreviewedName = "dracula"
 
-		out := mgr.HandleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress})
+		out := mgr.HandleMouse(tea.MouseWheelMsg{Button: tea.MouseWheelUp})
 		assert.Equal(t, OutcomeThemePreview, out.Kind)
 		require.NotNil(t, out.ThemeChoice)
 		assert.Equal(t, "catppuccin-mocha", out.ThemeChoice.Name)
@@ -328,7 +329,7 @@ func TestThemeSelectOverlay_HandleMouse_WheelMovesCursor(t *testing.T) {
 		_ = mgr.themeSel.render(themeRenderCtx(), mgr)
 		mgr.themeSel.cursor = len(themeItems()) - 1
 
-		out := mgr.HandleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
+		out := mgr.HandleMouse(tea.MouseWheelMsg{Button: tea.MouseWheelDown})
 		assert.Equal(t, OutcomeNone, out.Kind)
 		assert.Equal(t, len(themeItems())-1, mgr.themeSel.cursor)
 	})
@@ -338,7 +339,7 @@ func TestThemeSelectOverlay_HandleMouse_WheelMovesCursor(t *testing.T) {
 		mgr.OpenThemeSelect(themeSpec())
 		_ = mgr.themeSel.render(themeRenderCtx(), mgr)
 		start := mgr.themeSel.cursor
-		mgr.HandleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress, Shift: true})
+		mgr.HandleMouse(tea.MouseWheelMsg{Button: tea.MouseWheelDown, Mod: tea.ModShift})
 		step := max(mgr.themeSel.maxVisible()/2, 1)
 		want := min(start+step, len(mgr.themeSel.entries)-1)
 		assert.Equal(t, want, mgr.themeSel.cursor)
@@ -348,7 +349,7 @@ func TestThemeSelectOverlay_HandleMouse_WheelMovesCursor(t *testing.T) {
 		mgr := NewManager()
 		mgr.OpenThemeSelect(themeSpec())
 		_ = mgr.themeSel.render(themeRenderCtx(), mgr)
-		mgr.HandleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionRelease})
+		mgr.HandleMouse(tea.MouseReleaseMsg{Button: tea.MouseWheelDown})
 		assert.Equal(t, 0, mgr.themeSel.cursor)
 	})
 
@@ -356,7 +357,7 @@ func TestThemeSelectOverlay_HandleMouse_WheelMovesCursor(t *testing.T) {
 		mgr := NewManager()
 		mgr.OpenThemeSelect(themeSpec())
 		_ = mgr.themeSel.render(themeRenderCtx(), mgr)
-		mgr.HandleMouse(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+		mgr.HandleMouse(tea.MouseClickMsg{Button: tea.MouseLeft})
 		assert.Equal(t, 0, mgr.themeSel.cursor)
 	})
 }
@@ -367,7 +368,7 @@ func TestThemeSelectOverlay_HandleLeftClick(t *testing.T) {
 		mgr.OpenThemeSelect(themeSpec())
 		_ = mgr.themeSel.render(themeRenderCtx(), mgr)
 		// entries start at localY=4 (border + padding + filter + blank)
-		out := mgr.themeSel.handleMouse(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: 5, Y: 4})
+		out := mgr.themeSel.handleMouse(tea.MouseClickMsg{Button: tea.MouseLeft, X: 5, Y: 4})
 		assert.Equal(t, OutcomeThemeConfirmed, out.Kind)
 		require.NotNil(t, out.ThemeChoice)
 		assert.Equal(t, "revdiff", out.ThemeChoice.Name)
@@ -378,7 +379,7 @@ func TestThemeSelectOverlay_HandleLeftClick(t *testing.T) {
 		mgr := NewManager()
 		mgr.OpenThemeSelect(themeSpec())
 		_ = mgr.themeSel.render(themeRenderCtx(), mgr)
-		out := mgr.themeSel.handleMouse(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: 5, Y: 6})
+		out := mgr.themeSel.handleMouse(tea.MouseClickMsg{Button: tea.MouseLeft, X: 5, Y: 6})
 		assert.Equal(t, OutcomeThemeConfirmed, out.Kind)
 		assert.Equal(t, "dracula", out.ThemeChoice.Name)
 		assert.Equal(t, 2, mgr.themeSel.cursor)
@@ -388,7 +389,7 @@ func TestThemeSelectOverlay_HandleLeftClick(t *testing.T) {
 		mgr := NewManager()
 		mgr.OpenThemeSelect(themeSpec())
 		_ = mgr.themeSel.render(themeRenderCtx(), mgr)
-		out := mgr.themeSel.handleMouse(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: 5, Y: 2})
+		out := mgr.themeSel.handleMouse(tea.MouseClickMsg{Button: tea.MouseLeft, X: 5, Y: 2})
 		assert.Equal(t, OutcomeNone, out.Kind)
 	})
 
@@ -396,7 +397,7 @@ func TestThemeSelectOverlay_HandleLeftClick(t *testing.T) {
 		mgr := NewManager()
 		mgr.OpenThemeSelect(themeSpec())
 		_ = mgr.themeSel.render(themeRenderCtx(), mgr)
-		out := mgr.themeSel.handleMouse(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: 5, Y: 3})
+		out := mgr.themeSel.handleMouse(tea.MouseClickMsg{Button: tea.MouseLeft, X: 5, Y: 3})
 		assert.Equal(t, OutcomeNone, out.Kind)
 	})
 
@@ -404,7 +405,7 @@ func TestThemeSelectOverlay_HandleLeftClick(t *testing.T) {
 		mgr := NewManager()
 		mgr.OpenThemeSelect(themeSpec())
 		_ = mgr.themeSel.render(themeRenderCtx(), mgr)
-		out := mgr.themeSel.handleMouse(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: 5, Y: 0})
+		out := mgr.themeSel.handleMouse(tea.MouseClickMsg{Button: tea.MouseLeft, X: 5, Y: 0})
 		assert.Equal(t, OutcomeNone, out.Kind)
 	})
 
@@ -413,7 +414,7 @@ func TestThemeSelectOverlay_HandleLeftClick(t *testing.T) {
 		mgr.OpenThemeSelect(themeSpec())
 		_ = mgr.themeSel.render(themeRenderCtx(), mgr)
 		farRow := 4 + len(themeItems()) + 5
-		out := mgr.themeSel.handleMouse(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: 5, Y: farRow})
+		out := mgr.themeSel.handleMouse(tea.MouseClickMsg{Button: tea.MouseLeft, X: 5, Y: farRow})
 		assert.Equal(t, OutcomeNone, out.Kind)
 	})
 
@@ -424,7 +425,7 @@ func TestThemeSelectOverlay_HandleLeftClick(t *testing.T) {
 		mgr.themeSel.offset = 1
 
 		// click on first visible row (localY=4) selects entry at offset
-		out := mgr.themeSel.handleMouse(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: 5, Y: 4})
+		out := mgr.themeSel.handleMouse(tea.MouseClickMsg{Button: tea.MouseLeft, X: 5, Y: 4})
 		assert.Equal(t, OutcomeThemeConfirmed, out.Kind)
 		assert.Equal(t, "catppuccin-mocha", out.ThemeChoice.Name)
 	})
@@ -433,7 +434,7 @@ func TestThemeSelectOverlay_HandleLeftClick(t *testing.T) {
 		mgr := NewManager()
 		mgr.OpenThemeSelect(themeSpec())
 		_ = mgr.themeSel.render(themeRenderCtx(), mgr)
-		out := mgr.themeSel.handleMouse(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionRelease, X: 5, Y: 4})
+		out := mgr.themeSel.handleMouse(tea.MouseReleaseMsg{Button: tea.MouseLeft, X: 5, Y: 4})
 		assert.Equal(t, OutcomeNone, out.Kind)
 	})
 
@@ -441,7 +442,7 @@ func TestThemeSelectOverlay_HandleLeftClick(t *testing.T) {
 		mgr := NewManager()
 		mgr.OpenThemeSelect(themeSpec())
 		_ = mgr.themeSel.render(themeRenderCtx(), mgr)
-		out := mgr.themeSel.handleMouse(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: 0, Y: 4})
+		out := mgr.themeSel.handleMouse(tea.MouseClickMsg{Button: tea.MouseLeft, X: 0, Y: 4})
 		assert.Equal(t, OutcomeNone, out.Kind, "x=0 is the left border")
 	})
 
@@ -449,7 +450,7 @@ func TestThemeSelectOverlay_HandleLeftClick(t *testing.T) {
 		mgr := NewManager()
 		mgr.OpenThemeSelect(themeSpec())
 		_ = mgr.themeSel.render(themeRenderCtx(), mgr)
-		out := mgr.themeSel.handleMouse(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: 1, Y: 4})
+		out := mgr.themeSel.handleMouse(tea.MouseClickMsg{Button: tea.MouseLeft, X: 1, Y: 4})
 		assert.Equal(t, OutcomeNone, out.Kind, "x=1 is the left padding")
 	})
 
@@ -458,7 +459,7 @@ func TestThemeSelectOverlay_HandleLeftClick(t *testing.T) {
 		mgr.OpenThemeSelect(themeSpec())
 		_ = mgr.themeSel.render(themeRenderCtx(), mgr)
 		w := mgr.themeSel.popupWidth
-		out := mgr.themeSel.handleMouse(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: w - 2, Y: 4})
+		out := mgr.themeSel.handleMouse(tea.MouseClickMsg{Button: tea.MouseLeft, X: w - 2, Y: 4})
 		assert.Equal(t, OutcomeNone, out.Kind, "x=popupWidth-2 is the right padding")
 	})
 
@@ -467,7 +468,7 @@ func TestThemeSelectOverlay_HandleLeftClick(t *testing.T) {
 		mgr.OpenThemeSelect(themeSpec())
 		_ = mgr.themeSel.render(themeRenderCtx(), mgr)
 		w := mgr.themeSel.popupWidth
-		out := mgr.themeSel.handleMouse(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: w - 1, Y: 4})
+		out := mgr.themeSel.handleMouse(tea.MouseClickMsg{Button: tea.MouseLeft, X: w - 1, Y: 4})
 		assert.Equal(t, OutcomeNone, out.Kind, "x=popupWidth-1 is the right border")
 	})
 
@@ -475,7 +476,7 @@ func TestThemeSelectOverlay_HandleLeftClick(t *testing.T) {
 		mgr := NewManager()
 		mgr.OpenThemeSelect(themeSpec())
 		_ = mgr.themeSel.render(themeRenderCtx(), mgr)
-		out := mgr.themeSel.handleMouse(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: 2, Y: 4})
+		out := mgr.themeSel.handleMouse(tea.MouseClickMsg{Button: tea.MouseLeft, X: 2, Y: 4})
 		assert.Equal(t, OutcomeThemeConfirmed, out.Kind, "x=2 is the first content column")
 	})
 
@@ -483,7 +484,7 @@ func TestThemeSelectOverlay_HandleLeftClick(t *testing.T) {
 		mgr := NewManager()
 		mgr.OpenThemeSelect(themeSpec())
 		_ = mgr.themeSel.render(themeRenderCtx(), mgr)
-		out := mgr.themeSel.handleMouse(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: 5, Y: 6})
+		out := mgr.themeSel.handleMouse(tea.MouseClickMsg{Button: tea.MouseLeft, X: 5, Y: 6})
 		require.Equal(t, OutcomeThemeConfirmed, out.Kind)
 		assert.Equal(t, "dracula", mgr.themeSel.lastPreviewedName, "so a subsequent arrow-key back to the same entry does not emit redundant preview")
 	})
@@ -496,7 +497,7 @@ func TestThemeSelectOverlay_HandleLeftClick(t *testing.T) {
 		mgr.themeSel.applyFilter()
 		require.Empty(t, mgr.themeSel.entries)
 
-		out := mgr.themeSel.handleMouse(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: 5, Y: 4})
+		out := mgr.themeSel.handleMouse(tea.MouseClickMsg{Button: tea.MouseLeft, X: 5, Y: 4})
 		assert.Equal(t, OutcomeNone, out.Kind, "no entries to confirm, guard must protect against index panic")
 	})
 }
@@ -511,7 +512,7 @@ func TestThemeSelectOverlay_HandleMouse_ClickOutsideSwallowed(t *testing.T) {
 
 	require.NotZero(t, mgr.bounds.w)
 
-	out := mgr.HandleMouse(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: 0, Y: 0})
+	out := mgr.HandleMouse(tea.MouseClickMsg{Button: tea.MouseLeft, X: 0, Y: 0})
 	assert.Equal(t, OutcomeNone, out.Kind)
 	assert.True(t, mgr.Active(), "click outside popup must not close or confirm")
 }
@@ -525,9 +526,8 @@ func TestThemeSelectOverlay_HandleMouse_ClickInsideConfirms(t *testing.T) {
 	_ = mgr.Compose(base, ctx)
 
 	// click on first entry row: screen Y = bounds.y + 4
-	out := mgr.HandleMouse(tea.MouseMsg{
-		Button: tea.MouseButtonLeft,
-		Action: tea.MouseActionPress,
+	out := mgr.HandleMouse(tea.MouseClickMsg{
+		Button: tea.MouseLeft,
 		X:      mgr.bounds.x + 5,
 		Y:      mgr.bounds.y + 4,
 	})
@@ -541,15 +541,15 @@ func TestThemeSelectOverlay_HandleKey_PreviewDedup(t *testing.T) {
 	mgr.OpenThemeSelect(themeSpec())
 
 	// first move down — preview emitted
-	out1 := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyDown}, "")
+	out1 := mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyDown}, "")
 	assert.Equal(t, OutcomeThemePreview, out1.Kind)
 
 	// move back up to same item — preview emitted (different name)
-	out2 := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyUp}, "")
+	out2 := mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyUp}, "")
 	assert.Equal(t, OutcomeThemePreview, out2.Kind)
 
 	// move down again to same name as out1 — should be deduped
-	_ = mgr.HandleKey(tea.KeyMsg{Type: tea.KeyDown}, "")
+	_ = mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyDown}, "")
 	// cursor is on "catppuccin-mocha" again, lastPreviewedName is "catppuccin-mocha"
 	// stay on same position — another down would go to next
 	assert.Equal(t, "catppuccin-mocha", mgr.themeSel.lastPreviewedName)
@@ -563,7 +563,7 @@ func TestThemeSelectOverlay_HandleKey_PreviewDedupSameName(t *testing.T) {
 
 	// try to move down, which triggers preview — but then move back
 	// the point: if lastPreviewedName already matches, OutcomeNone
-	out := mgr.themeSel.handleKey(tea.KeyMsg{Type: tea.KeyDown}, "")
+	out := mgr.themeSel.handleKey(tea.KeyPressMsg{Code: tea.KeyDown}, "")
 	assert.Equal(t, OutcomeThemePreview, out.Kind) // dracula != catppuccin-mocha
 
 	mgr.themeSel.cursor = 1
@@ -578,11 +578,11 @@ func TestThemeSelectOverlay_HandleKey_OtherKeysConsumed(t *testing.T) {
 	mgr.OpenThemeSelect(themeSpec())
 
 	keys := []struct {
-		msg    tea.KeyMsg
+		msg    tea.KeyPressMsg
 		action keymap.Action
 	}{
-		{tea.KeyMsg{Type: tea.KeyTab}, keymap.ActionTogglePane},
-		{tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}, keymap.ActionQuit},
+		{tea.KeyPressMsg{Code: tea.KeyTab}, keymap.ActionTogglePane},
+		{tea.KeyPressMsg{Code: 'q', Text: string('q')}, keymap.ActionQuit},
 	}
 
 	for _, k := range keys {
@@ -679,7 +679,7 @@ func TestThemeSelectOverlay_ScrollDown(t *testing.T) {
 	mgr.themeSel.height = 14 // maxVisible = max(min(20, 14-10), 1) = 4
 
 	for range 4 {
-		mgr.HandleKey(tea.KeyMsg{Type: tea.KeyDown}, "")
+		mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyDown}, "")
 	}
 	assert.Equal(t, 4, mgr.themeSel.cursor)
 	assert.Equal(t, 1, mgr.themeSel.offset, "offset should scroll down")
@@ -696,7 +696,7 @@ func TestThemeSelectOverlay_ScrollUp(t *testing.T) {
 	mgr.themeSel.offset = 5
 	mgr.themeSel.height = 14
 
-	mgr.HandleKey(tea.KeyMsg{Type: tea.KeyUp}, "")
+	mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyUp}, "")
 	assert.Equal(t, 4, mgr.themeSel.cursor)
 	assert.Equal(t, 4, mgr.themeSel.offset, "offset should scroll up to follow cursor")
 }

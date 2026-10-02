@@ -3,9 +3,9 @@ package ui
 import (
 	"testing"
 
-	bubblecursor "github.com/charmbracelet/bubbles/cursor"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	bubblecursor "charm.land/bubbles/v2/cursor"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -286,18 +286,18 @@ func TestModel_InitialLoadingState_NoEmptyFlash(t *testing.T) {
 	m.filesLoaded = false
 
 	// before WindowSizeMsg: generic loading string
-	assert.Equal(t, "loading...", m.View())
+	assert.Equal(t, "loading...", m.View().Content)
 
 	// WindowSizeMsg arrives; filesLoadedMsg has not
 	result, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m = result.(Model)
-	assert.Equal(t, "loading files...", m.View())
+	assert.Equal(t, "loading files...", m.View().Content)
 
 	// filesLoadedMsg arrives; loading state must end
 	result, _ = m.Update(filesLoadedMsg{entries: []diff.FileEntry{{Path: "a.go"}, {Path: "b.go"}}})
 	m = result.(Model)
 	assert.True(t, m.filesLoaded)
-	got := m.View()
+	got := m.View().Content
 	assert.NotEqual(t, "loading...", got)
 	assert.NotEqual(t, "loading files...", got)
 }
@@ -313,7 +313,7 @@ func TestModel_EnterSwitchesToDiffPane(t *testing.T) {
 	m.layout.focus = paneTree // reset focus after file load
 
 	// enter should switch to diff pane
-	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model := result.(Model)
 	assert.Equal(t, paneDiff, model.layout.focus)
 }
@@ -326,7 +326,7 @@ func TestModel_TabPaneSwitching(t *testing.T) {
 	t.Run("tree to diff when file loaded", func(t *testing.T) {
 		m.layout.focus = paneTree
 		m.file.name = "a.go"
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+		result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 		model := result.(Model)
 		assert.Equal(t, paneDiff, model.layout.focus)
 	})
@@ -334,7 +334,7 @@ func TestModel_TabPaneSwitching(t *testing.T) {
 	t.Run("diff to tree", func(t *testing.T) {
 		m.layout.focus = paneDiff
 		m.file.name = "a.go"
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+		result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 		model := result.(Model)
 		assert.Equal(t, paneTree, model.layout.focus)
 	})
@@ -342,7 +342,7 @@ func TestModel_TabPaneSwitching(t *testing.T) {
 	t.Run("stays on tree when no file loaded", func(t *testing.T) {
 		m.layout.focus = paneTree
 		m.file.name = ""
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+		result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 		model := result.(Model)
 		assert.Equal(t, paneTree, model.layout.focus)
 	})
@@ -491,12 +491,12 @@ func TestModel_TreeNavigation(t *testing.T) {
 	assert.Equal(t, "a.go", m.tree.SelectedFile())
 
 	// j moves down
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'j', Text: string('j')})
 	model := result.(Model)
 	assert.Equal(t, "b.go", model.tree.SelectedFile())
 
 	// k moves up
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'k', Text: string('k')})
 	model = result.(Model)
 	assert.Equal(t, "a.go", model.tree.SelectedFile())
 }
@@ -508,12 +508,12 @@ func TestModel_FocusSwitching(t *testing.T) {
 	m.layout.focus = paneTree
 
 	// l switches to diff pane
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'l', Text: string('l')})
 	model := result.(Model)
 	assert.Equal(t, paneDiff, model.layout.focus)
 
 	// h switches back to tree
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'h', Text: string('h')})
 	model = result.(Model)
 	assert.Equal(t, paneTree, model.layout.focus)
 }
@@ -569,14 +569,14 @@ func TestModel_CustomKeymapQuitOverride(t *testing.T) {
 	m.keymap = km
 
 	// "x" should quit
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'x', Text: string('x')})
 	require.NotNil(t, cmd, "x should produce a command")
 	msg := cmd()
 	_, ok := msg.(tea.QuitMsg)
 	assert.True(t, ok, "x should trigger quit")
 
 	// "q" should not quit (unbound)
-	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	_, cmd = m.Update(tea.KeyPressMsg{Code: 'q', Text: string('q')})
 	assert.Nil(t, cmd, "q should not produce a command when unbound")
 }
 
@@ -595,12 +595,12 @@ func TestModel_CustomKeymapViewToggle(t *testing.T) {
 	assert.False(t, m.modes.wrap)
 
 	// "x" should toggle wrap
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'x', Text: string('x')})
 	model := result.(Model)
 	assert.True(t, model.modes.wrap, "x should toggle wrap mode on")
 
 	// "w" should also toggle wrap (still bound by default)
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'w', Text: string('w')})
 	model = result.(Model)
 	assert.False(t, model.modes.wrap, "w should toggle wrap mode off")
 }
@@ -620,12 +620,12 @@ func TestModel_CustomKeymapTreeNav(t *testing.T) {
 	assert.Equal(t, "a.go", m.tree.SelectedFile())
 
 	// "x" should move down
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'x', Text: string('x')})
 	model := result.(Model)
 	assert.Equal(t, "b.go", model.tree.SelectedFile(), "x should move tree cursor down")
 
 	// "j" should not move (unbound)
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'j', Text: string('j')})
 	model = result.(Model)
 	assert.Equal(t, "b.go", model.tree.SelectedFile(), "j should not move when unbound")
 }
@@ -639,7 +639,7 @@ func TestModel_CustomKeymapTreeFocusDiff(t *testing.T) {
 	m.layout.focus = paneTree
 
 	// right key maps to scroll_right by default, should focus diff in tree pane
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	model := result.(Model)
 	assert.Equal(t, paneDiff, model.layout.focus, "right key (scroll_right) should focus diff in tree pane")
 }
@@ -654,14 +654,14 @@ func TestModel_AcceptanceAdditiveQuitBinding(t *testing.T) {
 	m.keymap = km
 
 	// "x" should quit
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'x', Text: string('x')})
 	require.NotNil(t, cmd, "x should produce a command")
 	msg := cmd()
 	_, ok := msg.(tea.QuitMsg)
 	assert.True(t, ok, "x should trigger quit")
 
 	// "q" should also still quit (additive binding)
-	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	_, cmd = m.Update(tea.KeyPressMsg{Code: 'q', Text: string('q')})
 	require.NotNil(t, cmd, "q should still produce a command")
 	msg = cmd()
 	_, ok = msg.(tea.QuitMsg)
@@ -676,7 +676,7 @@ func TestModel_AcceptanceDefaultBehaviorNoKeybindingsFile(t *testing.T) {
 	// :q should quit
 	m.startCommand()
 	m.command.input.SetValue("q")
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	require.NotNil(t, cmd)
 	msg := cmd()
 	_, ok := msg.(tea.QuitMsg)
@@ -684,7 +684,7 @@ func TestModel_AcceptanceDefaultBehaviorNoKeybindingsFile(t *testing.T) {
 
 	// ? should open help
 	m2 := testModel([]string{"a.go"}, nil)
-	result, _ := m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	result, _ := m2.Update(tea.KeyPressMsg{Code: '?', Text: string('?')})
 	model := result.(Model)
 	assert.True(t, model.overlay.Active(), "? should open help with default keymap")
 	assert.Equal(t, overlay.KindHelp, model.overlay.Kind())
@@ -1108,7 +1108,7 @@ func TestHandleKey_EntersChordPending(t *testing.T) {
 	m := testModel([]string{"a.go"}, nil)
 	m.keymap = km
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlW})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'w', Mod: tea.ModCtrl})
 	model := result.(Model)
 
 	assert.Equal(t, "ctrl+w", model.keys.chordPending, "leader key must set chordPending")
@@ -1129,7 +1129,7 @@ func TestHandleKey_ChordSecondCoexistenceGuard(t *testing.T) {
 	m.search.active = true
 	m.search.input = textinput.New()
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'x', Text: string('x')})
 	model := result.(Model)
 
 	assert.Empty(t, model.keys.chordPending, "chord-second guard must clear chordPending")
@@ -1151,7 +1151,7 @@ func TestHandleKey_ChordIgnoredWhenPendingReload(t *testing.T) {
 
 	// send the chord leader; handlePendingReload must intercept first, so the
 	// chord-first guard never runs and chordPending stays empty.
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlW})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'w', Mod: tea.ModCtrl})
 	model := result.(Model)
 
 	assert.Empty(t, model.keys.chordPending, "chord-first guard must not fire while reload is pending")
@@ -1166,7 +1166,7 @@ func TestHandleKey_LeaderWithStandaloneActionDoesNotEnterChord(t *testing.T) {
 	m := testModel([]string{"a.go"}, nil)
 	m.keymap = km
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlW})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'w', Mod: tea.ModCtrl})
 	model := result.(Model)
 
 	assert.Empty(t, model.keys.chordPending, "standalone-bound leader must not enter chord-pending state")
@@ -1204,7 +1204,7 @@ func TestHandleKey_ClearsVimHint(t *testing.T) {
 	m := testModel([]string{"a.go"}, nil)
 	m.vim.hint = "5"
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'x', Text: string('x')})
 	model := result.(Model)
 
 	assert.Empty(t, model.vim.hint, "any key press must clear vim.hint alongside other transient hints")
@@ -1414,15 +1414,15 @@ func TestHandleOverlayOpen_ClearsVimState_ThemeSelect(t *testing.T) {
 }
 
 func TestHandleKey_ChordPrecedence(t *testing.T) {
-	leader := tea.KeyMsg{Type: tea.KeyCtrlW}
-	boundSecond := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}}
-	unboundSecond := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}
-	escKey := tea.KeyMsg{Type: tea.KeyEsc}
+	leader := tea.KeyPressMsg{Code: 'w', Mod: tea.ModCtrl}
+	boundSecond := tea.KeyPressMsg{Code: 'x', Text: string('x')}
+	unboundSecond := tea.KeyPressMsg{Code: 'q', Text: string('q')}
+	escKey := tea.KeyPressMsg{Code: tea.KeyEsc}
 
 	tests := []struct {
 		name  string
 		setup func(t *testing.T, m *Model)
-		send  tea.KeyMsg
+		send  tea.KeyPressMsg
 		check func(t *testing.T, after Model, cmd tea.Cmd)
 	}{
 		{
@@ -1564,7 +1564,7 @@ func TestHandleKey_VimMotionOff_TreeIgnoresCount(t *testing.T) {
 	m.layout.focus = paneTree
 
 	// Default counts apply to the diff pane, not the file tree.
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'5'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '5', Text: string('5')})
 	model := result.(Model)
 
 	assert.Zero(t, model.vim.count)
@@ -1576,7 +1576,7 @@ func TestHandleKey_VimMotionOn_DigitAccumulates(t *testing.T) {
 	m := testModel([]string{"a.go"}, nil)
 	m.modes.vimMotion = true
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'5'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: '5', Text: string('5')})
 	model := result.(Model)
 
 	assert.Equal(t, 5, model.vim.count, "digit must accumulate into vim.count")
@@ -1594,7 +1594,7 @@ func TestHandleKey_VimMotionOn_ChordSecondWins(t *testing.T) {
 	// preempt the vim-motion interceptor (runs earlier in handleKey).
 	m.keys.chordPending = "ctrl+w"
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'5'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: '5', Text: string('5')})
 	model := result.(Model)
 
 	assert.Empty(t, model.keys.chordPending, "chord-second guard must clear chordPending")
@@ -1611,7 +1611,7 @@ func TestHandleKey_VimMotionOn_PendingReloadWins(t *testing.T) {
 	m.reload.pending = true
 	m.reload.hint = "Annotations will be dropped — press y to confirm, any other key to cancel"
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'y', Text: string('y')})
 	model := result.(Model)
 
 	assert.False(t, model.reload.pending, "pending-reload guard must consume y before vim interceptor")
@@ -1626,7 +1626,7 @@ func TestHandleKey_VimMotionOn_SearchActiveModalWins(t *testing.T) {
 	m.search.input = textinput.New()
 	m.search.input.Focus()
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'5'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '5', Text: string('5')})
 	model := result.(Model)
 
 	assert.True(t, model.search.active, "search mode stays active")
@@ -1642,7 +1642,7 @@ func TestHandleKey_VimMotionOn_AnnotateActiveModalWins(t *testing.T) {
 	m.annot.input = textinput.New()
 	m.annot.input.Focus()
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'5'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '5', Text: string('5')})
 	model := result.(Model)
 
 	assert.True(t, model.annot.annotating, "annotation mode stays active")
@@ -1657,7 +1657,7 @@ func TestHandleKey_VimMotionOn_OverlayActiveModalWins(t *testing.T) {
 	m.overlay.OpenHelp(m.buildHelpSpec())
 	require.True(t, m.overlay.Active(), "help overlay must be open for this test")
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'5'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '5', Text: string('5')})
 	model := result.(Model)
 
 	assert.Equal(t, 0, model.vim.count, "vim interceptor must not run while overlay is active")
@@ -1671,7 +1671,7 @@ func TestHandleKey_VimMotionOn_NonVimKeyFallsThrough(t *testing.T) {
 
 	// 'q' is not a vim key and has no pending vim state — interceptor returns
 	// handled=false, keymap.Resolve routes it to ActionQuit.
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'q', Text: string('q')})
 	model := result.(Model)
 
 	assert.Equal(t, 0, model.vim.count, "non-vim key must not set vim.count")
@@ -1811,7 +1811,7 @@ func TestNewModel_NoTree(t *testing.T) {
 		result, _ := newModel(true).Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 		m := result.(Model)
 		assert.Zero(t, m.layout.treeWidth)
-		assert.Equal(t, 118, m.layout.viewport.Width, "only the diff pane's own borders are subtracted")
+		assert.Equal(t, 118, m.layout.viewport.Width(), "only the diff pane's own borders are subtracted")
 	})
 
 	t.Run("toggle restores the tree", func(t *testing.T) {
@@ -1820,6 +1820,6 @@ func TestNewModel_NoTree(t *testing.T) {
 		m.toggleTreePane()
 		assert.False(t, m.layout.treeHidden)
 		assert.Positive(t, m.layout.treeWidth, "the tree must get its width back")
-		assert.Less(t, m.layout.viewport.Width, 118, "the diff pane must give width back to the tree")
+		assert.Less(t, m.layout.viewport.Width(), 118, "the diff pane must give width back to the tree")
 	})
 }

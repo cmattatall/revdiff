@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -239,7 +239,7 @@ func TestAnnotListOverlay_HandleKey_ToggleClose(t *testing.T) {
 	mgr.OpenAnnotList(annotListSpec(annotItem("a.go", 1, "+", "note")))
 	require.True(t, mgr.Active())
 
-	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'@'}}, keymap.ActionAnnotList)
+	out := mgr.HandleKey(tea.KeyPressMsg{Code: '@', Text: string('@')}, keymap.ActionAnnotList)
 	assert.Equal(t, OutcomeClosed, out.Kind)
 	assert.False(t, mgr.Active())
 }
@@ -248,7 +248,7 @@ func TestAnnotListOverlay_HandleKey_EscClose(t *testing.T) {
 	mgr := NewManager()
 	mgr.OpenAnnotList(annotListSpec(annotItem("a.go", 1, "+", "note")))
 
-	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyEsc}, keymap.ActionDismiss)
+	out := mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyEsc}, keymap.ActionDismiss)
 	assert.Equal(t, OutcomeClosed, out.Kind)
 	assert.False(t, mgr.Active())
 }
@@ -257,7 +257,7 @@ func TestAnnotListOverlay_HandleKey_EscHardcoded(t *testing.T) {
 	mgr := NewManager()
 	mgr.OpenAnnotList(annotListSpec(annotItem("a.go", 1, "+", "note")))
 
-	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyEsc}, "")
+	out := mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyEsc}, "")
 	assert.Equal(t, OutcomeClosed, out.Kind)
 	assert.False(t, mgr.Active(), "esc should close even without ActionDismiss")
 }
@@ -271,7 +271,7 @@ func TestAnnotListOverlay_HandleKey_EnterSelection(t *testing.T) {
 	mgr.OpenAnnotList(annotListSpec(items...))
 	mgr.annotLst.cursor = 1
 
-	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyEnter}, "")
+	out := mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyEnter}, "")
 	assert.Equal(t, OutcomeAnnotationChosen, out.Kind)
 	require.NotNil(t, out.AnnotationTarget)
 	assert.Equal(t, "b.go", out.AnnotationTarget.File)
@@ -284,7 +284,7 @@ func TestAnnotListOverlay_HandleKey_EnterEmptyList(t *testing.T) {
 	mgr := NewManager()
 	mgr.OpenAnnotList(annotListSpec())
 
-	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyEnter}, "")
+	out := mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyEnter}, "")
 	assert.Equal(t, OutcomeClosed, out.Kind)
 	assert.False(t, mgr.Active())
 }
@@ -299,7 +299,7 @@ func TestAnnotListOverlay_HandleKey_NavigateDown(t *testing.T) {
 	mgr.OpenAnnotList(annotListSpec(items...))
 	assert.Equal(t, 0, mgr.annotLst.cursor)
 
-	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}, keymap.ActionDown)
+	out := mgr.HandleKey(tea.KeyPressMsg{Code: 'j', Text: string('j')}, keymap.ActionDown)
 	assert.Equal(t, OutcomeNone, out.Kind)
 	assert.Equal(t, 1, mgr.annotLst.cursor)
 	assert.True(t, mgr.Active())
@@ -314,7 +314,7 @@ func TestAnnotListOverlay_HandleKey_NavigateUp(t *testing.T) {
 	mgr.OpenAnnotList(annotListSpec(items...))
 	mgr.annotLst.cursor = 1
 
-	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}}, keymap.ActionUp)
+	out := mgr.HandleKey(tea.KeyPressMsg{Code: 'k', Text: string('k')}, keymap.ActionUp)
 	assert.Equal(t, OutcomeNone, out.Kind)
 	assert.Equal(t, 0, mgr.annotLst.cursor)
 }
@@ -325,7 +325,7 @@ func TestAnnotListOverlay_HandleKey_DownBounds(t *testing.T) {
 	mgr.OpenAnnotList(annotListSpec(items...))
 	assert.Equal(t, 0, mgr.annotLst.cursor)
 
-	mgr.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}, keymap.ActionDown)
+	mgr.HandleKey(tea.KeyPressMsg{Code: 'j', Text: string('j')}, keymap.ActionDown)
 	assert.Equal(t, 0, mgr.annotLst.cursor, "cursor should not go past last item")
 }
 
@@ -335,7 +335,7 @@ func TestAnnotListOverlay_HandleKey_UpBounds(t *testing.T) {
 	mgr.OpenAnnotList(annotListSpec(items...))
 	assert.Equal(t, 0, mgr.annotLst.cursor)
 
-	mgr.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}}, keymap.ActionUp)
+	mgr.HandleKey(tea.KeyPressMsg{Code: 'k', Text: string('k')}, keymap.ActionUp)
 	assert.Equal(t, 0, mgr.annotLst.cursor, "cursor should not go above first item")
 }
 
@@ -350,7 +350,7 @@ func TestAnnotListOverlay_HandleKey_ScrollDown(t *testing.T) {
 
 	// move cursor to end of visible area
 	for range 4 {
-		mgr.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}, keymap.ActionDown)
+		mgr.HandleKey(tea.KeyPressMsg{Code: 'j', Text: string('j')}, keymap.ActionDown)
 	}
 	assert.Equal(t, 4, mgr.annotLst.cursor)
 	assert.Equal(t, 1, mgr.annotLst.offset, "offset should scroll down")
@@ -367,7 +367,7 @@ func TestAnnotListOverlay_HandleKey_ScrollUp(t *testing.T) {
 	mgr.annotLst.offset = 3
 	mgr.annotLst.height = 10
 
-	mgr.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}}, keymap.ActionUp)
+	mgr.HandleKey(tea.KeyPressMsg{Code: 'k', Text: string('k')}, keymap.ActionUp)
 	assert.Equal(t, 2, mgr.annotLst.cursor)
 	assert.Equal(t, 2, mgr.annotLst.offset, "offset should scroll up to follow cursor")
 }
@@ -384,7 +384,7 @@ func TestAnnotListOverlay_HandleMouse_WheelMovesCursor(t *testing.T) {
 	t.Run("wheel down advances cursor by one", func(t *testing.T) {
 		mgr.annotLst.cursor = 0
 		mgr.annotLst.offset = 0
-		out := mgr.HandleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
+		out := mgr.HandleMouse(tea.MouseWheelMsg{Button: tea.MouseWheelDown})
 		assert.Equal(t, OutcomeNone, out.Kind)
 		assert.Equal(t, 1, mgr.annotLst.cursor)
 	})
@@ -392,17 +392,17 @@ func TestAnnotListOverlay_HandleMouse_WheelMovesCursor(t *testing.T) {
 	t.Run("wheel up retreats cursor by one", func(t *testing.T) {
 		mgr.annotLst.cursor = 3
 		mgr.annotLst.offset = 0
-		mgr.HandleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress})
+		mgr.HandleMouse(tea.MouseWheelMsg{Button: tea.MouseWheelUp})
 		assert.Equal(t, 2, mgr.annotLst.cursor)
 	})
 
 	t.Run("wheel clamps at boundaries", func(t *testing.T) {
 		mgr.annotLst.cursor = 0
-		mgr.HandleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress})
+		mgr.HandleMouse(tea.MouseWheelMsg{Button: tea.MouseWheelUp})
 		assert.Equal(t, 0, mgr.annotLst.cursor, "cursor already at 0 does not go negative")
 
 		mgr.annotLst.cursor = 9
-		mgr.HandleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
+		mgr.HandleMouse(tea.MouseWheelMsg{Button: tea.MouseWheelDown})
 		assert.Equal(t, 9, mgr.annotLst.cursor, "cursor at last item does not exceed bounds")
 	})
 
@@ -410,7 +410,7 @@ func TestAnnotListOverlay_HandleMouse_WheelMovesCursor(t *testing.T) {
 		mgr.annotLst.cursor = 0
 		mgr.annotLst.offset = 0
 		for range 4 {
-			mgr.HandleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
+			mgr.HandleMouse(tea.MouseWheelMsg{Button: tea.MouseWheelDown})
 		}
 		assert.Equal(t, 4, mgr.annotLst.cursor)
 		assert.Equal(t, 1, mgr.annotLst.offset, "offset follows cursor past visible window")
@@ -419,20 +419,20 @@ func TestAnnotListOverlay_HandleMouse_WheelMovesCursor(t *testing.T) {
 	t.Run("shift+wheel uses half visible step", func(t *testing.T) {
 		mgr.annotLst.cursor = 0
 		mgr.annotLst.offset = 0
-		mgr.HandleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress, Shift: true})
+		mgr.HandleMouse(tea.MouseWheelMsg{Button: tea.MouseWheelDown, Mod: tea.ModShift})
 		want := max(mgr.annotLst.maxVisible(mgr.annotLst.height)/2, 1)
 		assert.Equal(t, want, mgr.annotLst.cursor)
 	})
 
 	t.Run("non-press wheel ignored", func(t *testing.T) {
 		mgr.annotLst.cursor = 2
-		mgr.HandleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionRelease})
+		mgr.HandleMouse(tea.MouseReleaseMsg{Button: tea.MouseWheelDown})
 		assert.Equal(t, 2, mgr.annotLst.cursor)
 	})
 
 	t.Run("non-wheel button ignored", func(t *testing.T) {
 		mgr.annotLst.cursor = 2
-		mgr.HandleMouse(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+		mgr.HandleMouse(tea.MouseClickMsg{Button: tea.MouseLeft})
 		assert.Equal(t, 2, mgr.annotLst.cursor)
 	})
 }
@@ -440,7 +440,7 @@ func TestAnnotListOverlay_HandleMouse_WheelMovesCursor(t *testing.T) {
 func TestAnnotListOverlay_HandleMouse_EmptyList(t *testing.T) {
 	mgr := NewManager()
 	mgr.OpenAnnotList(annotListSpec())
-	mgr.HandleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
+	mgr.HandleMouse(tea.MouseWheelMsg{Button: tea.MouseWheelDown})
 	assert.True(t, mgr.Active(), "overlay stays open")
 	assert.Equal(t, 0, mgr.annotLst.cursor)
 }
@@ -463,7 +463,7 @@ func TestAnnotListOverlay_HandleLeftClick(t *testing.T) {
 
 	t.Run("click on first item row", func(t *testing.T) {
 		mgr := setup()
-		out := mgr.annotLst.handleMouse(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: 5, Y: 2})
+		out := mgr.annotLst.handleMouse(tea.MouseClickMsg{Button: tea.MouseLeft, X: 5, Y: 2})
 		assert.Equal(t, OutcomeAnnotationChosen, out.Kind)
 		require.NotNil(t, out.AnnotationTarget)
 		assert.Equal(t, "a.go", out.AnnotationTarget.File)
@@ -473,7 +473,7 @@ func TestAnnotListOverlay_HandleLeftClick(t *testing.T) {
 
 	t.Run("click on third item row", func(t *testing.T) {
 		mgr := setup()
-		out := mgr.annotLst.handleMouse(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: 5, Y: 4})
+		out := mgr.annotLst.handleMouse(tea.MouseClickMsg{Button: tea.MouseLeft, X: 5, Y: 4})
 		assert.Equal(t, OutcomeAnnotationChosen, out.Kind)
 		assert.Equal(t, "c.go", out.AnnotationTarget.File)
 		assert.Equal(t, 2, mgr.annotLst.cursor)
@@ -481,49 +481,49 @@ func TestAnnotListOverlay_HandleLeftClick(t *testing.T) {
 
 	t.Run("click on top border is no-op", func(t *testing.T) {
 		mgr := setup()
-		out := mgr.annotLst.handleMouse(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: 5, Y: 0})
+		out := mgr.annotLst.handleMouse(tea.MouseClickMsg{Button: tea.MouseLeft, X: 5, Y: 0})
 		assert.Equal(t, OutcomeNone, out.Kind)
 	})
 
 	t.Run("click on top padding is no-op", func(t *testing.T) {
 		mgr := setup()
-		out := mgr.annotLst.handleMouse(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: 5, Y: 1})
+		out := mgr.annotLst.handleMouse(tea.MouseClickMsg{Button: tea.MouseLeft, X: 5, Y: 1})
 		assert.Equal(t, OutcomeNone, out.Kind)
 	})
 
 	t.Run("click past visible items is no-op", func(t *testing.T) {
 		mgr := setup()
-		out := mgr.annotLst.handleMouse(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: 5, Y: 5})
+		out := mgr.annotLst.handleMouse(tea.MouseClickMsg{Button: tea.MouseLeft, X: 5, Y: 5})
 		assert.Equal(t, OutcomeNone, out.Kind, "row past the 3 visible items")
 	})
 
 	t.Run("click on left border column is no-op", func(t *testing.T) {
 		mgr := setup()
-		out := mgr.annotLst.handleMouse(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: 0, Y: 2})
+		out := mgr.annotLst.handleMouse(tea.MouseClickMsg{Button: tea.MouseLeft, X: 0, Y: 2})
 		assert.Equal(t, OutcomeNone, out.Kind, "x=0 is the left border")
 	})
 
 	t.Run("click on left padding column is no-op", func(t *testing.T) {
 		mgr := setup()
-		out := mgr.annotLst.handleMouse(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: 1, Y: 2})
+		out := mgr.annotLst.handleMouse(tea.MouseClickMsg{Button: tea.MouseLeft, X: 1, Y: 2})
 		assert.Equal(t, OutcomeNone, out.Kind, "x=1 is the left padding")
 	})
 
 	t.Run("click on right padding column is no-op", func(t *testing.T) {
 		mgr := setup()
-		out := mgr.annotLst.handleMouse(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: popupWidth - 2, Y: 2})
+		out := mgr.annotLst.handleMouse(tea.MouseClickMsg{Button: tea.MouseLeft, X: popupWidth - 2, Y: 2})
 		assert.Equal(t, OutcomeNone, out.Kind, "x=popupWidth-2 is the right padding")
 	})
 
 	t.Run("click on right border column is no-op", func(t *testing.T) {
 		mgr := setup()
-		out := mgr.annotLst.handleMouse(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: popupWidth - 1, Y: 2})
+		out := mgr.annotLst.handleMouse(tea.MouseClickMsg{Button: tea.MouseLeft, X: popupWidth - 1, Y: 2})
 		assert.Equal(t, OutcomeNone, out.Kind, "x=popupWidth-1 is the right border")
 	})
 
 	t.Run("click at first content column (x=2) selects", func(t *testing.T) {
 		mgr := setup()
-		out := mgr.annotLst.handleMouse(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: 2, Y: 2})
+		out := mgr.annotLst.handleMouse(tea.MouseClickMsg{Button: tea.MouseLeft, X: 2, Y: 2})
 		assert.Equal(t, OutcomeAnnotationChosen, out.Kind, "x=2 is the first content column")
 	})
 
@@ -539,14 +539,14 @@ func TestAnnotListOverlay_HandleLeftClick(t *testing.T) {
 		mgr.annotLst.offset = 3
 
 		// clicking the first visible row (localY=2) selects item at offset
-		out := mgr.annotLst.handleMouse(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: 5, Y: 2})
+		out := mgr.annotLst.handleMouse(tea.MouseClickMsg{Button: tea.MouseLeft, X: 5, Y: 2})
 		assert.Equal(t, OutcomeAnnotationChosen, out.Kind)
 		assert.Equal(t, 4, out.AnnotationTarget.Line, "row 2 with offset 3 selects item index 3 (Line=4)")
 	})
 
 	t.Run("non-press action is no-op", func(t *testing.T) {
 		mgr := setup()
-		out := mgr.annotLst.handleMouse(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionRelease, X: 5, Y: 2})
+		out := mgr.annotLst.handleMouse(tea.MouseReleaseMsg{Button: tea.MouseLeft, X: 5, Y: 2})
 		assert.Equal(t, OutcomeNone, out.Kind)
 	})
 }
@@ -566,7 +566,7 @@ func TestAnnotListOverlay_HandleMouse_ClickOutsideSwallowed(t *testing.T) {
 	require.NotZero(t, mgr.bounds.h)
 
 	// click far outside the popup rectangle
-	out := mgr.HandleMouse(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: 0, Y: 0})
+	out := mgr.HandleMouse(tea.MouseClickMsg{Button: tea.MouseLeft, X: 0, Y: 0})
 	assert.Equal(t, OutcomeNone, out.Kind, "click outside popup must not select")
 	assert.True(t, mgr.Active(), "click outside must not close the overlay")
 }
@@ -584,9 +584,8 @@ func TestAnnotListOverlay_HandleMouse_ClickInsideTranslatesCoords(t *testing.T) 
 	_ = mgr.Compose(base, ctx) // primes bounds
 
 	// click on first item row — in screen coords that's bounds.y + 2
-	out := mgr.HandleMouse(tea.MouseMsg{
-		Button: tea.MouseButtonLeft,
-		Action: tea.MouseActionPress,
+	out := mgr.HandleMouse(tea.MouseClickMsg{
+		Button: tea.MouseLeft,
 		X:      mgr.bounds.x + 5,
 		Y:      mgr.bounds.y + 2,
 	})
@@ -602,12 +601,12 @@ func TestAnnotListOverlay_HandleKey_OtherKeysConsumed(t *testing.T) {
 	mgr.OpenAnnotList(annotListSpec(items...))
 
 	keys := []struct {
-		msg    tea.KeyMsg
+		msg    tea.KeyPressMsg
 		action keymap.Action
 	}{
-		{tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}}, ""},
-		{tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}, keymap.ActionQuit},
-		{tea.KeyMsg{Type: tea.KeyTab}, keymap.ActionTogglePane},
+		{tea.KeyPressMsg{Code: 'x', Text: string('x')}, ""},
+		{tea.KeyPressMsg{Code: 'q', Text: string('q')}, keymap.ActionQuit},
+		{tea.KeyPressMsg{Code: tea.KeyTab}, keymap.ActionTogglePane},
 	}
 
 	for _, k := range keys {
@@ -645,7 +644,7 @@ func TestAnnotListOverlay_DismissAction(t *testing.T) {
 	mgr := NewManager()
 	mgr.OpenAnnotList(annotListSpec(annotItem("a.go", 1, "+", "x")))
 
-	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}}, keymap.ActionDismiss)
+	out := mgr.HandleKey(tea.KeyPressMsg{Code: 'x', Text: string('x')}, keymap.ActionDismiss)
 	assert.Equal(t, OutcomeClosed, out.Kind)
 	assert.False(t, mgr.Active())
 }

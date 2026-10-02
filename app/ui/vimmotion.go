@@ -3,7 +3,7 @@ package ui
 import (
 	"strconv"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/umputun/revdiff/app/keymap"
 )
@@ -44,7 +44,7 @@ var vimChordTable = map[string]keymap.Action{
 // handleKey relies on this — on fall-through it keeps the returned model but
 // discards cmd. If a future branch needs to emit a command, promote it to
 // handled=true instead.
-func (m Model) interceptVimMotion(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
+func (m Model) interceptVimMotion(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	// normalize so vim keys work under non-Latin keyboard layouts — matches
 	// the layout-alias fallback in keymap.Resolve and ResolveChord.
 	keyStr := keymap.NormalizeKey(msg.String())

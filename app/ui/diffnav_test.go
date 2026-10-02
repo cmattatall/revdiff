@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -34,19 +34,19 @@ func TestModel_NextPrevFile(t *testing.T) {
 	assert.Equal(t, "a.go", m.tree.SelectedFile())
 
 	// press n - should move to b.go
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'n', Text: string('n')})
 	model := result.(Model)
 	assert.Equal(t, "b.go", model.tree.SelectedFile())
 	assert.NotNil(t, cmd) // triggers file load
 
 	// press n - should move to c.go
-	result, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	result, cmd = model.Update(tea.KeyPressMsg{Code: 'n', Text: string('n')})
 	model = result.(Model)
 	assert.Equal(t, "c.go", model.tree.SelectedFile())
 	assert.NotNil(t, cmd)
 
 	// press p - back to b.go
-	result, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	result, cmd = model.Update(tea.KeyPressMsg{Code: 'p', Text: string('p')})
 	model = result.(Model)
 	assert.Equal(t, "b.go", model.tree.SelectedFile())
 	assert.NotNil(t, cmd)
@@ -67,12 +67,12 @@ func TestModel_DiffScrolling(t *testing.T) {
 	assert.Equal(t, 0, model.nav.diffCursor)
 
 	// j moves cursor down
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'j', Text: string('j')})
 	model = result.(Model)
 	assert.Equal(t, 1, model.nav.diffCursor)
 
 	// k moves cursor back up
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'k', Text: string('k')})
 	model = result.(Model)
 	assert.Equal(t, 0, model.nav.diffCursor)
 }
@@ -92,12 +92,12 @@ func TestModel_DiffCursorSkipsDividers(t *testing.T) {
 	assert.Equal(t, 0, model.nav.diffCursor)
 
 	// j should skip divider and land on line10
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'j', Text: string('j')})
 	model = result.(Model)
 	assert.Equal(t, 2, model.nav.diffCursor)
 
 	// k should skip divider and go back to line1
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'k', Text: string('k')})
 	model = result.(Model)
 	assert.Equal(t, 0, model.nav.diffCursor)
 }
@@ -117,11 +117,11 @@ func TestModel_DiffCursorAutoScrolls(t *testing.T) {
 
 	// move cursor past viewport height - viewport should auto-scroll
 	for range 50 {
-		result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		result, _ = model.Update(tea.KeyPressMsg{Code: 'j', Text: string('j')})
 		model = result.(Model)
 	}
 	assert.Equal(t, 50, model.nav.diffCursor)
-	assert.Positive(t, model.layout.viewport.YOffset, "viewport should have scrolled")
+	assert.Positive(t, model.layout.viewport.YOffset(), "viewport should have scrolled")
 }
 func TestModel_CursorDiffLine(t *testing.T) {
 	lines := []diff.DiffLine{
@@ -248,13 +248,13 @@ func TestModel_NextPrevFileWrapAround(t *testing.T) {
 	m.file.name = "b.go"
 
 	// n should wrap to first
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'n', Text: string('n')})
 	model := result.(Model)
 	assert.Equal(t, "a.go", model.tree.SelectedFile())
 
 	// p should wrap to last
 	model.file.name = "a.go"
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'p', Text: string('p')})
 	model = result.(Model)
 	assert.Equal(t, "b.go", model.tree.SelectedFile())
 }
@@ -276,17 +276,17 @@ func TestModel_PgDownMovesCursorByPageHeight(t *testing.T) {
 	model.layout.focus = paneDiff
 	assert.Equal(t, 0, model.nav.diffCursor)
 
-	pageHeight := model.layout.viewport.Height
+	pageHeight := model.layout.viewport.Height()
 	require.Positive(t, pageHeight, "viewport height must be positive")
 
 	// pgdown should move cursor by page height
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 	model = result.(Model)
 	assert.Equal(t, pageHeight, model.nav.diffCursor, "PgDown should move cursor by viewport height")
 
 	// ctrl+d should move by half page height from current position
 	prevCursor := model.nav.diffCursor
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl})
 	model = result.(Model)
 	halfPage := pageHeight / 2
 	assert.Equal(t, prevCursor+halfPage, model.nav.diffCursor, "ctrl+d should move cursor by half viewport height")
@@ -308,20 +308,20 @@ func TestModel_PgUpMovesCursorByPageHeight(t *testing.T) {
 	model = result.(Model)
 	model.layout.focus = paneDiff
 
-	pageHeight := model.layout.viewport.Height
+	pageHeight := model.layout.viewport.Height()
 	require.Positive(t, pageHeight, "viewport height must be positive")
 
 	// move cursor to line 80 first
 	model.nav.diffCursor = 80
 
 	// pgup should move cursor up by page height
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyPgUp})
 	model = result.(Model)
 	assert.Equal(t, 80-pageHeight, model.nav.diffCursor, "PgUp should move cursor up by viewport height")
 
 	// ctrl+u should move up by half page height
 	model.nav.diffCursor = 80
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl})
 	model = result.(Model)
 	halfPage := pageHeight / 2
 	assert.Equal(t, 80-halfPage, model.nav.diffCursor, "ctrl+u should move cursor up by half viewport height")
@@ -342,21 +342,21 @@ func TestModel_CtrlDMovesHalfPageDown(t *testing.T) {
 	model.layout.focus = paneDiff
 	assert.Equal(t, 0, model.nav.diffCursor)
 
-	pageHeight := model.layout.viewport.Height
+	pageHeight := model.layout.viewport.Height()
 	halfPage := pageHeight / 2
 	require.Positive(t, halfPage, "half page must be positive")
 
 	// ctrl+d moves cursor and viewport by half page
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl})
 	model = result.(Model)
 	assert.Equal(t, halfPage, model.nav.diffCursor, "ctrl+d should move cursor by half viewport height")
-	assert.Equal(t, halfPage, model.layout.viewport.YOffset, "ctrl+d should scroll viewport by half page")
+	assert.Equal(t, halfPage, model.layout.viewport.YOffset(), "ctrl+d should scroll viewport by half page")
 
 	// PgDn moves full page from start for comparison
 	model.nav.diffCursor = 0
 	model.layout.viewport.SetYOffset(0)
 	model.layout.viewport.SetContent(model.renderDiff())
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 	model = result.(Model)
 	assert.Equal(t, pageHeight, model.nav.diffCursor, "PgDown should move cursor by full viewport height")
 }
@@ -375,7 +375,7 @@ func TestModel_CtrlUMovesHalfPageUp(t *testing.T) {
 	model = result.(Model)
 	model.layout.focus = paneDiff
 
-	pageHeight := model.layout.viewport.Height
+	pageHeight := model.layout.viewport.Height()
 	halfPage := pageHeight / 2
 	require.Positive(t, halfPage, "half page must be positive")
 
@@ -383,19 +383,19 @@ func TestModel_CtrlUMovesHalfPageUp(t *testing.T) {
 	model.nav.diffCursor = 80
 	model.layout.viewport.SetYOffset(80)
 	model.layout.viewport.SetContent(model.renderDiff())
-	prevOffset := model.layout.viewport.YOffset
+	prevOffset := model.layout.viewport.YOffset()
 
 	// ctrl+u moves cursor and viewport by half page up
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl})
 	model = result.(Model)
 	assert.Equal(t, 80-halfPage, model.nav.diffCursor, "ctrl+u should move cursor up by half viewport height")
-	assert.Equal(t, prevOffset-halfPage, model.layout.viewport.YOffset, "ctrl+u should scroll viewport up by half page")
+	assert.Equal(t, prevOffset-halfPage, model.layout.viewport.YOffset(), "ctrl+u should scroll viewport up by half page")
 
 	// PgUp moves full page up from 80 for comparison
 	model.nav.diffCursor = 80
 	model.layout.viewport.SetYOffset(80)
 	model.layout.viewport.SetContent(model.renderDiff())
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyPgUp})
 	model = result.(Model)
 	assert.Equal(t, 80-pageHeight, model.nav.diffCursor, "PgUp should move cursor up by full viewport height")
 }
@@ -419,22 +419,22 @@ func TestModel_PgDownPgUpPreservesRelativeCursorPosition(t *testing.T) {
 
 	t.Run("from top, pgdown then pgup is reversible", func(t *testing.T) {
 		model := makeModel()
-		pageHeight := model.layout.viewport.Height
+		pageHeight := model.layout.viewport.Height()
 		require.Positive(t, pageHeight, "page height must be positive")
 		require.Equal(t, 0, model.nav.diffCursor, "cursor starts at 0")
-		require.Equal(t, 0, model.layout.viewport.YOffset, "viewport starts at 0")
+		require.Equal(t, 0, model.layout.viewport.YOffset(), "viewport starts at 0")
 
-		result, _ := model.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+		result, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 		model = result.(Model)
-		assert.Equal(t, 0, model.cursorViewportY()-model.layout.viewport.YOffset,
+		assert.Equal(t, 0, model.cursorViewportY()-model.layout.viewport.YOffset(),
 			"pgdown from top should keep cursor at screen row 0")
 		assert.Equal(t, pageHeight, model.nav.diffCursor, "pgdown should advance cursor by page height")
-		assert.Equal(t, pageHeight, model.layout.viewport.YOffset, "pgdown should scroll viewport by page height")
+		assert.Equal(t, pageHeight, model.layout.viewport.YOffset(), "pgdown should scroll viewport by page height")
 
-		result, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+		result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyPgUp})
 		model = result.(Model)
 		assert.Equal(t, 0, model.nav.diffCursor, "pgup should reverse pgdown exactly")
-		assert.Equal(t, 0, model.layout.viewport.YOffset, "pgup should restore viewport offset")
+		assert.Equal(t, 0, model.layout.viewport.YOffset(), "pgup should restore viewport offset")
 	})
 
 	t.Run("cursor at mid-screen row stays at mid-screen after pgdown", func(t *testing.T) {
@@ -443,36 +443,36 @@ func TestModel_PgDownPgUpPreservesRelativeCursorPosition(t *testing.T) {
 		for range 5 {
 			model.moveDiffCursorDown()
 		}
-		midScreenRow := model.cursorViewportY() - model.layout.viewport.YOffset
+		midScreenRow := model.cursorViewportY() - model.layout.viewport.YOffset()
 		require.Equal(t, 5, midScreenRow, "setup: cursor should be at screen row 5")
 
-		result, _ := model.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+		result, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 		model = result.(Model)
-		assert.Equal(t, midScreenRow, model.cursorViewportY()-model.layout.viewport.YOffset,
+		assert.Equal(t, midScreenRow, model.cursorViewportY()-model.layout.viewport.YOffset(),
 			"pgdown should preserve cursor's on-screen row (not snap to top)")
 
-		result, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+		result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyPgUp})
 		model = result.(Model)
-		assert.Equal(t, midScreenRow, model.cursorViewportY()-model.layout.viewport.YOffset,
+		assert.Equal(t, midScreenRow, model.cursorViewportY()-model.layout.viewport.YOffset(),
 			"pgup should preserve cursor's on-screen row (not snap to bottom)")
 	})
 
 	t.Run("pgdown+pgdown+pgup returns to after-first-pgdown state", func(t *testing.T) {
 		model := makeModel()
 
-		result, _ := model.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+		result, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 		model = result.(Model)
 		afterFirstPgDownCursor := model.nav.diffCursor
-		afterFirstPgDownOffset := model.layout.viewport.YOffset
+		afterFirstPgDownOffset := model.layout.viewport.YOffset()
 
-		result, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+		result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 		model = result.(Model)
 
-		result, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+		result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyPgUp})
 		model = result.(Model)
 		assert.Equal(t, afterFirstPgDownCursor, model.nav.diffCursor,
 			"pgdown+pgdown+pgup should return cursor to after-first-pgdown state")
-		assert.Equal(t, afterFirstPgDownOffset, model.layout.viewport.YOffset,
+		assert.Equal(t, afterFirstPgDownOffset, model.layout.viewport.YOffset(),
 			"pgdown+pgdown+pgup should return viewport to after-first-pgdown state")
 	})
 
@@ -500,16 +500,16 @@ func TestModel_PgDownPgUpPreservesRelativeCursorPosition(t *testing.T) {
 		for range 3 {
 			model.moveDiffCursorDown()
 		}
-		midScreenRow := model.cursorViewportY() - model.layout.viewport.YOffset
+		midScreenRow := model.cursorViewportY() - model.layout.viewport.YOffset()
 
-		result, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+		result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 		model = result.(Model)
-		assert.Equal(t, midScreenRow, model.cursorViewportY()-model.layout.viewport.YOffset,
+		assert.Equal(t, midScreenRow, model.cursorViewportY()-model.layout.viewport.YOffset(),
 			"wrap-mode pgdown should preserve cursor's on-screen row")
 
-		result, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+		result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyPgUp})
 		model = result.(Model)
-		assert.Equal(t, midScreenRow, model.cursorViewportY()-model.layout.viewport.YOffset,
+		assert.Equal(t, midScreenRow, model.cursorViewportY()-model.layout.viewport.YOffset(),
 			"wrap-mode pgup should preserve cursor's on-screen row")
 	})
 }
@@ -533,48 +533,48 @@ func TestModel_PageOverlapCarriesRowsAcrossPages(t *testing.T) {
 
 	t.Run("zero overlap advances a full page", func(t *testing.T) {
 		model := newModel(0)
-		pageHeight := model.layout.viewport.Height
-		result, _ := model.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+		pageHeight := model.layout.viewport.Height()
+		result, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 		model = result.(Model)
-		assert.Equal(t, pageHeight, model.layout.viewport.YOffset)
+		assert.Equal(t, pageHeight, model.layout.viewport.YOffset())
 	})
 
 	t.Run("overlap keeps N rows on screen", func(t *testing.T) {
 		model := newModel(2)
-		pageHeight := model.layout.viewport.Height
-		result, _ := model.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+		pageHeight := model.layout.viewport.Height()
+		result, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 		model = result.(Model)
-		assert.Equal(t, pageHeight-2, model.layout.viewport.YOffset,
+		assert.Equal(t, pageHeight-2, model.layout.viewport.YOffset(),
 			"the last 2 rows of the previous screen must be the first 2 of the new one")
 	})
 
 	t.Run("overlap applies to pgup as well", func(t *testing.T) {
 		model := newModel(2)
-		pageHeight := model.layout.viewport.Height
+		pageHeight := model.layout.viewport.Height()
 		for range 2 {
-			result, _ := model.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+			result, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 			model = result.(Model)
 		}
-		downOffset := model.layout.viewport.YOffset
-		result, _ := model.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+		downOffset := model.layout.viewport.YOffset()
+		result, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyPgUp})
 		model = result.(Model)
-		assert.Equal(t, downOffset-(pageHeight-2), model.layout.viewport.YOffset)
+		assert.Equal(t, downOffset-(pageHeight-2), model.layout.viewport.YOffset())
 	})
 
 	t.Run("half page motions ignore the overlap", func(t *testing.T) {
 		model := newModel(2)
-		pageHeight := model.layout.viewport.Height
-		result, _ := model.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+		pageHeight := model.layout.viewport.Height()
+		result, _ := model.Update(tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl})
 		model = result.(Model)
-		assert.Equal(t, pageHeight/2, model.layout.viewport.YOffset,
+		assert.Equal(t, pageHeight/2, model.layout.viewport.YOffset(),
 			"ctrl+d already retains half a screen, so the overlap must not shrink it further")
 	})
 
 	t.Run("overlap wider than the pane still advances", func(t *testing.T) {
 		model := newModel(1000)
-		result, _ := model.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+		result, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 		model = result.(Model)
-		assert.Positive(t, model.layout.viewport.YOffset, "paging must never stall on an oversized overlap")
+		assert.Positive(t, model.layout.viewport.YOffset(), "paging must never stall on an oversized overlap")
 	})
 }
 
@@ -594,7 +594,7 @@ func TestModel_PagingDoesNotSkipRowsAtTallLineBoundary(t *testing.T) {
 	model = result.(Model)
 	model.layout.focus = paneDiff
 
-	pageHeight := model.layout.viewport.Height
+	pageHeight := model.layout.viewport.Height()
 	require.Positive(t, pageHeight)
 
 	// annotate the line one row short of the page edge with a body long enough to wrap
@@ -609,17 +609,17 @@ func TestModel_PagingDoesNotSkipRowsAtTallLineBoundary(t *testing.T) {
 	require.Greater(t, offsets[boundary+1]-offsets[boundary], 3,
 		"annotated line must be tall enough to overshoot the page budget")
 
-	startOffset := model.layout.viewport.YOffset
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	startOffset := model.layout.viewport.YOffset()
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 	model = result.(Model)
-	assert.LessOrEqual(t, model.layout.viewport.YOffset-startOffset, pageHeight,
+	assert.LessOrEqual(t, model.layout.viewport.YOffset()-startOffset, pageHeight,
 		"pgdown must not advance the viewport by more than one page, or rows are skipped unseen")
-	assert.Greater(t, model.layout.viewport.YOffset, startOffset, "pgdown must still advance the viewport")
+	assert.Greater(t, model.layout.viewport.YOffset(), startOffset, "pgdown must still advance the viewport")
 
-	downOffset := model.layout.viewport.YOffset
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	downOffset := model.layout.viewport.YOffset()
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyPgUp})
 	model = result.(Model)
-	assert.LessOrEqual(t, downOffset-model.layout.viewport.YOffset, pageHeight,
+	assert.LessOrEqual(t, downOffset-model.layout.viewport.YOffset(), pageHeight,
 		"pgup must not retreat the viewport by more than one page, or rows are skipped unseen")
 }
 
@@ -638,7 +638,7 @@ func TestModel_PagingAdvancesPastLineTallerThanPage(t *testing.T) {
 	model = result.(Model)
 	model.layout.focus = paneDiff
 
-	pageHeight := model.layout.viewport.Height
+	pageHeight := model.layout.viewport.Height()
 	model.store.Add(annotation.Annotation{File: "a.go", Line: 1, Type: string(diff.ChangeAdd),
 		Comment: strings.Repeat("a very long annotation body that wraps many times ", 40)})
 	model.invalidateRenderCaches()
@@ -647,14 +647,14 @@ func TestModel_PagingAdvancesPastLineTallerThanPage(t *testing.T) {
 	require.Greater(t, offsets[1]-offsets[0], pageHeight,
 		"the annotated line must be taller than a full page for this to exercise the exemption")
 
-	startOffset := model.layout.viewport.YOffset
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	startOffset := model.layout.viewport.YOffset()
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 	model = result.(Model)
-	assert.GreaterOrEqual(t, model.layout.viewport.YOffset-startOffset, pageHeight/2,
+	assert.GreaterOrEqual(t, model.layout.viewport.YOffset()-startOffset, pageHeight/2,
 		"pgdown must not collapse to a near-zero scroll when the block ahead is taller than the page")
 
 	for range 2 {
-		result, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+		result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 		model = result.(Model)
 	}
 	assert.Positive(t, model.nav.diffCursor, "paging must get past a line taller than the viewport")
@@ -675,7 +675,7 @@ func TestModel_PgUpDoesNotSkipRowsAtTallLineBoundary(t *testing.T) {
 	model = result.(Model)
 	model.layout.focus = paneDiff
 
-	pageHeight := model.layout.viewport.Height
+	pageHeight := model.layout.viewport.Height()
 	const tall = 40
 	model.store.Add(annotation.Annotation{File: "a.go", Line: tall + 1, Type: string(diff.ChangeAdd),
 		Comment: strings.Repeat("some long annotation body ", 30)})
@@ -689,15 +689,15 @@ func TestModel_PgUpDoesNotSkipRowsAtTallLineBoundary(t *testing.T) {
 	// enough budget to make the rollback worthwhile by the time it reaches the annotation
 	model.nav.diffCursor = tall + pageHeight/2 + 1
 	model.syncViewportToCursor()
-	require.Greater(t, model.layout.viewport.YOffset, pageHeight,
+	require.Greater(t, model.layout.viewport.YOffset(), pageHeight,
 		"viewport must be far enough down that an over-page retreat would not clamp at zero")
 
-	startOffset := model.layout.viewport.YOffset
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	startOffset := model.layout.viewport.YOffset()
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyPgUp})
 	model = result.(Model)
-	assert.LessOrEqual(t, startOffset-model.layout.viewport.YOffset, pageHeight,
+	assert.LessOrEqual(t, startOffset-model.layout.viewport.YOffset(), pageHeight,
 		"pgup must not retreat the viewport by more than one page, or rows are skipped unseen")
-	assert.Less(t, model.layout.viewport.YOffset, startOffset, "pgup must still retreat the viewport")
+	assert.Less(t, model.layout.viewport.YOffset(), startOffset, "pgup must still retreat the viewport")
 }
 
 // on annotated lines the cursor must stay visible within the viewport after pgdown/pgup,
@@ -720,24 +720,24 @@ func TestModel_PgDownKeepsCursorVisibleOnAnnotatedLine(t *testing.T) {
 		model.store.Add(annotation.Annotation{File: "a.go", Line: i + 1, Type: string(diff.ChangeAdd), Comment: "note"})
 	}
 
-	pageHeight := model.layout.viewport.Height
+	pageHeight := model.layout.viewport.Height()
 	require.Positive(t, pageHeight)
 
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 	model = result.(Model)
 
 	cursorY := model.cursorViewportY()
-	yOffset := model.layout.viewport.YOffset
+	yOffset := model.layout.viewport.YOffset()
 	assert.GreaterOrEqual(t, cursorY, yOffset,
 		"cursor must stay on or below the top of the viewport after pgdown on annotated line")
 	assert.Less(t, cursorY, yOffset+pageHeight,
 		"cursor must stay above the bottom of the viewport after pgdown on annotated line")
 
 	// pgup must also keep cursor visible
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyPgUp})
 	model = result.(Model)
 	cursorY = model.cursorViewportY()
-	yOffset = model.layout.viewport.YOffset
+	yOffset = model.layout.viewport.YOffset()
 	assert.GreaterOrEqual(t, cursorY, yOffset,
 		"cursor must stay visible after pgup on annotated line")
 	assert.Less(t, cursorY, yOffset+pageHeight,
@@ -758,7 +758,7 @@ func TestModel_TreeCtrlDUMovesHalfPage(t *testing.T) {
 	halfPage := max(1, pageSize/2)
 
 	// ctrl+d from start
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl})
 	model := result.(Model)
 	assert.Equal(t, fmt.Sprintf("pkg/file%02d.go", halfPage), model.tree.SelectedFile(),
 		"ctrl+d should move by half page")
@@ -775,7 +775,7 @@ func TestModel_TreeCtrlDUMovesHalfPage(t *testing.T) {
 	}
 	assert.Equal(t, "pkg/file39.go", m3.tree.SelectedFile())
 
-	result, _ = m3.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
+	result, _ = m3.Update(tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl})
 	model3 := result.(Model)
 	assert.Equal(t, fmt.Sprintf("pkg/file%02d.go", 39-halfPage), model3.tree.SelectedFile(),
 		"ctrl+u should move by half page")
@@ -786,7 +786,7 @@ func TestModel_TreeCtrlDUMovesHalfPage(t *testing.T) {
 	m2.layout.focus = paneTree
 	m2.layout.height = 20
 
-	result, _ = m2.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	result, _ = m2.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 	model2 := result.(Model)
 	assert.Equal(t, fmt.Sprintf("pkg/file%02d.go", pageSize), model2.tree.SelectedFile(),
 		"PgDn should move by full page")
@@ -814,12 +814,12 @@ func TestModel_HomeEndMoveCursorToBoundaries(t *testing.T) {
 	model.nav.diffCursor = 25
 
 	// end should move to last line
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnd})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEnd})
 	model = result.(Model)
 	assert.Equal(t, 49, model.nav.diffCursor, "End should move cursor to last line")
 
 	// home should move to first line
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyHome})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyHome})
 	model = result.(Model)
 	assert.Equal(t, 0, model.nav.diffCursor, "Home should move cursor to first line")
 }
@@ -845,12 +845,12 @@ func TestModel_HomeEndSkipDividers(t *testing.T) {
 	model.layout.focus = paneDiff
 
 	// home should skip leading divider
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyHome})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyHome})
 	model = result.(Model)
 	assert.Equal(t, 1, model.nav.diffCursor, "Home should skip leading divider")
 
 	// end should skip trailing divider
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnd})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEnd})
 	model = result.(Model)
 	assert.Equal(t, 2, model.nav.diffCursor, "End should skip trailing divider")
 }
@@ -872,7 +872,7 @@ func TestModel_PgDownClampsAtEnd(t *testing.T) {
 	model.layout.focus = paneDiff
 
 	// pgdown when there are fewer lines than page height should clamp at last line
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 	model = result.(Model)
 	assert.Equal(t, 9, model.nav.diffCursor, "PgDown should clamp at last line")
 }
@@ -895,7 +895,7 @@ func TestModel_PgUpClampsAtStart(t *testing.T) {
 	model.nav.diffCursor = 3
 
 	// pgup from line 3 with large page height should clamp at first line
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyPgUp})
 	model = result.(Model)
 	assert.Equal(t, 0, model.nav.diffCursor, "PgUp should clamp at first line")
 }
@@ -917,12 +917,12 @@ func TestModel_PgDownAccountsForDividers(t *testing.T) {
 	model.layout.focus = paneDiff
 	assert.Equal(t, 0, model.nav.diffCursor)
 
-	pageHeight := model.layout.viewport.Height
+	pageHeight := model.layout.viewport.Height()
 	require.Positive(t, pageHeight)
 
 	// pgdown with dividers: cursor traverses fewer non-divider lines than viewport height
 	// because divider rows consume visual space without being cursor-selectable
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 	model = result.(Model)
 	assert.Positive(t, model.nav.diffCursor, "cursor should have moved forward")
 
@@ -947,21 +947,21 @@ func TestModel_PgDownScrollsViewportByPage(t *testing.T) {
 	result, _ = model.Update(fileLoadedMsg{file: "a.go", lines: lines})
 	model = result.(Model)
 	model.layout.focus = paneDiff
-	assert.Equal(t, 0, model.layout.viewport.YOffset)
+	assert.Equal(t, 0, model.layout.viewport.YOffset())
 
-	pageHeight := model.layout.viewport.Height
+	pageHeight := model.layout.viewport.Height()
 	require.Positive(t, pageHeight)
 
 	// pgdown should scroll viewport by approximately a full page (not just 1 line)
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 	model = result.(Model)
-	assert.Equal(t, pageHeight, model.layout.viewport.YOffset,
+	assert.Equal(t, pageHeight, model.layout.viewport.YOffset(),
 		"viewport should scroll to cursor position (full page), not just 1 line")
 
 	// second pgdown should scroll another full page
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 	model = result.(Model)
-	assert.Equal(t, 2*pageHeight, model.layout.viewport.YOffset,
+	assert.Equal(t, 2*pageHeight, model.layout.viewport.YOffset(),
 		"viewport should advance by another full page")
 }
 func TestModel_PgUpScrollsViewportByPage(t *testing.T) {
@@ -977,7 +977,7 @@ func TestModel_PgUpScrollsViewportByPage(t *testing.T) {
 	model = result.(Model)
 	model.layout.focus = paneDiff
 
-	pageHeight := model.layout.viewport.Height
+	pageHeight := model.layout.viewport.Height()
 	require.Positive(t, pageHeight)
 
 	// move cursor to line 100
@@ -985,12 +985,12 @@ func TestModel_PgUpScrollsViewportByPage(t *testing.T) {
 	model.syncViewportToCursor()
 
 	// pgup should scroll viewport back by approximately a full page
-	prevOffset := model.layout.viewport.YOffset
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	prevOffset := model.layout.viewport.YOffset()
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyPgUp})
 	model = result.(Model)
 
 	// viewport should scroll back significantly, not just 1 line
-	scrolled := prevOffset - model.layout.viewport.YOffset
+	scrolled := prevOffset - model.layout.viewport.YOffset()
 	assert.GreaterOrEqual(t, scrolled, pageHeight-1,
 		"viewport should scroll back by approximately a full page")
 }
@@ -1011,7 +1011,7 @@ func TestModel_TreePgDownMovesCursorByPage(t *testing.T) {
 	require.Positive(t, pageSize)
 
 	// PgDown should advance cursor by page size files
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 	model := result.(Model)
 	assert.Equal(t, fmt.Sprintf("pkg/file%02d.go", pageSize), model.tree.SelectedFile(),
 		"PgDown in tree should move cursor by page size")
@@ -1037,7 +1037,7 @@ func TestModel_TreePgUpMovesCursorByPage(t *testing.T) {
 	assert.Equal(t, "pkg/file39.go", m.tree.SelectedFile())
 
 	// PgUp should move back by page size files
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyPgUp})
 	model := result.(Model)
 	expected := fmt.Sprintf("pkg/file%02d.go", 39-pageSize)
 	assert.Equal(t, expected, model.tree.SelectedFile(), "PgUp in tree should move cursor by page size")
@@ -1058,7 +1058,7 @@ func TestModel_TreeCtrlDMovesCursorByHalfPage(t *testing.T) {
 	require.Positive(t, pageSize)
 	halfPage := max(1, pageSize/2)
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl})
 	model := result.(Model)
 	assert.Equal(t, fmt.Sprintf("pkg/file%02d.go", halfPage), model.tree.SelectedFile(),
 		"ctrl+d in tree should move cursor by half page size")
@@ -1083,7 +1083,7 @@ func TestModel_TreeCtrlUMovesCursorByHalfPage(t *testing.T) {
 	}
 	assert.Equal(t, "pkg/file39.go", m.tree.SelectedFile())
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl})
 	model := result.(Model)
 	expected := fmt.Sprintf("pkg/file%02d.go", 39-halfPage)
 	assert.Equal(t, expected, model.tree.SelectedFile(), "ctrl+u in tree should move cursor by half page size")
@@ -1102,12 +1102,12 @@ func TestModel_TreeHomeEndMoveToBoundaries(t *testing.T) {
 	assert.NotEqual(t, "cmd/main.go", m.tree.SelectedFile())
 
 	// end should move to last file
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnd})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnd})
 	model := result.(Model)
 	assert.Equal(t, "pkg/util.go", model.tree.SelectedFile(), "End in tree should move to last file")
 
 	// home should move to first file
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyHome})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyHome})
 	model = result.(Model)
 	assert.Equal(t, "cmd/main.go", model.tree.SelectedFile(), "Home in tree should move to first file")
 }
@@ -1125,7 +1125,7 @@ func TestModel_TreeScrollOffsetPersistsAcrossUpdates(t *testing.T) {
 	// scroll down past the visible window via repeated Update calls
 	var result tea.Model
 	for range 15 {
-		result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		result, _ = m.Update(tea.KeyPressMsg{Code: 'j', Text: string('j')})
 		m = result.(Model)
 	}
 	// cursor should be well past the initial visible window
@@ -1133,7 +1133,7 @@ func TestModel_TreeScrollOffsetPersistsAcrossUpdates(t *testing.T) {
 	assert.NotEqual(t, "pkg/file00.go", fileAfterDown, "cursor should have moved past first file")
 
 	// move up one step, the selected file should change by one
-	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	result, _ = m.Update(tea.KeyPressMsg{Code: 'k', Text: string('k')})
 	m = result.(Model)
 	assert.NotEqual(t, fileAfterDown, m.tree.SelectedFile(),
 		"selected file should change after moving up")
@@ -1289,7 +1289,7 @@ func TestModel_MoveToNextHunk(t *testing.T) {
 	m.file.lines = lines
 	m.nav.diffCursor = 0
 	m.file.name = "a.go"
-	m.layout.viewport.Height = 20
+	m.layout.viewport.SetHeight(20)
 
 	m.moveToNextHunk()
 	assert.Equal(t, 1, m.nav.diffCursor, "should jump to hunk 1")
@@ -1314,7 +1314,7 @@ func TestModel_MoveToPrevHunk(t *testing.T) {
 	m.file.lines = lines
 	m.nav.diffCursor = 4
 	m.file.name = "a.go"
-	m.layout.viewport.Height = 20
+	m.layout.viewport.SetHeight(20)
 
 	m.moveToPrevHunk()
 	assert.Equal(t, 3, m.nav.diffCursor, "should jump to hunk 2")
@@ -1348,7 +1348,7 @@ func TestModel_CenterHunkInViewport_SmallHunk(t *testing.T) {
 	result, _ = m.Update(fileLoadedMsg{file: "a.go", lines: lines})
 	m = result.(Model)
 	m.layout.focus = paneDiff
-	vpHeight := m.layout.viewport.Height
+	vpHeight := m.layout.viewport.Height()
 	require.Positive(t, vpHeight)
 
 	m.nav.diffCursor = 0
@@ -1358,7 +1358,7 @@ func TestModel_CenterHunkInViewport_SmallHunk(t *testing.T) {
 	// hunk midpoint: cursorY + hunkHeight/2 = 20 + 1 = 21
 	// offset: midY - vpHeight/2
 	expectedOffset := 21 - vpHeight/2
-	assert.Equal(t, expectedOffset, m.layout.viewport.YOffset, "small hunk should be centered by its midpoint")
+	assert.Equal(t, expectedOffset, m.layout.viewport.YOffset(), "small hunk should be centered by its midpoint")
 }
 
 func TestModel_CenterHunkInViewport_LargeHunk(t *testing.T) {
@@ -1384,7 +1384,7 @@ func TestModel_CenterHunkInViewport_LargeHunk(t *testing.T) {
 	assert.Equal(t, 10, m.nav.diffCursor, "cursor should land on first line of hunk")
 
 	// hunk is 100 lines >> viewport, so offset = cursorY - 2 = 10 - 2 = 8
-	assert.Equal(t, 8, m.layout.viewport.YOffset, "large hunk should place first line near top with context margin")
+	assert.Equal(t, 8, m.layout.viewport.YOffset(), "large hunk should place first line near top with context margin")
 }
 
 func TestModel_CenterHunkInViewport_HunkAtStart(t *testing.T) {
@@ -1408,7 +1408,7 @@ func TestModel_CenterHunkInViewport_HunkAtStart(t *testing.T) {
 	m.nav.diffCursor = 10
 	m.moveToPrevHunk()
 	assert.Equal(t, 0, m.nav.diffCursor, "cursor should land on first line")
-	assert.Equal(t, 0, m.layout.viewport.YOffset, "offset should be clamped to 0 when hunk is near top")
+	assert.Equal(t, 0, m.layout.viewport.YOffset(), "offset should be clamped to 0 when hunk is near top")
 }
 
 func TestModel_CenterHunkInViewport_PrevHunkCenters(t *testing.T) {
@@ -1431,7 +1431,7 @@ func TestModel_CenterHunkInViewport_PrevHunkCenters(t *testing.T) {
 	result, _ = m.Update(fileLoadedMsg{file: "a.go", lines: lines})
 	m = result.(Model)
 	m.layout.focus = paneDiff
-	vpHeight := m.layout.viewport.Height
+	vpHeight := m.layout.viewport.Height()
 
 	m.nav.diffCursor = 40
 	m.syncViewportToCursor()
@@ -1440,7 +1440,7 @@ func TestModel_CenterHunkInViewport_PrevHunkCenters(t *testing.T) {
 
 	// hunk midpoint: 25 + 2/2 = 26, offset: 26 - vpHeight/2
 	expectedOffset := 26 - vpHeight/2
-	assert.Equal(t, expectedOffset, m.layout.viewport.YOffset, "prevHunk should center the hunk by its midpoint")
+	assert.Equal(t, expectedOffset, m.layout.viewport.YOffset(), "prevHunk should center the hunk by its midpoint")
 }
 
 func TestModel_CenterHunkInViewport_SingleLineHunk(t *testing.T) {
@@ -1460,7 +1460,7 @@ func TestModel_CenterHunkInViewport_SingleLineHunk(t *testing.T) {
 	result, _ = m.Update(fileLoadedMsg{file: "a.go", lines: lines})
 	m = result.(Model)
 	m.layout.focus = paneDiff
-	vpHeight := m.layout.viewport.Height
+	vpHeight := m.layout.viewport.Height()
 
 	m.nav.diffCursor = 0
 	m.moveToNextHunk()
@@ -1468,7 +1468,7 @@ func TestModel_CenterHunkInViewport_SingleLineHunk(t *testing.T) {
 
 	// single-line hunk: midY = 25 + 0 = 25, offset = 25 - vpHeight/2
 	expectedOffset := 25 - vpHeight/2
-	assert.Equal(t, expectedOffset, m.layout.viewport.YOffset, "single-line hunk midpoint centered in viewport")
+	assert.Equal(t, expectedOffset, m.layout.viewport.YOffset(), "single-line hunk midpoint centered in viewport")
 }
 
 func TestModel_CenterHunkInViewport_WrapMode(t *testing.T) {
@@ -1498,7 +1498,7 @@ func TestModel_CenterHunkInViewport_WrapMode(t *testing.T) {
 	// diffContentWidth = 80 - 4 = 76, wrapWidth = 76 - 3 (wrap gutter) = 73
 	m.file.singleFile = true
 	m.layout.treeWidth = 0
-	vpHeight := m.layout.viewport.Height
+	vpHeight := m.layout.viewport.Height()
 	require.Positive(t, vpHeight)
 
 	m.nav.diffCursor = 0
@@ -1513,7 +1513,7 @@ func TestModel_CenterHunkInViewport_WrapMode(t *testing.T) {
 	const cursorY = 20
 	const hunkVisualHeight = 4
 	expectedOffset := max(0, cursorY+hunkVisualHeight/2-vpHeight/2)
-	assert.Equal(t, expectedOffset, m.layout.viewport.YOffset, "wrap mode: offset should account for wrapped line height")
+	assert.Equal(t, expectedOffset, m.layout.viewport.YOffset(), "wrap mode: offset should account for wrapped line height")
 }
 
 func TestModel_CenterHunkInViewport_WithAnnotation(t *testing.T) {
@@ -1537,7 +1537,7 @@ func TestModel_CenterHunkInViewport_WithAnnotation(t *testing.T) {
 	result, _ = m.Update(fileLoadedMsg{file: "a.go", lines: lines})
 	m = result.(Model)
 	m.layout.focus = paneDiff
-	vpHeight := m.layout.viewport.Height
+	vpHeight := m.layout.viewport.Height()
 
 	// add an annotation on the first changed line
 	m.store.Add(annotation.Annotation{File: "a.go", Line: 26, Type: "+", Comment: "review note"})
@@ -1555,7 +1555,7 @@ func TestModel_CenterHunkInViewport_WithAnnotation(t *testing.T) {
 	const cursorY = 25
 	const hunkVisualHeight = 3
 	expectedOffset := max(0, cursorY+hunkVisualHeight/2-vpHeight/2)
-	assert.Equal(t, expectedOffset, m.layout.viewport.YOffset, "annotation: offset should include annotation visual rows")
+	assert.Equal(t, expectedOffset, m.layout.viewport.YOffset(), "annotation: offset should include annotation visual rows")
 }
 
 func TestModel_CenterHunkInViewport_NoOpOnContextLine(t *testing.T) {
@@ -1581,10 +1581,10 @@ func TestModel_CenterHunkInViewport_NoOpOnContextLine(t *testing.T) {
 	m.nav.diffCursor = 10
 	m.layout.viewport.SetYOffset(5)
 	m.layout.viewport.SetContent(m.renderDiff())
-	beforeOffset := m.layout.viewport.YOffset
+	beforeOffset := m.layout.viewport.YOffset()
 
 	m.centerHunkInViewport()
-	assert.Equal(t, beforeOffset, m.layout.viewport.YOffset, "should be no-op when cursor is on context line")
+	assert.Equal(t, beforeOffset, m.layout.viewport.YOffset(), "should be no-op when cursor is on context line")
 }
 
 func TestModel_CenterHunkInViewport_CollapsedMode(t *testing.T) {
@@ -1615,7 +1615,7 @@ func TestModel_CenterHunkInViewport_CollapsedMode(t *testing.T) {
 	m.layout.focus = paneDiff
 	m.modes.collapsed.enabled = true
 	m.modes.collapsed.expandedHunks = make(map[int]bool)
-	vpHeight := m.layout.viewport.Height
+	vpHeight := m.layout.viewport.Height()
 
 	m.nav.diffCursor = 0
 	m.moveToNextHunk()
@@ -1629,7 +1629,7 @@ func TestModel_CenterHunkInViewport_CollapsedMode(t *testing.T) {
 	const cursorY = 20
 	const hunkVisualHeight = 3
 	expectedOffset := max(0, cursorY+hunkVisualHeight/2-vpHeight/2)
-	assert.Equal(t, expectedOffset, m.layout.viewport.YOffset, "collapsed mode: offset should only count visible lines")
+	assert.Equal(t, expectedOffset, m.layout.viewport.YOffset(), "collapsed mode: offset should only count visible lines")
 }
 
 func TestModel_HunkNavigationViaKeys(t *testing.T) {
@@ -1645,19 +1645,19 @@ func TestModel_HunkNavigationViaKeys(t *testing.T) {
 	m.nav.diffCursor = 0
 	m.file.name = "a.go"
 	m.layout.focus = paneDiff
-	m.layout.viewport.Height = 20
+	m.layout.viewport.SetHeight(20)
 
 	// press ] to go to next chunk
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: ']', Text: string(']')})
 	model := result.(Model)
 	assert.Equal(t, 1, model.nav.diffCursor, "] should jump to first chunk")
 
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: ']', Text: string(']')})
 	model = result.(Model)
 	assert.Equal(t, 3, model.nav.diffCursor, "] should jump to second chunk")
 
 	// press [ to go to previous chunk
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'['}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: '[', Text: string('[')})
 	model = result.(Model)
 	assert.Equal(t, 1, model.nav.diffCursor, "[ should jump back to first chunk")
 }
@@ -1672,17 +1672,17 @@ func TestModel_HorizontalScroll(t *testing.T) {
 	assert.Equal(t, 0, m.layout.scrollX)
 
 	// scroll right
-	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	result, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	m = result.(Model)
 	assert.Equal(t, scrollStep, m.layout.scrollX)
 
 	// scroll left back to 0
-	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	result, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
 	m = result.(Model)
 	assert.Equal(t, 0, m.layout.scrollX)
 
 	// scroll left at 0 stays at 0
-	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	result, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
 	m = result.(Model)
 	assert.Equal(t, 0, m.layout.scrollX)
 }
@@ -2007,8 +2007,8 @@ func TestModel_SyncViewportToCursor_WrappedLineBottomVisible(t *testing.T) {
 	m.modes.wrap = true
 	m.layout.width = 60
 	m.layout.treeWidth = 20
-	m.layout.viewport.Width = 40
-	m.layout.viewport.Height = 4
+	m.layout.viewport.SetWidth(40)
+	m.layout.viewport.SetHeight(4)
 
 	m.file.lines = []diff.DiffLine{
 		{NewNum: 1, Content: "short1", ChangeType: diff.ChangeContext},
@@ -2028,11 +2028,11 @@ func TestModel_SyncViewportToCursor_WrappedLineBottomVisible(t *testing.T) {
 
 	cursorTop := m.cursorViewportY()
 	cursorBottom := cursorTop + wrapRows - 1
-	expectedOffset := cursorBottom - m.layout.viewport.Height + 1
-	assert.Equal(t, expectedOffset, m.layout.viewport.YOffset,
+	expectedOffset := cursorBottom - m.layout.viewport.Height() + 1
+	assert.Equal(t, expectedOffset, m.layout.viewport.YOffset(),
 		"YOffset should pin the wrapped line's visual bottom to the viewport bottom")
-	assert.GreaterOrEqual(t, cursorTop, m.layout.viewport.YOffset, "cursor top must be visible")
-	assert.Less(t, cursorBottom, m.layout.viewport.YOffset+m.layout.viewport.Height,
+	assert.GreaterOrEqual(t, cursorTop, m.layout.viewport.YOffset(), "cursor top must be visible")
+	assert.Less(t, cursorBottom, m.layout.viewport.YOffset()+m.layout.viewport.Height(),
 		"last wrap row must be visible (was clipped below viewport before fix)")
 }
 
@@ -2058,8 +2058,8 @@ func TestModel_SyncViewportToCursor_AnnotationRowsVisible(t *testing.T) {
 	require.Equal(t, 3, annotRows, "multi-line annotation should occupy 3 rows")
 
 	// viewport height of 4 comfortably fits the 1-row diff line + 3 annotation rows
-	m.layout.viewport.Width = 50
-	m.layout.viewport.Height = 4
+	m.layout.viewport.SetWidth(50)
+	m.layout.viewport.SetHeight(4)
 	m.nav.diffCursor = 3
 	m.layout.viewport.SetContent(m.renderDiff())
 	m.layout.viewport.SetYOffset(0)
@@ -2068,11 +2068,11 @@ func TestModel_SyncViewportToCursor_AnnotationRowsVisible(t *testing.T) {
 
 	cursorTop := m.cursorViewportY()
 	cursorBottom := cursorTop + 1 + annotRows - 1 // 1 diff row + annotation rows
-	expectedOffset := cursorBottom - m.layout.viewport.Height + 1
-	assert.Equal(t, expectedOffset, m.layout.viewport.YOffset,
+	expectedOffset := cursorBottom - m.layout.viewport.Height() + 1
+	assert.Equal(t, expectedOffset, m.layout.viewport.YOffset(),
 		"YOffset should pin the annotation's visual bottom to the viewport bottom")
-	assert.GreaterOrEqual(t, cursorTop, m.layout.viewport.YOffset, "cursor top must be visible")
-	assert.Less(t, cursorBottom, m.layout.viewport.YOffset+m.layout.viewport.Height,
+	assert.GreaterOrEqual(t, cursorTop, m.layout.viewport.YOffset(), "cursor top must be visible")
+	assert.Less(t, cursorBottom, m.layout.viewport.YOffset()+m.layout.viewport.Height(),
 		"last annotation row must be visible (was clipped below viewport before fix)")
 }
 
@@ -2085,8 +2085,8 @@ func TestModel_SyncViewportToCursor_LineTallerThanViewport(t *testing.T) {
 	m.modes.wrap = true
 	m.layout.width = 60
 	m.layout.treeWidth = 20
-	m.layout.viewport.Width = 40
-	m.layout.viewport.Height = 2
+	m.layout.viewport.SetWidth(40)
+	m.layout.viewport.SetHeight(2)
 
 	m.file.lines = []diff.DiffLine{
 		{NewNum: 1, Content: "short1", ChangeType: diff.ChangeContext},
@@ -2094,7 +2094,7 @@ func TestModel_SyncViewportToCursor_LineTallerThanViewport(t *testing.T) {
 	}
 
 	wrapRows := m.wrappedLineCount(1)
-	require.Greater(t, wrapRows, m.layout.viewport.Height, "wrapped line must exceed viewport height")
+	require.Greater(t, wrapRows, m.layout.viewport.Height(), "wrapped line must exceed viewport height")
 
 	m.nav.diffCursor = 1
 	m.layout.viewport.SetContent(m.renderDiff())
@@ -2103,7 +2103,7 @@ func TestModel_SyncViewportToCursor_LineTallerThanViewport(t *testing.T) {
 	m.syncViewportToCursor()
 
 	cursorTop := m.cursorViewportY()
-	assert.Equal(t, cursorTop, m.layout.viewport.YOffset,
+	assert.Equal(t, cursorTop, m.layout.viewport.YOffset(),
 		"YOffset should snap to cursorTop when logical line is taller than viewport")
 }
 
@@ -2116,8 +2116,8 @@ func TestModel_SyncViewportToCursor_FileAnnotationOverflow(t *testing.T) {
 	m.file.name = "a.go"
 	m.layout.width = 80
 	m.layout.treeWidth = 20
-	m.layout.viewport.Width = 50
-	m.layout.viewport.Height = 2
+	m.layout.viewport.SetWidth(50)
+	m.layout.viewport.SetHeight(2)
 
 	m.file.lines = []diff.DiffLine{
 		{NewNum: 1, Content: "line1", ChangeType: diff.ChangeContext},
@@ -2126,7 +2126,7 @@ func TestModel_SyncViewportToCursor_FileAnnotationOverflow(t *testing.T) {
 		Comment: "file-a\nfile-b\nfile-c"})
 
 	fileRows := m.wrappedAnnotationLineCount(annotKeyFile)
-	require.Greater(t, fileRows, m.layout.viewport.Height, "file annotation must exceed viewport height")
+	require.Greater(t, fileRows, m.layout.viewport.Height(), "file annotation must exceed viewport height")
 
 	m.nav.diffCursor = -1 // cursor on file annotation line
 	m.layout.viewport.SetContent(m.renderDiff())
@@ -2136,7 +2136,7 @@ func TestModel_SyncViewportToCursor_FileAnnotationOverflow(t *testing.T) {
 
 	// with cursor at top (Y=0) and prior offset=5, first branch fires:
 	// SetYOffset(0) so the file annotation's top row is visible.
-	assert.Equal(t, 0, m.layout.viewport.YOffset,
+	assert.Equal(t, 0, m.layout.viewport.YOffset(),
 		"YOffset should scroll to show the file annotation top row")
 }
 
@@ -2148,8 +2148,8 @@ func TestModel_SyncViewportToCursor_OnAnnotationSubLineOverflow(t *testing.T) {
 	m.file.name = "a.go"
 	m.layout.width = 80
 	m.layout.treeWidth = 20
-	m.layout.viewport.Width = 50
-	m.layout.viewport.Height = 3
+	m.layout.viewport.SetWidth(50)
+	m.layout.viewport.SetHeight(3)
 
 	m.file.lines = []diff.DiffLine{
 		{NewNum: 1, Content: "line1", ChangeType: diff.ChangeContext},
@@ -2170,10 +2170,10 @@ func TestModel_SyncViewportToCursor_OnAnnotationSubLineOverflow(t *testing.T) {
 
 	cursorTop := m.cursorViewportY()
 	cursorBottom := cursorTop + annotRows - 1
-	expectedOffset := cursorBottom - m.layout.viewport.Height + 1
-	assert.Equal(t, expectedOffset, m.layout.viewport.YOffset,
+	expectedOffset := cursorBottom - m.layout.viewport.Height() + 1
+	assert.Equal(t, expectedOffset, m.layout.viewport.YOffset(),
 		"YOffset should pin the annotation sub-line's visual bottom to the viewport bottom")
-	assert.Less(t, cursorBottom, m.layout.viewport.YOffset+m.layout.viewport.Height,
+	assert.Less(t, cursorBottom, m.layout.viewport.YOffset()+m.layout.viewport.Height(),
 		"last annotation row must be visible")
 }
 
@@ -2246,17 +2246,17 @@ func TestModel_WrapToggle(t *testing.T) {
 	m.file.lines = lines
 	m.file.highlighted = []string{"x"}
 	m.layout.focus = paneDiff
-	m.layout.viewport.Width = 80
-	m.layout.viewport.Height = 20
+	m.layout.viewport.SetWidth(80)
+	m.layout.viewport.SetHeight(20)
 	assert.False(t, m.modes.wrap)
 
 	// press w to enable wrap
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'w', Text: string('w')})
 	model := result.(Model)
 	assert.True(t, model.modes.wrap)
 
 	// press w again to disable wrap
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: 'w', Text: string('w')})
 	model = result.(Model)
 	assert.False(t, model.modes.wrap)
 }
@@ -2267,12 +2267,12 @@ func TestModel_WrapToggleResetsScrollX(t *testing.T) {
 	m.file.lines = lines
 	m.file.highlighted = []string{"x"}
 	m.layout.focus = paneDiff
-	m.layout.viewport.Width = 80
-	m.layout.viewport.Height = 20
+	m.layout.viewport.SetWidth(80)
+	m.layout.viewport.SetHeight(20)
 	m.layout.scrollX = 10
 
 	// enable wrap: scrollX should reset to 0
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'w', Text: string('w')})
 	model := result.(Model)
 	assert.True(t, model.modes.wrap)
 	assert.Equal(t, 0, model.layout.scrollX)
@@ -2284,7 +2284,7 @@ func TestModel_WrapToggleNoOpWithoutFile(t *testing.T) {
 	assert.False(t, m.modes.wrap)
 
 	// w should be no-op without a loaded file
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'w', Text: string('w')})
 	model := result.(Model)
 	assert.False(t, model.modes.wrap)
 }
@@ -2296,7 +2296,7 @@ func TestModel_WrapToggleInTreePane(t *testing.T) {
 	m.layout.focus = paneTree
 	assert.False(t, m.modes.wrap)
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'w', Text: string('w')})
 	model := result.(Model)
 	assert.True(t, model.modes.wrap)
 	assert.Equal(t, paneTree, model.layout.focus)
@@ -2308,19 +2308,19 @@ func TestModel_ScrollBlockedInWrapMode(t *testing.T) {
 	m.file.lines = lines
 	m.file.highlighted = []string{"x"}
 	m.layout.focus = paneDiff
-	m.layout.viewport.Width = 80
-	m.layout.viewport.Height = 20
+	m.layout.viewport.SetWidth(80)
+	m.layout.viewport.SetHeight(20)
 	m.modes.wrap = true
 	m.layout.scrollX = 0
 
 	// right key should not change scrollX in wrap mode
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	model := result.(Model)
 	assert.Equal(t, 0, model.layout.scrollX)
 
 	// left key should not change scrollX in wrap mode
 	model.layout.scrollX = 0
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	result, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
 	model = result.(Model)
 	assert.Equal(t, 0, model.layout.scrollX)
 }
@@ -2333,13 +2333,13 @@ func TestModel_ScrollWorksWithoutWrapMode(t *testing.T) {
 	m.file.highlighted = []string{wide}
 	m.layout.width = 80
 	m.layout.focus = paneDiff
-	m.layout.viewport.Width = 80
-	m.layout.viewport.Height = 20
+	m.layout.viewport.SetWidth(80)
+	m.layout.viewport.SetHeight(20)
 	m.modes.wrap = false
 	m.layout.scrollX = 0
 
 	// right key should scroll in non-wrap mode
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	model := result.(Model)
 	assert.Positive(t, model.layout.scrollX)
 }
@@ -2366,7 +2366,7 @@ func TestModel_ActiveSectionTrackingOnScroll(t *testing.T) {
 
 		// TOC entries: [0]=README.md(0), [1]=First(0), [2]=Second(2), [3]=Third(4)
 		// move down one line at a time and verify active section via SyncCursorToActiveSection + CurrentLineIdx
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'j', Text: string('j')})
 		model := result.(Model)
 		// after scrolling to line 1 (under # First), sync cursor and check
 		model.file.mdTOC.SyncCursorToActiveSection()
@@ -2375,7 +2375,7 @@ func TestModel_ActiveSectionTrackingOnScroll(t *testing.T) {
 		assert.Equal(t, 0, idx, "cursor at line 1 should be in First section (lineIdx=0)")
 
 		// move to line 2 (## Second)
-		result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		result, _ = model.Update(tea.KeyPressMsg{Code: 'j', Text: string('j')})
 		model = result.(Model)
 		model.file.mdTOC.SyncCursorToActiveSection()
 		idx, ok = model.file.mdTOC.CurrentLineIdx()
@@ -2383,9 +2383,9 @@ func TestModel_ActiveSectionTrackingOnScroll(t *testing.T) {
 		assert.Equal(t, 2, idx, "cursor at line 2 should be in Second section (lineIdx=2)")
 
 		// move to line 4 (### Third)
-		result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		result, _ = model.Update(tea.KeyPressMsg{Code: 'j', Text: string('j')})
 		model = result.(Model)
-		result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		result, _ = model.Update(tea.KeyPressMsg{Code: 'j', Text: string('j')})
 		model = result.(Model)
 		model.file.mdTOC.SyncCursorToActiveSection()
 		idx, ok = model.file.mdTOC.CurrentLineIdx()
@@ -2404,7 +2404,7 @@ func TestModel_ActiveSectionTrackingOnScroll(t *testing.T) {
 		m.nav.diffCursor = 0
 
 		// should not panic
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'j', Text: string('j')})
 		model := result.(Model)
 		assert.Nil(t, model.file.mdTOC)
 	})
@@ -2428,16 +2428,16 @@ func TestModel_CustomKeymapDiffNavNextHunk(t *testing.T) {
 	m.nav.diffCursor = 0
 	m.file.name = "a.go"
 	m.layout.focus = paneDiff
-	m.layout.viewport.Height = 20
+	m.layout.viewport.SetHeight(20)
 
 	// "x" should jump to next hunk
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'x', Text: string('x')})
 	model := result.(Model)
 	assert.Equal(t, 1, model.nav.diffCursor, "x should jump to first hunk")
 
 	// "]" should not jump (unbound)
 	model.nav.diffCursor = 0
-	result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
+	result, _ = model.Update(tea.KeyPressMsg{Code: ']', Text: string(']')})
 	model = result.(Model)
 	assert.Equal(t, 0, model.nav.diffCursor, "] should not jump when unbound")
 }
@@ -2519,7 +2519,7 @@ func TestModel_PendingHunkJump_ClearedOnManualNav(t *testing.T) {
 	fwd := true
 	m.nav.pendingHunkJump = &fwd
 	m.layout.focus = paneTree
-	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	result, _ = m.Update(tea.KeyPressMsg{Code: 'j', Text: string('j')})
 	model := result.(Model)
 	assert.Nil(t, model.nav.pendingHunkJump, "pendingHunkJump should be cleared on manual tree navigation")
 }
@@ -2537,7 +2537,7 @@ func loadFileIntoModel(t *testing.T, files []string, diffs map[string][]diff.Dif
 	loadMsg := m.loadFileDiff(files[0])()
 	result, _ = m.Update(loadMsg)
 	m = result.(Model)
-	m.layout.viewport.Height = 20
+	m.layout.viewport.SetHeight(20)
 	return m
 }
 func TestModel_HunkNav_FromTreePane_KeepsFocus(t *testing.T) {
@@ -2583,7 +2583,7 @@ func TestModel_HunkNav_NextCrossesFileForward(t *testing.T) {
 	m.layout.focus = paneTree
 	m.nav.diffCursor = 0 // at the only (last) hunk
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: ']', Text: string(']')})
 	model := result.(Model)
 
 	require.NotNil(t, cmd)
@@ -2605,11 +2605,11 @@ func TestModel_HunkNav_PrevCrossesFileBackward(t *testing.T) {
 	bLoad := m.loadFileDiff("b.go")()
 	result, _ := m.Update(bLoad)
 	m = result.(Model)
-	m.layout.viewport.Height = 20
+	m.layout.viewport.SetHeight(20)
 	m.layout.focus = paneTree
 	m.nav.diffCursor = 0 // at the first (and only) hunk
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'['}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: '[', Text: string('[')})
 	model := result.(Model)
 
 	require.NotNil(t, cmd)
@@ -2627,7 +2627,7 @@ func TestModel_HunkNav_NextAtLastFileNoOp(t *testing.T) {
 	m.layout.focus = paneDiff
 	m.nav.diffCursor = 0
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: ']', Text: string(']')})
 	model := result.(Model)
 
 	assert.Nil(t, model.nav.pendingHunkJump, "no pendingHunkJump when no next file")
@@ -2643,7 +2643,7 @@ func TestModel_HunkNav_PrevAtFirstFileNoOp(t *testing.T) {
 	m.layout.focus = paneDiff
 	m.nav.diffCursor = 0
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'['}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '[', Text: string('[')})
 	model := result.(Model)
 
 	assert.Nil(t, model.nav.pendingHunkJump, "no pendingHunkJump when no prev file")
@@ -2661,7 +2661,7 @@ func TestModel_HunkNav_SingleFileNoCrossFile(t *testing.T) {
 	m.layout.focus = paneDiff
 	m.nav.diffCursor = 0
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: ']', Text: string(']')})
 	model := result.(Model)
 
 	assert.Nil(t, model.nav.pendingHunkJump, "single-file mode should not set pendingHunkJump")
@@ -2685,7 +2685,7 @@ func TestModel_HunkNav_CrossFile_LandsOnFirstHunk(t *testing.T) {
 	m.nav.diffCursor = 0 // at the only hunk of a.go
 
 	// press ] to trigger cross-file jump
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: ']', Text: string(']')})
 	m = result.(Model)
 	require.NotNil(t, cmd, "should have a load command")
 
@@ -2716,12 +2716,12 @@ func TestModel_HunkNav_CrossFile_LandsOnLastHunk(t *testing.T) {
 	loadMsg := m.loadFileDiff("b.go")()
 	result, _ := m.Update(loadMsg)
 	m = result.(Model)
-	m.layout.viewport.Height = 20
+	m.layout.viewport.SetHeight(20)
 	m.layout.focus = paneTree
 	m.nav.diffCursor = 0 // at first (only) hunk of b.go
 
 	// press [ to trigger cross-file backward jump
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'['}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: '[', Text: string('[')})
 	m = result.(Model)
 	require.NotNil(t, cmd, "should have a load command")
 
@@ -2743,7 +2743,7 @@ func TestModel_HunkNav_DefaultDoesNotCrossFiles(t *testing.T) {
 	m.layout.focus = paneDiff
 	m.nav.diffCursor = 0
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: ']', Text: string(']')})
 	model := result.(Model)
 
 	assert.Nil(t, cmd)
@@ -2817,7 +2817,7 @@ func TestModel_EnterInDiffPaneOnDividerIgnored(t *testing.T) {
 	m.nav.diffCursor = 0 // on divider line
 
 	// press enter on divider - should not enter annotation mode
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model := result.(Model)
 	assert.False(t, model.annot.annotating, "enter on divider should not start annotation")
 }
@@ -2844,11 +2844,11 @@ func TestBottomAlignViewportOnCursor_PlacesCursorAtBottom(t *testing.T) {
 	model.nav.diffCursor = 50
 
 	model.bottomAlignViewportOnCursor()
-	pageHeight := model.layout.viewport.Height
+	pageHeight := model.layout.viewport.Height()
 	require.Positive(t, pageHeight)
 
 	cursorY := model.cursorViewportY()
-	assert.Equal(t, pageHeight-1, cursorY-model.layout.viewport.YOffset,
+	assert.Equal(t, pageHeight-1, cursorY-model.layout.viewport.YOffset(),
 		"cursor should be at visual row pageHeight-1 (bottom row)")
 }
 
@@ -2868,7 +2868,7 @@ func TestBottomAlignViewportOnCursor_ShortFile(t *testing.T) {
 	model.nav.diffCursor = 2
 
 	model.bottomAlignViewportOnCursor()
-	assert.Equal(t, 0, model.layout.viewport.YOffset,
+	assert.Equal(t, 0, model.layout.viewport.YOffset(),
 		"short file should leave offset at 0 (no scroll needed)")
 }
 
@@ -3040,14 +3040,14 @@ func screenMotionModel(t *testing.T, n int) Model {
 func TestMoveDiffCursorToScreenTop_Placement(t *testing.T) {
 	m := screenMotionModel(t, 200)
 	m.layout.viewport.SetYOffset(50)
-	yoff := m.layout.viewport.YOffset
+	yoff := m.layout.viewport.YOffset()
 
 	m.moveDiffCursorToScreenTop(0)
 	assert.Equal(t, yoff, m.nav.diffCursor, "H with no count lands on the top visible line")
 
 	m.moveDiffCursorToScreenTop(5)
 	assert.Equal(t, yoff+4, m.nav.diffCursor, "5H lands on the 5th line from the top")
-	assert.Equal(t, yoff, m.layout.viewport.YOffset, "screen motion must not scroll the viewport")
+	assert.Equal(t, yoff, m.layout.viewport.YOffset(), "screen motion must not scroll the viewport")
 }
 
 func TestMoveDiffCursorToScreenMiddle_OddEvenHeight(t *testing.T) {
@@ -3065,7 +3065,7 @@ func TestMoveDiffCursorToScreenMiddle_OddEvenHeight(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m := screenMotionModel(t, 200)
 			m.layout.viewport.SetYOffset(0)
-			m.layout.viewport.Height = tc.height
+			m.layout.viewport.SetHeight(tc.height)
 			m.moveDiffCursorToScreenMiddle()
 			assert.Equal(t, tc.want, m.nav.diffCursor, "M lands on the middle visible line (YOffset 0 + Height/2)")
 		})
@@ -3075,15 +3075,15 @@ func TestMoveDiffCursorToScreenMiddle_OddEvenHeight(t *testing.T) {
 func TestMoveDiffCursorToScreenBottom_Placement(t *testing.T) {
 	m := screenMotionModel(t, 200)
 	m.layout.viewport.SetYOffset(50)
-	yoff := m.layout.viewport.YOffset
-	h := m.layout.viewport.Height
+	yoff := m.layout.viewport.YOffset()
+	h := m.layout.viewport.Height()
 
 	m.moveDiffCursorToScreenBottom(0)
 	assert.Equal(t, yoff+h-1, m.nav.diffCursor, "L with no count lands on the bottom visible line")
 
 	m.moveDiffCursorToScreenBottom(3)
 	assert.Equal(t, yoff+h-3, m.nav.diffCursor, "3L lands on the 3rd line from the bottom")
-	assert.Equal(t, yoff, m.layout.viewport.YOffset, "screen motion must not scroll the viewport")
+	assert.Equal(t, yoff, m.layout.viewport.YOffset(), "screen motion must not scroll the viewport")
 }
 
 func TestMoveDiffCursorToScreenBottom_CountBeyondTopClamps(t *testing.T) {
@@ -3091,7 +3091,7 @@ func TestMoveDiffCursorToScreenBottom_CountBeyondTopClamps(t *testing.T) {
 	// screen, not underflow above it (regression guard for the row clamp).
 	m := screenMotionModel(t, 200)
 	m.layout.viewport.SetYOffset(50)
-	yoff := m.layout.viewport.YOffset
+	yoff := m.layout.viewport.YOffset()
 
 	m.moveDiffCursorToScreenBottom(100000)
 	assert.Equal(t, yoff, m.nav.diffCursor, "huge count clamps L to the top visible line")
@@ -3115,19 +3115,19 @@ func TestMoveDiffCursorToScreenTop_CountBeyondBottomClamps(t *testing.T) {
 	// select an off-screen row below the window (symmetry with L's clamp).
 	m := screenMotionModel(t, 200)
 	m.layout.viewport.SetYOffset(50)
-	yoff := m.layout.viewport.YOffset
-	h := m.layout.viewport.Height
+	yoff := m.layout.viewport.YOffset()
+	h := m.layout.viewport.Height()
 
 	m.moveDiffCursorToScreenTop(100000)
 	assert.Equal(t, yoff+h-1, m.nav.diffCursor, "huge count clamps H to the last visible line")
-	assert.Equal(t, yoff, m.layout.viewport.YOffset, "clamped H must not scroll the viewport")
+	assert.Equal(t, yoff, m.layout.viewport.YOffset(), "clamped H must not scroll the viewport")
 }
 
 func TestMoveDiffCursorToScreen_ZeroHeight(t *testing.T) {
 	// degenerate viewport height must not panic in the height-derived row math.
 	m := screenMotionModel(t, 50)
 	m.layout.viewport.SetYOffset(0)
-	m.layout.viewport.Height = 0
+	m.layout.viewport.SetHeight(0)
 
 	assert.NotPanics(t, func() {
 		m.moveDiffCursorToScreenTop(3)
@@ -3142,15 +3142,15 @@ func TestMoveDiffCursorToScreenTop_CountClampOntoBottomDividerStaysInViewport(t 
 	// the window and scroll.
 	m := screenMotionModel(t, 200)
 	m.layout.viewport.SetYOffset(50)
-	yoff := m.layout.viewport.YOffset
-	h := m.layout.viewport.Height
+	yoff := m.layout.viewport.YOffset()
+	h := m.layout.viewport.Height()
 	m.file.lines[yoff+h-1].ChangeType = diff.ChangeDivider // bottom visible row
 
 	m.moveDiffCursorToScreenTop(100000)
 	assert.GreaterOrEqual(t, m.nav.diffCursor, yoff, "cursor must stay at or below the window top")
 	assert.Less(t, m.nav.diffCursor, yoff+h, "cursor must stay within the visible window")
 	assert.NotEqual(t, diff.ChangeDivider, m.file.lines[m.nav.diffCursor].ChangeType, "cursor must not rest on a divider")
-	assert.Equal(t, yoff, m.layout.viewport.YOffset, "clamped H onto a bottom-edge divider must not scroll")
+	assert.Equal(t, yoff, m.layout.viewport.YOffset(), "clamped H onto a bottom-edge divider must not scroll")
 }
 
 func TestMoveDiffCursorToScreenBottom_CountClampOntoTopDividerStaysInViewport(t *testing.T) {
@@ -3159,15 +3159,15 @@ func TestMoveDiffCursorToScreenBottom_CountClampOntoTopDividerStaysInViewport(t 
 	// window and scroll.
 	m := screenMotionModel(t, 200)
 	m.layout.viewport.SetYOffset(50)
-	yoff := m.layout.viewport.YOffset
-	h := m.layout.viewport.Height
+	yoff := m.layout.viewport.YOffset()
+	h := m.layout.viewport.Height()
 	m.file.lines[yoff].ChangeType = diff.ChangeDivider // top visible row
 
 	m.moveDiffCursorToScreenBottom(100000)
 	assert.GreaterOrEqual(t, m.nav.diffCursor, yoff, "cursor must not nudge above the window top")
 	assert.Less(t, m.nav.diffCursor, yoff+h, "cursor must stay within the visible window")
 	assert.NotEqual(t, diff.ChangeDivider, m.file.lines[m.nav.diffCursor].ChangeType, "cursor must not rest on a divider")
-	assert.Equal(t, yoff, m.layout.viewport.YOffset, "clamped L onto a top-edge divider must not scroll")
+	assert.Equal(t, yoff, m.layout.viewport.YOffset(), "clamped L onto a top-edge divider must not scroll")
 }
 
 func TestJumpToLineN_NudgesOffDivider(t *testing.T) {
@@ -3197,8 +3197,8 @@ func TestMoveDiffCursorToScreenTop_StaysInViewportOnDivider(t *testing.T) {
 	// scroll the page). Regression guard for the viewport-aware nudge.
 	m := screenMotionModel(t, 200)
 	m.layout.viewport.SetYOffset(55)
-	yoff := m.layout.viewport.YOffset
-	h := m.layout.viewport.Height
+	yoff := m.layout.viewport.YOffset()
+	h := m.layout.viewport.Height()
 	m.file.lines[yoff].ChangeType = diff.ChangeDivider
 
 	m.moveDiffCursorToScreenTop(0)
@@ -3206,7 +3206,7 @@ func TestMoveDiffCursorToScreenTop_StaysInViewportOnDivider(t *testing.T) {
 	assert.NotEqual(t, diff.ChangeDivider, m.file.lines[m.nav.diffCursor].ChangeType, "cursor must not rest on a divider")
 	assert.GreaterOrEqual(t, m.nav.diffCursor, yoff, "cursor must not nudge above the viewport top")
 	assert.Less(t, m.nav.diffCursor, yoff+h, "cursor must stay within the visible window")
-	assert.Equal(t, yoff, m.layout.viewport.YOffset, "screen motion must not scroll the viewport")
+	assert.Equal(t, yoff, m.layout.viewport.YOffset(), "screen motion must not scroll the viewport")
 }
 
 func TestMoveDiffCursorToScreenTop_OnAnnotationRow(t *testing.T) {
@@ -3283,10 +3283,10 @@ func TestHandleDiffAction_ScrollCenter(t *testing.T) {
 	newModel, cmd := model.handleDiffAction(keymap.ActionScrollCenter)
 	got := newModel.(Model)
 	assert.Nil(t, cmd)
-	pageHeight := got.layout.viewport.Height
+	pageHeight := got.layout.viewport.Height()
 	require.Positive(t, pageHeight)
 	expected := max(0, got.cursorViewportY()-pageHeight/2)
-	assert.Equal(t, expected, got.layout.viewport.YOffset, "scroll_center should center cursor in viewport")
+	assert.Equal(t, expected, got.layout.viewport.YOffset(), "scroll_center should center cursor in viewport")
 	assert.Equal(t, 50, got.nav.diffCursor, "scroll action must not move cursor")
 }
 
@@ -3309,7 +3309,7 @@ func TestHandleDiffAction_ScrollTop(t *testing.T) {
 	got := newModel.(Model)
 	assert.Nil(t, cmd)
 	cursorY := got.cursorViewportY()
-	assert.Equal(t, max(0, cursorY), got.layout.viewport.YOffset, "scroll_top should place cursor at top of viewport")
+	assert.Equal(t, max(0, cursorY), got.layout.viewport.YOffset(), "scroll_top should place cursor at top of viewport")
 	assert.Equal(t, 50, got.nav.diffCursor, "scroll action must not move cursor")
 }
 
@@ -3331,11 +3331,11 @@ func TestHandleDiffAction_ScrollBottom(t *testing.T) {
 	newModel, cmd := model.handleDiffAction(keymap.ActionScrollBottom)
 	got := newModel.(Model)
 	assert.Nil(t, cmd)
-	pageHeight := got.layout.viewport.Height
+	pageHeight := got.layout.viewport.Height()
 	require.Positive(t, pageHeight)
 	cursorY := got.cursorViewportY()
 	expected := max(0, cursorY-pageHeight+1)
-	assert.Equal(t, expected, got.layout.viewport.YOffset, "scroll_bottom should place cursor on last visible row")
+	assert.Equal(t, expected, got.layout.viewport.YOffset(), "scroll_bottom should place cursor on last visible row")
 	assert.Equal(t, 50, got.nav.diffCursor, "scroll action must not move cursor")
 }
 
@@ -3364,21 +3364,21 @@ func TestModel_JKScrollsDiffViewport(t *testing.T) {
 			model.tree = testNewFileTree([]string{"a.go", "b.go"})
 			model.layout.focus = tc.focus
 
-			require.Equal(t, 0, model.layout.viewport.YOffset)
+			require.Equal(t, 0, model.layout.viewport.YOffset())
 			require.Equal(t, "a.go", model.tree.SelectedFile())
 
 			// Shift+J scrolls the diff viewport down by one wheel step.
-			result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'J'}})
+			result, _ = model.Update(tea.KeyPressMsg{Code: 'J', Text: string('J')})
 			model = result.(Model)
-			assert.Equal(t, wheelStep, model.layout.viewport.YOffset, "J should scroll diff viewport down one wheel step")
+			assert.Equal(t, wheelStep, model.layout.viewport.YOffset(), "J should scroll diff viewport down one wheel step")
 			assert.Equal(t, wheelStep, model.nav.diffCursor, "cursor must be pinned into view at the new viewport top")
 			assert.Equal(t, tc.focus, model.layout.focus, "focus must not change")
 			assert.Equal(t, "a.go", model.tree.SelectedFile(), "tree selection must not change")
 
 			// Shift+K scrolls back up by one wheel step.
-			result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'K'}})
+			result, _ = model.Update(tea.KeyPressMsg{Code: 'K', Text: string('K')})
 			model = result.(Model)
-			assert.Equal(t, 0, model.layout.viewport.YOffset, "K should scroll diff viewport back up one wheel step")
+			assert.Equal(t, 0, model.layout.viewport.YOffset(), "K should scroll diff viewport back up one wheel step")
 			assert.Equal(t, tc.focus, model.layout.focus, "focus must not change")
 			assert.Equal(t, "a.go", model.tree.SelectedFile(), "tree selection must not change")
 		})
@@ -3410,9 +3410,9 @@ func TestModel_JKScrollDiffNoOpWhenContentFits(t *testing.T) {
 			model.tree = testNewFileTree([]string{"a.go", "b.go"})
 			model.layout.focus = tc.focus
 
-			result, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'J'}})
+			result, _ = model.Update(tea.KeyPressMsg{Code: 'J', Text: string('J')})
 			model = result.(Model)
-			assert.Equal(t, 0, model.layout.viewport.YOffset, "J must be a no-op when the diff fits the viewport")
+			assert.Equal(t, 0, model.layout.viewport.YOffset(), "J must be a no-op when the diff fits the viewport")
 			assert.Equal(t, tc.focus, model.layout.focus)
 			assert.Equal(t, "a.go", model.tree.SelectedFile())
 		})
@@ -3428,11 +3428,11 @@ func TestModel_ScrollDiffPageActionsScrollViewport(t *testing.T) {
 	cases := []struct {
 		name    string
 		mapping string
-		key     tea.KeyMsg
+		key     tea.KeyPressMsg
 		step    func(m Model) int
 	}{
-		{"page down", "map pgdown scroll_diff_page_down", tea.KeyMsg{Type: tea.KeyPgDown}, func(m Model) int { return m.pageRows() }},
-		{"half page down", "map ctrl+d scroll_diff_half_page_down", tea.KeyMsg{Type: tea.KeyCtrlD}, func(m Model) int { return m.halfPageRows() }},
+		{"page down", "map pgdown scroll_diff_page_down", tea.KeyPressMsg{Code: tea.KeyPgDown}, func(m Model) int { return m.pageRows() }},
+		{"half page down", "map ctrl+d scroll_diff_half_page_down", tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl}, func(m Model) int { return m.halfPageRows() }},
 	}
 	focusCases := []struct {
 		name  string
@@ -3451,7 +3451,7 @@ func TestModel_ScrollDiffPageActionsScrollViewport(t *testing.T) {
 
 				result, _ := model.Update(tc.key)
 				model = result.(Model)
-				assert.Equal(t, step, model.layout.viewport.YOffset)
+				assert.Equal(t, step, model.layout.viewport.YOffset())
 				assert.Equal(t, step, model.nav.diffCursor)
 				assert.Equal(t, fc.focus, model.layout.focus)
 				assert.Equal(t, "a.go", model.tree.SelectedFile())
@@ -3469,18 +3469,18 @@ func TestModel_ScrollDiffPageActionsScrollBack(t *testing.T) {
 	cases := []struct {
 		name     string
 		mappings string
-		down     tea.KeyMsg
-		up       tea.KeyMsg
+		down     tea.KeyPressMsg
+		up       tea.KeyPressMsg
 		step     func(m Model) int
 	}{
 		{
 			"page", "map pgdown scroll_diff_page_down\nmap pgup scroll_diff_page_up",
-			tea.KeyMsg{Type: tea.KeyPgDown}, tea.KeyMsg{Type: tea.KeyPgUp},
+			tea.KeyPressMsg{Code: tea.KeyPgDown}, tea.KeyPressMsg{Code: tea.KeyPgUp},
 			func(m Model) int { return m.pageRows() },
 		},
 		{
 			"half page", "map ctrl+d scroll_diff_half_page_down\nmap ctrl+u scroll_diff_half_page_up",
-			tea.KeyMsg{Type: tea.KeyCtrlD}, tea.KeyMsg{Type: tea.KeyCtrlU},
+			tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl}, tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl},
 			func(m Model) int { return m.halfPageRows() },
 		},
 	}
@@ -3498,11 +3498,11 @@ func TestModel_ScrollDiffPageActionsScrollBack(t *testing.T) {
 
 				result, _ := model.Update(tc.down)
 				model = result.(Model)
-				require.Equal(t, tc.step(model), model.layout.viewport.YOffset)
+				require.Equal(t, tc.step(model), model.layout.viewport.YOffset())
 
 				result, _ = model.Update(tc.up)
 				model = result.(Model)
-				assert.Zero(t, model.layout.viewport.YOffset)
+				assert.Zero(t, model.layout.viewport.YOffset())
 				assert.Equal(t, fc.focus, model.layout.focus)
 				assert.Equal(t, "a.go", model.tree.SelectedFile())
 			})
@@ -3520,22 +3520,22 @@ func TestModel_ScrollDiffPageActionsHonorPageOverlap(t *testing.T) {
 	t.Run("full page subtracts overlap", func(t *testing.T) {
 		model := scrollDiffPageModel(t, lines, paneTree, "map pgdown scroll_diff_page_down")
 		model.modes.pageOverlap = overlap
-		height := model.layout.viewport.Height
+		height := model.layout.viewport.Height()
 		require.Greater(t, height, overlap)
 
-		result, _ := model.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+		result, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 		model = result.(Model)
-		assert.Equal(t, height-overlap, model.layout.viewport.YOffset)
+		assert.Equal(t, height-overlap, model.layout.viewport.YOffset())
 	})
 
 	t.Run("half page ignores overlap", func(t *testing.T) {
 		model := scrollDiffPageModel(t, lines, paneTree, "map ctrl+d scroll_diff_half_page_down")
 		model.modes.pageOverlap = overlap
-		height := model.layout.viewport.Height
+		height := model.layout.viewport.Height()
 
-		result, _ := model.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+		result, _ := model.Update(tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl})
 		model = result.(Model)
-		assert.Equal(t, max(1, height/2), model.layout.viewport.YOffset)
+		assert.Equal(t, max(1, height/2), model.layout.viewport.YOffset())
 	})
 }
 
@@ -3554,9 +3554,9 @@ func TestModel_ScrollDiffPageActionsLeaveTOCSelection(t *testing.T) {
 	before, ok := model.file.mdTOC.CurrentLineIdx()
 	require.True(t, ok)
 
-	result, _ := model.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	result, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 	model = result.(Model)
-	assert.Positive(t, model.layout.viewport.YOffset)
+	assert.Positive(t, model.layout.viewport.YOffset())
 	after, ok := model.file.mdTOC.CurrentLineIdx()
 	require.True(t, ok)
 	assert.Equal(t, before, after)
@@ -3579,7 +3579,7 @@ func scrollDiffPageModel(t *testing.T, lines []diff.DiffLine, focus pane, mappin
 	model.tree = testNewFileTree([]string{"a.go", "b.go"})
 	model.layout.focus = focus
 	model.keymap = km
-	require.Zero(t, model.layout.viewport.YOffset)
+	require.Zero(t, model.layout.viewport.YOffset())
 	require.Equal(t, "a.go", model.tree.SelectedFile())
 	return model
 }
@@ -3687,8 +3687,8 @@ func clampTestModel(t *testing.T, lines []diff.DiffLine, width int) Model {
 	m.layout.height = 24
 	m.layout.treeHidden = true
 	m.layout.focus = paneDiff
-	m.layout.viewport.Width = width - 4
-	m.layout.viewport.Height = 20
+	m.layout.viewport.SetWidth(width - 4)
+	m.layout.viewport.SetHeight(20)
 	m.file.name = "a.go"
 	m.file.lines = lines
 	m.file.highlighted = make([]string, len(lines))

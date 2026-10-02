@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -41,7 +41,7 @@ func TestFilePickerFilterFullPathCaseInsensitive(t *testing.T) {
 	mgr.OpenFilePicker(filePickerSpec())
 
 	for _, r := range "UI/VIEW" {
-		out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}}, "")
+		out := mgr.HandleKey(tea.KeyPressMsg{Code: r, Text: string(r)}, "")
 		assert.Equal(t, OutcomeNone, out.Kind)
 	}
 	assert.Equal(t, []string{"app/ui/view.go"}, mgr.filePick.entries)
@@ -58,9 +58,9 @@ func TestFilePickerFilterAcceptsTypedSpace(t *testing.T) {
 		Paths: []string{"docs/release-notes.md", "docs/release notes.md"},
 	})
 
-	mgr.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("release")}, "")
-	mgr.HandleKey(tea.KeyMsg{Type: tea.KeySpace}, "")
-	mgr.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("notes")}, "")
+	mgr.HandleKey(tea.KeyPressMsg{Text: "release"}, "")
+	mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}, "")
+	mgr.HandleKey(tea.KeyPressMsg{Text: "notes"}, "")
 
 	assert.Equal(t, "release notes", mgr.filePick.filter.Value())
 	assert.Equal(t, []string{"docs/release notes.md"}, mgr.filePick.entries)
@@ -70,18 +70,18 @@ func TestFilePickerKeyboardNavigationUsesConfiguredActions(t *testing.T) {
 	mgr := NewManager()
 	mgr.OpenFilePicker(filePickerSpec())
 
-	mgr.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}, Alt: true}, keymap.ActionDown)
+	mgr.HandleKey(tea.KeyPressMsg{Code: 'x', Mod: tea.ModAlt}, keymap.ActionDown)
 	assert.Equal(t, 2, mgr.filePick.cursor)
-	mgr.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}, Alt: true}, keymap.ActionUp)
+	mgr.HandleKey(tea.KeyPressMsg{Code: 'x', Mod: tea.ModAlt}, keymap.ActionUp)
 	assert.Equal(t, 1, mgr.filePick.cursor)
 }
 
 func TestFilePickerEnterSelectsAndCloses(t *testing.T) {
 	mgr := NewManager()
 	mgr.OpenFilePicker(filePickerSpec())
-	mgr.HandleKey(tea.KeyMsg{Type: tea.KeyDown}, keymap.ActionDown)
+	mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyDown}, keymap.ActionDown)
 
-	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyEnter}, keymap.ActionConfirm)
+	out := mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyEnter}, keymap.ActionConfirm)
 	require.Equal(t, OutcomeFileChosen, out.Kind)
 	require.NotNil(t, out.FileChoice)
 	assert.Equal(t, "app/ui/view.go", out.FileChoice.Path)
@@ -94,7 +94,7 @@ func TestFilePickerEmptyResultsStayOpenOnEnter(t *testing.T) {
 	mgr.filePick.filter.SetValue("missing")
 	mgr.filePick.applyFilter()
 
-	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyEnter}, "")
+	out := mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyEnter}, "")
 	assert.Equal(t, OutcomeNone, out.Kind)
 	assert.True(t, mgr.Active())
 	assert.Contains(t, mgr.filePick.render(filePickerRenderCtx(30), mgr), "no matches")
@@ -104,27 +104,27 @@ func TestFilePickerBackspaceAndEscapeBehavior(t *testing.T) {
 	mgr := NewManager()
 	mgr.OpenFilePicker(filePickerSpec())
 	for _, r := range "模型" {
-		mgr.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}}, "")
+		mgr.HandleKey(tea.KeyPressMsg{Code: r, Text: string(r)}, "")
 	}
 
-	mgr.HandleKey(tea.KeyMsg{Type: tea.KeyBackspace}, "")
+	mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyBackspace}, "")
 	assert.Equal(t, "模", mgr.filePick.filter.Value())
-	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyEsc}, keymap.ActionDismiss)
+	out := mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyEsc}, keymap.ActionDismiss)
 	assert.Equal(t, OutcomeNone, out.Kind, "first Esc clears a non-empty filter")
 	assert.Empty(t, mgr.filePick.filter.Value())
 	assert.Len(t, mgr.filePick.entries, 4)
 	assert.True(t, mgr.Active())
 
-	out = mgr.HandleKey(tea.KeyMsg{Type: tea.KeyEsc}, keymap.ActionDismiss)
+	out = mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyEsc}, keymap.ActionDismiss)
 	assert.Equal(t, OutcomeClosed, out.Kind)
 	assert.False(t, mgr.Active())
 }
 
 func TestFilePickerWordDeletion(t *testing.T) {
-	keys := []tea.KeyMsg{
-		{Type: tea.KeyCtrlW},
-		{Type: tea.KeyBackspace, Alt: true},
-		{Type: tea.KeyCtrlH, Alt: true},
+	keys := []tea.KeyPressMsg{
+		{Code: 'w', Mod: tea.ModCtrl},
+		{Code: tea.KeyBackspace, Mod: tea.ModAlt},
+		{Code: 'h', Mod: tea.ModCtrl | tea.ModAlt},
 	}
 	for _, msg := range keys {
 		for _, tt := range []struct{ input, want string }{
@@ -162,16 +162,16 @@ func TestFilePickerWordDeletion(t *testing.T) {
 func TestFilePickerClearFilterAndControlBackspace(t *testing.T) {
 	mgr := NewManager()
 	mgr.OpenFilePicker(filePickerSpec())
-	mgr.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("模具")}, "")
-	mgr.HandleKey(tea.KeyMsg{Type: tea.KeyCtrlH}, "")
+	mgr.HandleKey(tea.KeyPressMsg{Text: "模具"}, "")
+	mgr.HandleKey(tea.KeyPressMsg{Code: 'h', Mod: tea.ModCtrl}, "")
 	assert.Equal(t, "模", mgr.filePick.filter.Value(), "Ctrl+H removes one Unicode rune")
-	mgr.HandleKey(tea.KeyMsg{Type: tea.KeyCtrlU}, keymap.ActionHalfPageUp)
+	mgr.HandleKey(tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl}, keymap.ActionHalfPageUp)
 	assert.Empty(t, mgr.filePick.filter.Value())
 	assert.Equal(t, mgr.filePick.all, mgr.filePick.entries)
 	assert.True(t, mgr.Active(), "Ctrl+U clears without closing")
 
 	mgr.filePick.cursor = 2
-	for _, msg := range []tea.KeyMsg{{Type: tea.KeyCtrlW}, {Type: tea.KeyCtrlU}, {Type: tea.KeyBackspace, Alt: true}, {Type: tea.KeyCtrlH}} {
+	for _, msg := range []tea.KeyPressMsg{{Code: 'w', Mod: tea.ModCtrl}, {Code: 'u', Mod: tea.ModCtrl}, {Code: tea.KeyBackspace, Mod: tea.ModAlt}, {Code: 'h', Mod: tea.ModCtrl}} {
 		out := mgr.HandleKey(msg, keymap.ActionUp)
 		assert.Equal(t, OutcomeNone, out.Kind)
 		assert.Empty(t, mgr.filePick.filter.Value())
@@ -183,7 +183,7 @@ func TestFilePickerJumpActionCloses(t *testing.T) {
 	mgr := NewManager()
 	mgr.OpenFilePicker(filePickerSpec())
 
-	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyCtrlP}, keymap.ActionJumpFile)
+	out := mgr.HandleKey(tea.KeyPressMsg{Code: 'p', Mod: tea.ModCtrl}, keymap.ActionJumpFile)
 	assert.Equal(t, OutcomeClosed, out.Kind)
 	assert.False(t, mgr.Active())
 }
@@ -193,11 +193,11 @@ func TestFilePickerMouseWheelAndLeftClick(t *testing.T) {
 	mgr.OpenFilePicker(filePickerSpec())
 	_ = mgr.filePick.render(filePickerRenderCtx(30), mgr)
 
-	out := mgr.filePick.handleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
+	out := mgr.filePick.handleMouse(tea.MouseWheelMsg{Button: tea.MouseWheelDown})
 	assert.Equal(t, OutcomeNone, out.Kind)
 	assert.Equal(t, 2, mgr.filePick.cursor)
 
-	out = mgr.filePick.handleMouse(tea.MouseMsg{X: 2, Y: 4, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	out = mgr.filePick.handleMouse(tea.MouseClickMsg{X: 2, Y: 4, Button: tea.MouseLeft})
 	require.Equal(t, OutcomeFileChosen, out.Kind)
 	assert.Equal(t, "README.md", out.FileChoice.Path)
 }
@@ -212,14 +212,10 @@ func TestFilePickerMouseShiftWheelMovesHalfPage(t *testing.T) {
 	_ = mgr.filePick.render(filePickerRenderCtx(16), mgr)
 	require.Equal(t, 6, mgr.filePick.maxVisible())
 
-	mgr.filePick.handleMouse(tea.MouseMsg{
-		Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress, Shift: true,
-	})
+	mgr.filePick.handleMouse(tea.MouseWheelMsg{Button: tea.MouseWheelDown, Mod: tea.ModShift})
 	assert.Equal(t, 3, mgr.filePick.cursor)
 
-	mgr.filePick.handleMouse(tea.MouseMsg{
-		Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress, Shift: true,
-	})
+	mgr.filePick.handleMouse(tea.MouseWheelMsg{Button: tea.MouseWheelUp, Mod: tea.ModShift})
 	assert.Equal(t, 0, mgr.filePick.cursor)
 }
 
@@ -232,23 +228,17 @@ func TestFilePickerMouseWheelClampsAtBoundaries(t *testing.T) {
 	mgr.OpenFilePicker(FilePickerSpec{Paths: paths})
 	_ = mgr.filePick.render(filePickerRenderCtx(16), mgr)
 
-	mgr.filePick.handleMouse(tea.MouseMsg{
-		Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress, Shift: true,
-	})
+	mgr.filePick.handleMouse(tea.MouseWheelMsg{Button: tea.MouseWheelUp, Mod: tea.ModShift})
 	assert.Equal(t, 0, mgr.filePick.cursor)
 	assert.Equal(t, 0, mgr.filePick.offset)
 
 	for range paths {
-		mgr.filePick.handleMouse(tea.MouseMsg{
-			Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress, Shift: true,
-		})
+		mgr.filePick.handleMouse(tea.MouseWheelMsg{Button: tea.MouseWheelDown, Mod: tea.ModShift})
 	}
 	assert.Equal(t, len(paths)-1, mgr.filePick.cursor)
 	assert.Equal(t, len(paths)-mgr.filePick.maxVisible(), mgr.filePick.offset)
 
-	mgr.filePick.handleMouse(tea.MouseMsg{
-		Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress,
-	})
+	mgr.filePick.handleMouse(tea.MouseWheelMsg{Button: tea.MouseWheelDown})
 	assert.Equal(t, len(paths)-1, mgr.filePick.cursor)
 	assert.Equal(t, len(paths)-mgr.filePick.maxVisible(), mgr.filePick.offset)
 }
@@ -258,10 +248,10 @@ func TestFilePickerMouseClickIgnoresChromeAndBlankRows(t *testing.T) {
 	mgr.OpenFilePicker(filePickerSpec())
 	_ = mgr.filePick.render(filePickerRenderCtx(30), mgr)
 
-	tests := []tea.MouseMsg{
-		{X: 1, Y: 4, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress},
-		{X: 2, Y: 2, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress},
-		{X: 2, Y: 20, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress},
+	tests := []tea.MouseClickMsg{
+		{X: 1, Y: 4, Button: tea.MouseLeft},
+		{X: 2, Y: 2, Button: tea.MouseLeft},
+		{X: 2, Y: 20, Button: tea.MouseLeft},
 	}
 	for _, msg := range tests {
 		assert.Equal(t, OutcomeNone, mgr.filePick.handleMouse(msg).Kind)
@@ -276,13 +266,13 @@ func TestFilePickerLongFilterStaysOnOneRowAndPreservesClickMapping(t *testing.T)
 	ctx := RenderCtx{Width: 34, Height: 20, Resolver: style.PlainResolver()}
 
 	emptyHeight := lipgloss.Height(mgr.filePick.render(ctx, mgr))
-	mgr.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(longFilter)}, "")
+	mgr.HandleKey(tea.KeyPressMsg{Text: longFilter}, "")
 	rendered := mgr.filePick.render(ctx, mgr)
 
 	assert.Equal(t, longFilter, mgr.filePick.filter.Value(), "display truncation must not change matching input")
 	assert.Equal(t, emptyHeight, lipgloss.Height(rendered), "filter row must not soft-wrap")
-	out := mgr.filePick.handleMouse(tea.MouseMsg{
-		X: 2, Y: 4, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress,
+	out := mgr.filePick.handleMouse(tea.MouseClickMsg{
+		X: 2, Y: 4, Button: tea.MouseLeft,
 	})
 	require.Equal(t, OutcomeFileChosen, out.Kind)
 	require.NotNil(t, out.FileChoice)
@@ -298,7 +288,7 @@ func TestFilePickerScrollingAndResizeClamp(t *testing.T) {
 	mgr.OpenFilePicker(FilePickerSpec{Paths: paths})
 	_ = mgr.filePick.render(filePickerRenderCtx(15), mgr)
 	for range 8 {
-		mgr.HandleKey(tea.KeyMsg{Type: tea.KeyDown}, keymap.ActionDown)
+		mgr.HandleKey(tea.KeyPressMsg{Code: tea.KeyDown}, keymap.ActionDown)
 	}
 	assert.Equal(t, 8, mgr.filePick.cursor)
 	assert.Positive(t, mgr.filePick.offset)

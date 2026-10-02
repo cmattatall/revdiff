@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/require"
 
 	"github.com/umputun/revdiff/app/annotation"
@@ -77,12 +77,12 @@ func TestStageFileShortcutUsesFocusedSelection(t *testing.T) {
 				require.Equal(t, old, oldPath)
 				return stageErr
 			}}
-			model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'S'}})
+			model, cmd := m.Update(tea.KeyPressMsg{Code: 'S', Text: string('S')})
 			m = model.(Model)
 			require.NotNil(t, cmd, "file staging does not need a changed line under the cursor")
 			require.Zero(t, calls, "Git IO must run in the command")
 			require.Equal(t, liveStaging, m.live.operation)
-			_, duplicate := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'S'}})
+			_, duplicate := m.Update(tea.KeyPressMsg{Code: 'S', Text: string('S')})
 			require.Nil(t, duplicate)
 			model, reload := m.Update(cmd())
 			m = model.(Model)
@@ -119,7 +119,7 @@ func TestStageFileGuards(t *testing.T) {
 			m.file.name, m.layout.focus = "a.go", paneDiff
 			m.live.stager = stagerStub{file: func(string, string) error { t.Fatal("must not stage"); return nil }}
 			tc.setup(&m)
-			model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'S'}})
+			model, cmd := m.Update(tea.KeyPressMsg{Code: 'S', Text: string('S')})
 			require.Nil(t, cmd)
 			require.Contains(t, model.(Model).output.hint, tc.want)
 		})
@@ -231,15 +231,15 @@ func TestStageHunkReportsActualBlocker(t *testing.T) {
 			}}
 			tc.setup(&m)
 			count := m.store.Count()
-			model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+			model, cmd := m.Update(tea.KeyPressMsg{Code: 's', Text: string('s')})
 			m = model.(Model)
 			require.Nil(t, cmd)
 			require.NotEqual(t, liveStaging, m.live.operation)
 			require.Equal(t, tc.want, m.output.hint)
 			if m.filesLoaded {
-				require.Contains(t, m.View(), tc.want, "render the actual reason in the status bar")
+				require.Contains(t, m.View().Content, tc.want, "render the actual reason in the status bar")
 			} else {
-				require.Equal(t, "loading files...", m.View())
+				require.Equal(t, "loading files...", m.View().Content)
 			}
 			require.Equal(t, count, m.store.Count(), "refusing to stage must preserve annotations")
 		})
@@ -268,7 +268,7 @@ func TestStageShortcutCapturesDisplayedHunk(t *testing.T) {
 		m.live.discover = func() (FeedbackSender, error) { return sender, nil }
 		model, lookup := m.discoverFeedback(false)
 		m = model.(Model)
-		model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+		model, cmd := m.Update(tea.KeyPressMsg{Code: 's', Text: string('s')})
 		m = model.(Model)
 		require.NotNil(t, cmd)
 		require.Equal(t, liveStaging, m.live.operation)
@@ -337,12 +337,13 @@ func TestStageReloadPreservesPosition(t *testing.T) {
 			m = model.(Model)
 			m.cfg.startAtChange = true // staging must override this startup/navigation preference
 			m.modes.compact, m.modes.collapsed.enabled = tc.compact, tc.collapsed
-			m.nav.diffCursor, m.layout.viewport.Height = tc.cursor, 12
+			m.nav.diffCursor = tc.cursor
+			m.layout.viewport.SetHeight(12)
 			m.layout.viewport.SetContent(m.renderDiff())
 			m.layout.viewport.SetYOffset(m.cursorViewportY() - 4)
-			row := m.cursorViewportY() - m.layout.viewport.YOffset
+			row := m.cursorViewportY() - m.layout.viewport.YOffset()
 			m.live.stager = stagerStub{hunk: func(string, []diff.DiffLine, int) error { return nil }}
-			model, stage := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+			model, stage := m.Update(tea.KeyPressMsg{Code: 's', Text: string('s')})
 			m = model.(Model)
 			require.NotNil(t, stage)
 			model, _ = m.Update(stage())
@@ -352,7 +353,7 @@ func TestStageReloadPreservesPosition(t *testing.T) {
 			model, _ = m.handleFileLoaded(fileLoadedMsg{file: "a.go", seq: m.file.loadSeq, lines: after})
 			m = model.(Model)
 			require.Equal(t, tc.wantLine, m.file.lines[m.nav.diffCursor].NewNum)
-			require.Equal(t, row, m.cursorViewportY()-m.layout.viewport.YOffset, "preserve the cursor's screen row")
+			require.Equal(t, row, m.cursorViewportY()-m.layout.viewport.YOffset(), "preserve the cursor's screen row")
 			require.Nil(t, m.live.stageAnchor)
 		})
 	}
@@ -377,7 +378,7 @@ func TestUnstageHunkPreservesHEADPosition(t *testing.T) {
 	}
 	m.file.lines = before
 	m.nav.diffCursor = 31 // final inserted line; follow the next HEAD line, 30
-	m.layout.viewport.Height = 12
+	m.layout.viewport.SetHeight(12)
 	m.layout.viewport.SetContent(m.renderDiff())
 	m.layout.viewport.SetYOffset(m.cursorViewportY() - 4)
 	calls := 0
@@ -387,7 +388,7 @@ func TestUnstageHunkPreservesHEADPosition(t *testing.T) {
 		require.Equal(t, 37, lines[cursor].NewNum)
 		return nil
 	}}
-	model, unstage := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	model, unstage := m.Update(tea.KeyPressMsg{Code: 's', Text: string('s')})
 	m = model.(Model)
 	require.NotNil(t, unstage)
 	require.Zero(t, calls)
@@ -401,7 +402,7 @@ func TestUnstageHunkPreservesHEADPosition(t *testing.T) {
 	model, _ = m.handleFileLoaded(fileLoadedMsg{file: "partial.go", seq: m.file.loadSeq, staged: true, lines: after})
 	m = model.(Model)
 	require.Equal(t, 30, m.file.lines[m.nav.diffCursor].OldNum)
-	require.Equal(t, 4, m.cursorViewportY()-m.layout.viewport.YOffset)
+	require.Equal(t, 4, m.cursorViewportY()-m.layout.viewport.YOffset())
 	require.True(t, m.file.staged)
 }
 
@@ -492,7 +493,7 @@ func TestAnnotationSendJoinsManualConnect(t *testing.T) {
 	m = model.(Model)
 	m.startCommand()
 	m.command.input.SetValue("w")
-	model, duplicate := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model, duplicate := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = model.(Model)
 	require.Nil(t, duplicate, "send joins the manual lookup, even without automatic discovery")
 	require.Equal(t, discoveryForSend, m.live.discovery)
@@ -509,7 +510,7 @@ func TestAnnotationSendJoinsManualConnect(t *testing.T) {
 	sender.err = nil
 	m.startCommand()
 	m.command.input.SetValue("w")
-	model, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = model.(Model)
 	model, _ = m.Update(cmd())
 	m = model.(Model)

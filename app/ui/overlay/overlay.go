@@ -14,8 +14,8 @@ package overlay
 import (
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/umputun/revdiff/app/diff"
@@ -301,7 +301,7 @@ func (m *Manager) UpdateInfo(spec InfoSpec) {
 // HandleKey routes a key press to the active overlay and returns the outcome.
 // auto-closes the overlay for outcomes that imply dismissal.
 // returns Outcome{Kind: OutcomeNone} when no overlay is active.
-func (m *Manager) HandleKey(msg tea.KeyMsg, action keymap.Action) Outcome {
+func (m *Manager) HandleKey(msg tea.KeyPressMsg, action keymap.Action) Outcome {
 	var out Outcome
 	switch m.kind {
 	case KindNone:
@@ -334,6 +334,19 @@ func (m *Manager) HandleKey(msg tea.KeyMsg, action keymap.Action) Outcome {
 // HandleInput delivers asynchronous editor results only to their original popup.
 // Reopening a popup creates a new input identity, discarding late clipboard reads.
 func (m *Manager) HandleInput(msg tea.Msg) Outcome {
+	// Bracketed paste arrives directly from the terminal, not an async clipboard read.
+	if paste, ok := msg.(tea.PasteMsg); ok {
+		switch m.kind {
+		case KindFilePicker:
+			msg = filterInputMsg{identity: m.filePick.filter.identity, msg: paste}
+		case KindThemeSelect:
+			msg = filterInputMsg{identity: m.themeSel.filter.identity, msg: paste}
+		case KindInspection:
+			msg = filterInputMsg{identity: m.inspect.picker.filter.identity, msg: paste}
+		default:
+			return Outcome{}
+		}
+	}
 	input, ok := msg.(filterInputMsg)
 	if !ok {
 		return Outcome{}
@@ -385,12 +398,13 @@ func (m *Manager) HandleMouse(msg tea.MouseMsg) Outcome {
 	if m.kind == KindNone {
 		return Outcome{}
 	}
-	if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress {
-		if !m.bounds.contains(msg.X, msg.Y) {
+	if click, ok := msg.(tea.MouseClickMsg); ok && click.Button == tea.MouseLeft {
+		if !m.bounds.contains(click.X, click.Y) {
 			return Outcome{Kind: OutcomeNone}
 		}
-		msg.X -= m.bounds.x
-		msg.Y -= m.bounds.y
+		click.X -= m.bounds.x
+		click.Y -= m.bounds.y
+		msg = click
 	}
 	var out Outcome
 	switch m.kind {
@@ -477,15 +491,10 @@ func (m *Manager) overlayCenter(bg, fg string, width int) string {
 	return strings.Join(bgLines, "\n")
 }
 
-// borderEdgeText carries the geometry/color values shared by the top and
-// bottom border-label injectors. Bundled into a struct so the per-call site
-// (one for the title, one for the footer) does not have to repeat five
-// positional args — the prior shape made same-typed-string swaps (accentFg
-// vs paneBg) silent at the type system.
+// borderEdgeText carries the colors shared by the top and bottom border labels.
 type borderEdgeText struct {
-	popupWidth int
-	accentFg   string // ANSI fg escape for border characters; "" for plain
-	paneBg     string // ANSI bg escape for the border background; "" for plain
+	accentFg string // ANSI fg escape for border characters; "" for plain
+	paneBg   string // ANSI bg escape for the border background; "" for plain
 }
 
 // injectBorderTitle replaces part of the top border line with a centered title.
@@ -500,7 +509,7 @@ func (m *Manager) injectBorderTitle(box, title string, edge borderEdgeText) stri
 // label. Mirrors injectBorderTitle but operates on the last row of the rendered
 // box. Used by the unified info popup to surface aggregate stats (file count,
 // line totals, status histogram) without occupying body rows. Gracefully
-// no-ops when the footer text would not fit (popupWidth too small).
+// no-ops when the footer text would not fit.
 func (m *Manager) injectBorderFooter(box, footer string, edge borderEdgeText) string {
 	return m.injectBorderEdgeText(box, footer, edge, false)
 }
@@ -541,7 +550,7 @@ func (m *Manager) injectBorderEdgeText(box, text string, edge borderEdgeText, is
 	}
 
 	leftLen := textStart - 1
-	rightLen := max(edge.popupWidth-textStart-textWidth+1, 0)
+	rightLen := max(lineWidth-textStart-textWidth-1, 0)
 
 	bgSeq := ""
 	bgReset := ""

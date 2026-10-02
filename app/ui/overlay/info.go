@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/umputun/revdiff/app/diff"
@@ -83,7 +83,7 @@ func (c *infoOverlay) render(ctx RenderCtx, mgr *Manager) string {
 	if h := strings.TrimSpace(c.spec.HeaderText); h != "" {
 		title = " " + c.sanitizeInfoText(c.spec.HeaderText) + " "
 	}
-	edge := borderEdgeText{popupWidth: popupWidth, accentFg: accentFg, paneBg: paneBg}
+	edge := borderEdgeText{accentFg: accentFg, paneBg: paneBg}
 	box = mgr.injectBorderTitle(box, title, edge)
 
 	if f := strings.TrimSpace(c.spec.FooterText); f != "" {
@@ -407,11 +407,11 @@ func (c *infoOverlay) applyScroll(content []string, viewportHeight int) []string
 
 // handleKey dispatches overlay keys: navigation updates offset, dismissal keys
 // close the overlay. offset is clamped on the next render.
-func (c *infoOverlay) handleKey(msg tea.KeyMsg, action keymap.Action) Outcome {
+func (c *infoOverlay) handleKey(msg tea.KeyPressMsg, action keymap.Action) Outcome {
 	if action == keymap.ActionInfo ||
 		action == keymap.ActionDismiss ||
 		action == keymap.ActionQuit ||
-		msg.Type == tea.KeyEsc {
+		msg.String() == "esc" {
 		return Outcome{Kind: OutcomeClosed}
 	}
 
@@ -453,15 +453,11 @@ func (c *infoOverlay) handleKey(msg tea.KeyMsg, action keymap.Action) Outcome {
 	}
 
 	// vim-style g / G accepted without requiring a keymap binding.
-	if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
-		switch msg.Runes[0] {
-		case 'g':
-			c.offset = 0
-			return Outcome{Kind: OutcomeNone}
-		case 'G':
-			c.offset = scrollEndSentinel
-			return Outcome{Kind: OutcomeNone}
-		}
+	switch msg.String() {
+	case "g":
+		c.offset = 0
+	case "G":
+		c.offset = scrollEndSentinel
 	}
 	return Outcome{Kind: OutcomeNone}
 }
@@ -479,18 +475,19 @@ const WheelStep = 3
 // non-wheel buttons and non-press actions are ignored — clicks outside the box
 // do not dismiss the overlay (symmetric with the other overlays). render
 // clamps the resulting offset, so only the lower bound is enforced here.
-func (c *infoOverlay) handleMouse(msg tea.MouseMsg) Outcome {
-	if msg.Action != tea.MouseActionPress {
+func (c *infoOverlay) handleMouse(event tea.MouseMsg) Outcome {
+	msg, ok := event.(tea.MouseWheelMsg)
+	if !ok {
 		return Outcome{Kind: OutcomeNone}
 	}
 	step := WheelStep
-	if msg.Shift {
+	if msg.Mod.Contains(tea.ModShift) {
 		step = max(c.viewportHeight(c.height)/2, 1)
 	}
 	switch msg.Button {
-	case tea.MouseButtonWheelDown:
+	case tea.MouseWheelDown:
 		c.offset += step
-	case tea.MouseButtonWheelUp:
+	case tea.MouseWheelUp:
 		c.offset -= step
 		if c.offset < 0 {
 			c.offset = 0

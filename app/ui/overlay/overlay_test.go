@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -21,7 +21,7 @@ func TestNewManager(t *testing.T) {
 
 func TestManager_HandleMouse_NoActiveOverlay(t *testing.T) {
 	mgr := NewManager()
-	out := mgr.HandleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
+	out := mgr.HandleMouse(tea.MouseWheelMsg{Button: tea.MouseWheelDown})
 	assert.Equal(t, Outcome{}, out, "no active overlay returns zero Outcome")
 }
 
@@ -88,7 +88,7 @@ func TestManager_OpenClosesExisting(t *testing.T) {
 
 func TestManager_HandleKeyNoOverlay(t *testing.T) {
 	mgr := NewManager()
-	out := mgr.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}, keymap.ActionQuit)
+	out := mgr.HandleKey(tea.KeyPressMsg{Code: 'q', Text: string('q')}, keymap.ActionQuit)
 	assert.Equal(t, OutcomeNone, out.Kind, "no overlay active should return OutcomeNone")
 }
 
@@ -161,10 +161,14 @@ func TestInjectBorderTitle_Basic(t *testing.T) {
 	topLine := border.TopLeft + strings.Repeat(border.Top, 18) + border.TopRight
 	box := topLine + "\n│ content          │\n" + border.BottomLeft + strings.Repeat(border.Bottom, 18) + border.BottomRight
 
-	result := mgr.injectBorderTitle(box, " Title ", borderEdgeText{popupWidth: 20})
+	result := mgr.injectBorderTitle(box, " Title ", borderEdgeText{})
 	lines := strings.Split(result, "\n")
 	require.GreaterOrEqual(t, len(lines), 1)
 	assert.Contains(t, lines[0], "Title", "title should be injected into top border")
+	assert.Equal(t, 20, lipgloss.Width(lines[0]), "title must preserve the border width")
+	result = mgr.injectBorderFooter(result, " Footer ", borderEdgeText{})
+	lines = strings.Split(result, "\n")
+	assert.Equal(t, 20, lipgloss.Width(lines[len(lines)-1]), "footer must preserve the border width")
 }
 
 func TestInjectBorderTitle_EmptyTitle(t *testing.T) {
@@ -173,7 +177,7 @@ func TestInjectBorderTitle_EmptyTitle(t *testing.T) {
 	topLine := border.TopLeft + strings.Repeat(border.Top, 18) + border.TopRight
 	box := topLine + "\n│ content          │\n" + border.BottomLeft + strings.Repeat(border.Bottom, 18) + border.BottomRight
 
-	result := mgr.injectBorderTitle(box, "", borderEdgeText{popupWidth: 20})
+	result := mgr.injectBorderTitle(box, "", borderEdgeText{})
 	lines := strings.Split(result, "\n")
 	assert.Contains(t, lines[0], border.TopLeft, "empty title still produces valid border")
 }
@@ -184,7 +188,7 @@ func TestInjectBorderTitle_TitleTooWide(t *testing.T) {
 	topLine := border.TopLeft + strings.Repeat(border.Top, 4) + border.TopRight
 	box := topLine + "\n│ ok │"
 
-	result := mgr.injectBorderTitle(box, " very long title text ", borderEdgeText{popupWidth: 6})
+	result := mgr.injectBorderTitle(box, " very long title text ", borderEdgeText{})
 	assert.Equal(t, box, result, "too-wide title should leave box unchanged")
 }
 
@@ -197,7 +201,7 @@ func TestInjectBorderTitle_WithANSIColors(t *testing.T) {
 	accentFg := "\033[38;2;100;200;255m"
 	paneBg := "\033[48;2;30;30;50m"
 
-	result := mgr.injectBorderTitle(box, " Test ", borderEdgeText{popupWidth: 30, accentFg: accentFg, paneBg: paneBg})
+	result := mgr.injectBorderTitle(box, " Test ", borderEdgeText{accentFg: accentFg, paneBg: paneBg})
 	lines := strings.Split(result, "\n")
 	require.GreaterOrEqual(t, len(lines), 1)
 	assert.Contains(t, lines[0], "Test", "title present")
@@ -213,7 +217,7 @@ func TestInjectBorderTitle_EmptyBgFallback(t *testing.T) {
 	topLine := border.TopLeft + strings.Repeat(border.Top, 18) + border.TopRight
 	box := topLine + "\n│ content          │"
 
-	result := mgr.injectBorderTitle(box, " Title ", borderEdgeText{popupWidth: 20})
+	result := mgr.injectBorderTitle(box, " Title ", borderEdgeText{})
 	lines := strings.Split(result, "\n")
 	assert.NotContains(t, lines[0], "\033[49m", "no bg reset when no bg color")
 	assert.NotContains(t, lines[0], "\033[48", "no bg escape when no bg color")
@@ -221,7 +225,7 @@ func TestInjectBorderTitle_EmptyBgFallback(t *testing.T) {
 
 func TestInjectBorderTitle_EmptyBox(t *testing.T) {
 	mgr := NewManager()
-	result := mgr.injectBorderTitle("", " Title ", borderEdgeText{popupWidth: 20})
+	result := mgr.injectBorderTitle("", " Title ", borderEdgeText{})
 	assert.Empty(t, result, "empty box returns empty")
 }
 

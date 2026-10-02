@@ -17,6 +17,9 @@ import (
 //			CommandFunc: func(content string) (*exec.Cmd, func(error) (string, error), error) {
 //				panic("mock out the Command method")
 //			},
+//			SourceCommandFunc: func(path string, line int) (*exec.Cmd, error) {
+//				panic("mock out the SourceCommand method")
+//			},
 //		}
 //
 //		// use mockedExternalEditor in code that requires ui.ExternalEditor
@@ -26,6 +29,7 @@ import (
 type ExternalEditorMock struct {
 	// CommandFunc mocks the Command method.
 	CommandFunc func(content string) (*exec.Cmd, func(error) (string, error), error)
+
 	// SourceCommandFunc mocks the SourceCommand method.
 	SourceCommandFunc func(path string, line int) (*exec.Cmd, error)
 
@@ -64,6 +68,22 @@ func (mock *ExternalEditorMock) Command(content string) (*exec.Cmd, func(error) 
 	return mock.CommandFunc(content)
 }
 
+// CommandCalls gets all the calls that were made to Command.
+// Check the length with:
+//
+//	len(mockedExternalEditor.CommandCalls())
+func (mock *ExternalEditorMock) CommandCalls() []struct {
+	Content string
+} {
+	var calls []struct {
+		Content string
+	}
+	mock.lockCommand.RLock()
+	calls = mock.calls.Command
+	mock.lockCommand.RUnlock()
+	return calls
+}
+
 // SourceCommand calls SourceCommandFunc.
 func (mock *ExternalEditorMock) SourceCommand(path string, line int) (*exec.Cmd, error) {
 	if mock.SourceCommandFunc == nil {
@@ -80,22 +100,6 @@ func (mock *ExternalEditorMock) SourceCommand(path string, line int) (*exec.Cmd,
 	mock.calls.SourceCommand = append(mock.calls.SourceCommand, callInfo)
 	mock.lockSourceCommand.Unlock()
 	return mock.SourceCommandFunc(path, line)
-}
-
-// CommandCalls gets all the calls that were made to Command.
-// Check the length with:
-//
-//	len(mockedExternalEditor.CommandCalls())
-func (mock *ExternalEditorMock) CommandCalls() []struct {
-	Content string
-} {
-	var calls []struct {
-		Content string
-	}
-	mock.lockCommand.RLock()
-	calls = mock.calls.Command
-	mock.lockCommand.RUnlock()
-	return calls
 }
 
 // SourceCommandCalls gets all the calls that were made to SourceCommand.

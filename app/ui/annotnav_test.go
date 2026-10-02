@@ -3,7 +3,7 @@ package ui
 import (
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -495,14 +495,14 @@ func TestModel_HandleAnnotNav_KeymapDispatch(t *testing.T) {
 
 	t.Run("} key triggers next annotation", func(t *testing.T) {
 		m.nav.diffCursor = 0
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'}'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: '}', Text: "}"})
 		model := result.(Model)
 		assert.Equal(t, 1, model.nav.diffCursor)
 	})
 
 	t.Run("{ key triggers prev annotation", func(t *testing.T) {
 		m.nav.diffCursor = 1
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'{'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: '{', Text: string('{')})
 		model := result.(Model)
 		assert.Equal(t, 0, model.nav.diffCursor)
 	})
@@ -515,7 +515,7 @@ func TestModel_HandleAnnotNav_KeymapDispatch(t *testing.T) {
 	t.Run("} fires from tree pane focus (always-on invariant)", func(t *testing.T) {
 		m.nav.diffCursor = 0
 		m.layout.focus = paneTree
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'}'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: '}', Text: "}"})
 		model := result.(Model)
 		assert.Equal(t, 1, model.nav.diffCursor, "} must fire from tree-pane focus")
 	})
@@ -523,7 +523,7 @@ func TestModel_HandleAnnotNav_KeymapDispatch(t *testing.T) {
 	t.Run("{ fires from tree pane focus (always-on invariant)", func(t *testing.T) {
 		m.nav.diffCursor = 1
 		m.layout.focus = paneTree
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'{'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: '{', Text: string('{')})
 		model := result.(Model)
 		assert.Equal(t, 0, model.nav.diffCursor, "{ must fire from tree-pane focus")
 	})
@@ -554,7 +554,7 @@ func TestModel_HandleAnnotNav_ModalSuppression(t *testing.T) {
 		require.Nil(t, cmd, "annotation input cursor is static, so no blink command is scheduled")
 		require.True(t, m.annot.annotating, "annotation modal must be active for this test")
 		before := m.nav.diffCursor
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'}'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: '}', Text: "}"})
 		model := result.(Model)
 		assert.Equal(t, before, model.nav.diffCursor, "annotation modal must swallow }")
 		assert.True(t, model.annot.annotating, "annotation modal must remain active")
@@ -568,7 +568,7 @@ func TestModel_HandleAnnotNav_ModalSuppression(t *testing.T) {
 		require.NotNil(t, cmd)
 		require.True(t, m.search.active, "search modal must be active for this test")
 		before := m.nav.diffCursor
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'{'}})
+		result, _ := m.Update(tea.KeyPressMsg{Code: '{', Text: string('{')})
 		model := result.(Model)
 		assert.Equal(t, before, model.nav.diffCursor, "search modal must swallow {")
 		assert.True(t, model.search.active, "search modal must remain active")

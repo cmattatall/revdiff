@@ -35,6 +35,33 @@ func TestHoverContentFormat(t *testing.T) {
 	}
 }
 
+func TestDocumentSymbols(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "main.go")
+	source := "😀Parent\n Child"
+	require.NoError(t, os.WriteFile(path, []byte(source), 0o600))
+	path, err := filepath.EvalSymlinks(path)
+	require.NoError(t, err)
+	useFakeServer(t, "normal")
+	c := New(root, Server{Name: "test", Command: "test-server", LanguageIDs: map[string]string{".go": "go"}})
+	defer c.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	result, err := c.Query(ctx, DocumentSymbols, Position{Path: path}, "")
+	require.NoError(t, err)
+	require.Equal(t, []DocumentSymbol{{"Parent", Position{path, 1, 4}}, {"Parent.Child", Position{path, 2, 1}}}, result.Symbols)
+	flat, err := json.Marshal([]any{map[string]any{"name": "Child", "containerName": "Parent", "location": map[string]any{"uri": pathURI(path), "range": testRange(1, 1)}}})
+	require.NoError(t, err)
+	result, err = c.decodeDocumentSymbols(flat, path, source)
+	require.NoError(t, err)
+	require.Equal(t, []DocumentSymbol{{"Parent.Child", Position{path, 2, 1}}}, result.Symbols)
+	result, err = c.decodeDocumentSymbols(json.RawMessage("null"), path, source)
+	require.NoError(t, err)
+	require.Empty(t, result.Symbols)
+	_, err = c.decodeDocumentSymbols(json.RawMessage(`[{"name":"bad"}]`), path, source)
+	require.ErrorContains(t, err, "invalid document symbol location")
+}
+
 func TestClientLifecycleUnicodeAndReadOnly(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "main.go")
@@ -273,6 +300,15 @@ func TestLSPHelperProcess(t *testing.T) {
 			if doc["languageId"] != os.Getenv("LSP_EXPECT_LANGUAGE") {
 				os.Exit(24)
 			}
+		case "textDocument/documentSymbol":
+			params := msg["params"].(map[string]any)
+			if _, ok := params["position"]; ok {
+				os.Exit(26)
+			}
+			writeTestMessage(map[string]any{"jsonrpc": "2.0", "id": id, "result": []any{map[string]any{
+				"name": "Parent", "range": testRange(0, 0), "selectionRange": testRange(0, 2),
+				"children": []any{map[string]any{"name": "Child", "range": testRange(1, 0), "selectionRange": testRange(1, 1)}},
+			}}})
 		case "textDocument/hover", "textDocument/definition":
 			if os.Getenv("LSP_HELPER_MODE") == "hang" {
 				if marker := os.Getenv("LSP_READY_FILE"); marker != "" {

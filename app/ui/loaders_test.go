@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -133,7 +133,7 @@ func TestModel_FilesLoaded_DropsStaleResponses(t *testing.T) {
 	assert.Nil(t, cmd)
 	assert.False(t, model.filesLoaded, "stale response must not flip filesLoaded")
 	assert.Equal(t, 0, model.tree.TotalFiles(), "stale entries must not populate tree")
-	assert.Equal(t, "loading files...", model.View(), "View must still show loading while the current load is pending")
+	assert.Equal(t, "loading files...", model.View().Content, "View must still show loading while the current load is pending")
 
 	// fresh response (seq=1) arrives — accepted
 	fresh := []diff.FileEntry{{Path: "fresh.go"}}
@@ -432,7 +432,7 @@ func TestModel_FilterOnlyNoMatchShowsMessage(t *testing.T) {
 	m.ready = true
 	m.layout.width = 80
 	m.layout.height = 24
-	m.layout.viewport = viewport.New(76, 20)
+	m.layout.viewport = viewport.New(viewport.WithWidth(76), viewport.WithHeight(20))
 
 	result, cmd := m.Update(filesLoadedMsg{entries: []diff.FileEntry{{Path: "ui/model.go"}, {Path: "diff/diff.go"}}})
 	model := result.(Model)
@@ -552,7 +552,7 @@ func TestModel_UntrackedToggle(t *testing.T) {
 		assert.False(t, m.modes.showUntracked)
 
 		// toggle on
-		result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+		result, cmd := m.Update(tea.KeyPressMsg{Code: 'u', Text: string('u')})
 		assert.True(t, result.(Model).modes.showUntracked)
 		assert.NotNil(t, cmd)
 
@@ -568,7 +568,7 @@ func TestModel_UntrackedToggle(t *testing.T) {
 
 		// toggle off — use result from toggle on
 		m = result.(Model)
-		result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+		result, _ = m.Update(tea.KeyPressMsg{Code: 'u', Text: string('u')})
 		assert.False(t, result.(Model).modes.showUntracked)
 	})
 
@@ -1117,7 +1117,7 @@ func TestModel_FilesLoadedSingleFileViewportWidth(t *testing.T) {
 	model := result.(Model)
 	assert.True(t, model.file.singleFile)
 	assert.Equal(t, 0, model.layout.treeWidth, "treeWidth should be 0 in single-file mode")
-	assert.Equal(t, 98, model.layout.viewport.Width, "viewport width should be width - 2 (borders only)")
+	assert.Equal(t, 98, model.layout.viewport.Width(), "viewport width should be width - 2 (borders only)")
 }
 
 func TestModel_FileLoadedMarkdownTOCDetection(t *testing.T) {
@@ -1233,7 +1233,7 @@ func TestModel_FileLoadedTOCViewportWidth(t *testing.T) {
 	assert.Positive(t, model.layout.treeWidth, "treeWidth should be set for TOC pane")
 	expectedTreeWidth := max(minTreeWidth, 100*model.cfg.treeWidthRatio/10)
 	assert.Equal(t, expectedTreeWidth, model.layout.treeWidth)
-	assert.Equal(t, 100-expectedTreeWidth-4, model.layout.viewport.Width, "viewport width adjusted for TOC")
+	assert.Equal(t, 100-expectedTreeWidth-4, model.layout.viewport.Width(), "viewport width adjusted for TOC")
 }
 
 func TestModel_HandleBlameLoadedSyncsViewportForWrap(t *testing.T) {
@@ -1248,11 +1248,11 @@ func TestModel_HandleBlameLoadedSyncsViewportForWrap(t *testing.T) {
 	m.layout.focus = paneDiff
 	m.layout.treeHidden = true
 	m.layout.width = 40
-	m.layout.viewport = viewport.New(37, 2)
+	m.layout.viewport = viewport.New(viewport.WithWidth(37), viewport.WithHeight(2))
 	m.nav.diffCursor = 1
 
 	m.syncViewportToCursor()
-	before := m.layout.viewport.YOffset
+	before := m.layout.viewport.YOffset()
 
 	result, _ := m.handleBlameLoaded(blameLoadedMsg{
 		file: "a.go",
@@ -1264,10 +1264,10 @@ func TestModel_HandleBlameLoadedSyncsViewportForWrap(t *testing.T) {
 	})
 	model := result.(Model)
 
-	assert.Greater(t, model.layout.viewport.YOffset, before, "viewport should be re-synced after blame narrows wrap width")
+	assert.Greater(t, model.layout.viewport.YOffset(), before, "viewport should be re-synced after blame narrows wrap width")
 	cursorY := model.cursorViewportY()
-	assert.GreaterOrEqual(t, cursorY, model.layout.viewport.YOffset)
-	assert.Less(t, cursorY, model.layout.viewport.YOffset+model.layout.viewport.Height)
+	assert.GreaterOrEqual(t, cursorY, model.layout.viewport.YOffset())
+	assert.Less(t, cursorY, model.layout.viewport.YOffset()+model.layout.viewport.Height())
 }
 
 func TestModel_FileLoadedResetsCursor(t *testing.T) {
@@ -2293,7 +2293,7 @@ func TestModel_HandleFileLoaded_StartAtChange(t *testing.T) {
 		m.file.name = "a.go"
 		m.cfg.startAtChange = true
 		m.ready = false
-		m.layout.viewport.Height = 0
+		m.layout.viewport.SetHeight(0)
 
 		result, _ := m.handleFileLoaded(fileLoadedMsg{file: "a.go", seq: m.file.loadSeq, lines: lines})
 		m = result.(Model)
@@ -2302,7 +2302,7 @@ func TestModel_HandleFileLoaded_StartAtChange(t *testing.T) {
 		result, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 		m = result.(Model)
 
-		cursorY, top, height := m.cursorViewportY(), m.layout.viewport.YOffset, m.layout.viewport.Height
+		cursorY, top, height := m.cursorViewportY(), m.layout.viewport.YOffset(), m.layout.viewport.Height()
 		require.Positive(t, height)
 		assert.GreaterOrEqual(t, cursorY, top, "change must not sit above the visible window")
 		assert.Less(t, cursorY, top+height, "change must not sit below the visible window")
@@ -2322,7 +2322,8 @@ func TestModel_StartAtChange_RendersTheLoadedFile(t *testing.T) {
 		t.Helper()
 		m := testModel(files, nil)
 		m.cfg.startAtChange = true
-		m.layout.viewport.Width, m.layout.viewport.Height = 80, 20
+		m.layout.viewport.SetWidth(80)
+		m.layout.viewport.SetHeight(20)
 		return m
 	}
 
@@ -2358,12 +2359,12 @@ func TestModel_StartAtChange_RendersTheLoadedFile(t *testing.T) {
 
 		m := newModel(t, []string{"a.go", "b.go"})
 		m = load(t, m, "a.go", short)
-		require.Zero(t, m.layout.viewport.YOffset, "the short file leaves the viewport at the top")
+		require.Zero(t, m.layout.viewport.YOffset(), "the short file leaves the viewport at the top")
 
 		m = load(t, m, "b.go", lines)
 
 		require.Equal(t, 400, m.nav.diffCursor)
-		assert.Positive(t, m.layout.viewport.YOffset,
+		assert.Positive(t, m.layout.viewport.YOffset(),
 			"offset must be re-applied after the new content is installed, not clamped against the short file")
 		assert.Contains(t, m.layout.viewport.View(), "the change", "the change must actually be on screen")
 	})
