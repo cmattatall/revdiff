@@ -27,11 +27,11 @@ it through `ui.ModelConfig.Feedback`. It also supplies `DiscoverFeedback` for
 automatic mode, so the UI can asynchronously retry discovery on a one-second timer
 or an `O` press until a client is bound. Named lookups in `ModelConfig.Harnesses`
 provide `:harness connect amp` and completion without hardcoding harness types in
-the UI. Connecting never sends annotations; `:harness send` dispatches the same
-send/flush action as `O`. Discovery does not pause for unsent drafts,
+the UI. Connecting never sends feedback. `:harness send` (`:hs`) opens a general
+message box, while `O` and `:w` send annotations. Both use the same serial sender
+and preserve unconfirmed content for retry. Discovery does not pause for unsent drafts,
 but file refresh still does. The status bar reports connection and delivery state.
-The bottom panel shows `Harness (amp): <title> <thread ID>`, alongside the
-repository root supplied through `ReviewInfoConfig`. The client formats its cached
+The bottom panel shows `Harness (amp): <title> <thread ID>`. The client formats its cached
 title and thread ID as display text; untitled threads show the ID alone. Titles are
 snapshots from plugin registration. Long display text is shortened from the left.
 The UI declares the small `FeedbackSender` interface (`Send(content string) error`,

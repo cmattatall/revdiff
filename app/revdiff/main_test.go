@@ -273,8 +273,10 @@ func TestRun_RedirectedStdoutUsesTTY(t *testing.T) {
 	if os.Getenv("REVDIFF_TUI_TEST_HELPER") == "1" {
 		opts, err := parseArgs([]string{
 			"--config=" + os.Getenv("REVDIFF_TUI_TEST_CONFIG"),
+			"--keys=" + os.Getenv("REVDIFF_TUI_TEST_KEYS"),
 			"--annotations=" + os.Getenv("REVDIFF_TUI_TEST_ANNOTATIONS"),
 			"--history-dir=" + os.Getenv("REVDIFF_TUI_TEST_HISTORY"),
+			"--post-flush-command=cat >/dev/null",
 			"--no-colors",
 			"--no-mouse",
 		})
@@ -330,6 +332,8 @@ func TestRun_RedirectedStdoutUsesTTY(t *testing.T) {
 	const annotations = "## a.txt:2 (+)\npipe output stays clean\n"
 	notesPath := filepath.Join(t.TempDir(), "annotations.md")
 	require.NoError(t, os.WriteFile(notesPath, []byte(annotations), 0o600))
+	keysPath := filepath.Join(t.TempDir(), "keybindings")
+	require.NoError(t, os.WriteFile(keysPath, []byte("map q quit\n"), 0o600))
 	capturePath := filepath.Join(t.TempDir(), "stdout.txt")
 	wrapperPath := filepath.Join(t.TempDir(), "run-revdiff.sh")
 	wrapper := "#!/bin/sh\n\"$REVDIFF_TEST_BINARY\" -test.run '^TestRun_RedirectedStdoutUsesTTY$' | cat > \"$REVDIFF_TEST_CAPTURE\"\n"
@@ -347,6 +351,7 @@ func TestRun_RedirectedStdoutUsesTTY(t *testing.T) {
 	cmd.Env = mergeEnv(map[string]string{
 		"REVDIFF_TUI_TEST_HELPER":      "1",
 		"REVDIFF_TUI_TEST_CONFIG":      filepath.Join(t.TempDir(), "missing-config"),
+		"REVDIFF_TUI_TEST_KEYS":        keysPath,
 		"REVDIFF_TUI_TEST_ANNOTATIONS": notesPath,
 		"REVDIFF_TUI_TEST_HISTORY":     filepath.Join(t.TempDir(), "history"),
 		"REVDIFF_TEST_BINARY":          os.Args[0],
@@ -355,6 +360,7 @@ func TestRun_RedirectedStdoutUsesTTY(t *testing.T) {
 	stdin, err := cmd.StdinPipe()
 	require.NoError(t, err)
 	terminal := &markerWriter{marker: "\x1b[?1049h", ready: make(chan struct{})}
+	flushed := &markerWriter{marker: "Ran post-flush command with 1 annotation", ready: make(chan struct{})}
 	var stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = io.Discard, &stderr
 	require.NoError(t, cmd.Start())
@@ -366,7 +372,7 @@ func TestRun_RedirectedStdoutUsesTTY(t *testing.T) {
 	go func() {
 		// hide bytes.Buffer.ReadFrom so io.Copy calls markerWriter.Write and
 		// closes ready when the terminal marker arrives.
-		_, copyErr := io.Copy(struct{ io.Writer }{terminal}, transcript)
+		_, copyErr := io.Copy(io.MultiWriter(terminal, flushed), transcript)
 		readDone <- copyErr
 	}()
 
@@ -378,13 +384,25 @@ func TestRun_RedirectedStdoutUsesTTY(t *testing.T) {
 		t.Fatalf("script exited before TUI output\nstdout: %q\nstderr: %s\nwait: %v\nread: %v",
 			terminal.String(), stderr.String(), waitErr, readErr)
 	case <-time.After(5 * time.Second):
-		_, _ = io.WriteString(stdin, "q")
+		_, _ = io.WriteString(stdin, ":q!\r")
 		_ = stdin.Close()
 		waitErr := <-waitDone
 		readErr := <-readDone
 		_ = transcript.Close()
 		t.Fatalf("TUI never rendered on the terminal\nstdout: %q\nstderr: %s\nwait: %v\nread: %v",
 			terminal.String(), stderr.String(), waitErr, readErr)
+	}
+	_, err = io.WriteString(stdin, "O")
+	require.NoError(t, err)
+	select {
+	case <-flushed.ready:
+	case <-time.After(5 * time.Second):
+		_, _ = io.WriteString(stdin, ":q!\r")
+		_ = stdin.Close()
+		<-waitDone
+		<-readDone
+		_ = transcript.Close()
+		t.Fatalf("annotation delivery never completed: %q", terminal.String())
 	}
 	_, err = io.WriteString(stdin, "q")
 	require.NoError(t, err)

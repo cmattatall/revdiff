@@ -347,7 +347,7 @@ func TestModel_CommandSemanticNames(t *testing.T) {
 		"diff words on": keymap.ActionToggleWordDiff, "files untracked show": keymap.ActionToggleUntracked,
 		"hunk toggle": keymap.ActionToggleHunk, "review mark": keymap.ActionMarkReviewed,
 		"filter unreviewed": keymap.ActionFilterUnreviewed, "filter annotated": keymap.ActionFilter,
-		"theme select": keymap.ActionThemeSelect, "review info": keymap.ActionInfo,
+		"theme select":    keymap.ActionThemeSelect,
 		"annotation next": keymap.ActionNextAnnotation, "annotation prev": keymap.ActionPrevAnnotation,
 		"focus diff": keymap.ActionFocusDiff, "focus tree": keymap.ActionFocusTree,
 		"focus next": keymap.ActionTogglePane,
@@ -357,7 +357,14 @@ func TestModel_CommandSemanticNames(t *testing.T) {
 		m.command.input.SetValue(name)
 		matches := m.commandMatches()
 		require.Len(t, matches, 1, name)
-		require.Equal(t, action, matches[0].action, name)
+		require.Equal(t, name, matches[0].name)
+		for _, command := range m.commandEntries() {
+			if command.matchesInput(name) {
+				tui, ok := command.(tuiCommand)
+				require.True(t, ok, name)
+				require.Equal(t, action, tui.action, name)
+			}
+		}
 		count := 0
 		for _, section := range m.buildHelpSpec().Sections {
 			for _, entry := range section.Entries {
@@ -542,13 +549,13 @@ func TestModel_CommandGhostCompletion(t *testing.T) {
 	require.Equal(t, "h", m.command.input.Value(), "rendering must not accept the suggestion")
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	m = model.(Model)
-	require.Contains(t, inputRow(), ":hunk toggle", "ghost text follows the browsed candidate")
+	require.Contains(t, inputRow(), ":help", "an exact alias resolves to one command")
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyLeft})
 	m = model.(Model)
-	require.NotContains(t, inputRow(), ":hunk toggle", "hide the suffix while editing inside the query")
+	require.NotContains(t, inputRow(), ":help", "hide the suffix while editing inside the query")
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlE})
 	m = model.(Model)
-	require.Contains(t, inputRow(), ":hunk toggle")
+	require.Contains(t, inputRow(), ":help")
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
 	m = model.(Model)
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
@@ -558,6 +565,25 @@ func TestModel_CommandGhostCompletion(t *testing.T) {
 	m = model.(Model)
 	require.True(t, m.overlay.Active())
 	require.False(t, m.command.active)
+}
+
+func TestModel_CommandAliasCompletion(t *testing.T) {
+	m := splitTestModel(t)
+	m.startCommand()
+	for alias, canonical := range map[string]string{
+		"a": "annotate", "h": "help", "q": "quit", "bv": "blame view",
+		"hs": "harness send", "fd": "focus diff", "fc": "focus changed", "fs": "focus staged",
+	} {
+		m.command.input.SetValue(alias)
+		matches := m.commandMatches()
+		require.Len(t, matches, 1, alias)
+		require.Equal(t, canonical, matches[0].name)
+		model, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+		m = model.(Model)
+		require.Equal(t, canonical, m.command.input.Value())
+	}
+	entry := commandEntry{name: "focus diff", aliases: []string{"fd", "diff"}}
+	require.Equal(t, ":focus diff (:fd, :diff)", entry.helpName())
 }
 
 func TestModel_CommandVimSettings(t *testing.T) {
@@ -593,7 +619,7 @@ func TestModel_CommandVimSettings(t *testing.T) {
 }
 
 func TestModel_CommandVimAliases(t *testing.T) {
-	for _, command := range []string{"q", "w", "harness send"} {
+	for _, command := range []string{"q", "w"} {
 		m := testModel(nil, nil)
 		m.store.Add(annotation.Annotation{File: "a.go", Line: 1, Comment: "keep this note"})
 		sender := &feedbackStub{}
@@ -602,13 +628,20 @@ func TestModel_CommandVimAliases(t *testing.T) {
 		m.command.input.SetValue(command)
 		model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 		m = model.(Model)
-		require.False(t, m.command.active)
 		switch command {
 		case "q":
-			require.NotNil(t, cmd)
-			require.IsType(t, tea.QuitMsg{}, cmd())
+			require.Nil(t, cmd)
+			require.True(t, m.command.active)
+			require.Contains(t, m.command.err, "Unsent")
 			require.Equal(t, 1, m.store.Count())
-		case "w", "harness send":
+			m.command.input.SetValue("q!")
+			model, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			m = model.(Model)
+			require.IsType(t, tea.QuitMsg{}, cmd())
+			require.Empty(t, m.store.FormatOutput(), "explicit discard must not emit annotations on exit")
+			require.Empty(t, sender.content)
+		case "w":
+			require.False(t, m.command.active)
 			require.NotNil(t, cmd)
 			model, _ = m.Update(cmd())
 			m = model.(Model)
@@ -1019,6 +1052,49 @@ func TestModel_CommandFocusWithoutSplitTree(t *testing.T) {
 	require.Equal(t, paneDiff, m.layout.focus)
 }
 
+func TestTUICommand_Scope(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		scope   commandScope
+		focus   pane
+		cursor  int
+		loading bool
+		want    commandScope
+		blocked bool
+	}{
+		{"review while loading", commandScopeReview, paneTree, 0, true, commandScopeReview, false},
+		{"file while loading", commandScopeFile, paneTree, 0, true, commandScopeFile, true},
+		{"hunk on context", commandScopeHunk, paneDiff, 0, false, commandScopeHunk, true},
+		{"hunk from tree", commandScopeHunk, paneTree, 1, false, commandScopeHunk, true},
+		{"selection from tree", commandScopeSelection, paneTree, 1, false, commandScopeFile, false},
+		{"selection on hunk", commandScopeSelection, paneDiff, 1, false, commandScopeHunk, false},
+		{"file on hunk", commandScopeFile, paneDiff, 1, false, commandScopeFile, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := testModel([]string{"a.go"}, nil)
+			m.file.name, m.layout.focus, m.nav.diffCursor = "a.go", tc.focus, tc.cursor
+			m.file.lines = []diff.DiffLine{{NewNum: 1, ChangeType: diff.ChangeContext}, {NewNum: 2, ChangeType: diff.ChangeAdd}}
+			if tc.loading {
+				m.file.requestedPath = "b.go"
+			}
+			m.startCommand()
+			called := false
+			command := tuiCommand{commandEntry: commandEntry{name: "inspect"}, scope: tc.scope,
+				run: func(model *Model, scope commandScope) (tea.Model, tea.Cmd) {
+					called = true
+					require.Equal(t, tc.want, scope)
+					return *model, nil
+				}}
+			model, _ := command.execute(&m, "inspect")
+			require.Equal(t, !tc.blocked, called)
+			require.Equal(t, tc.blocked, model.(Model).command.active)
+			if tc.blocked {
+				require.NotEmpty(t, model.(Model).command.err)
+			}
+		})
+	}
+}
+
 func TestModel_CommandAnnotateScopes(t *testing.T) {
 	for _, tc := range []struct {
 		command           string
@@ -1068,8 +1144,8 @@ func TestModel_CommandAnnotateCompletionAndValidation(t *testing.T) {
 	m.file.name = "a.go"
 	var family []string
 	for _, entry := range m.commandEntries() {
-		if strings.HasPrefix(entry.name, "a") {
-			family = append(family, entry.name)
+		if name := entry.metadata().name; strings.HasPrefix(name, "a") {
+			family = append(family, name)
 		}
 	}
 	require.Equal(t, []string{"annotate", "annotate file", "annotate hunk", "annotate list", "annotation next", "annotation prev"}, family)

@@ -70,9 +70,7 @@ func TestModel_ReviewInfoAllFilesSkipsLineStats(t *testing.T) {
 	assert.Equal(t, "not calculated in all-files mode", m.reviewLinesText())
 }
 
-func TestModel_ReviewStatsLazyOnFirstOpen(t *testing.T) {
-	// regression: previously stats were computed eagerly on filesLoadedMsg.
-	// they must now be deferred until the user opens the review-info overlay.
+func TestModel_ReviewStatsLoadOncePerFileList(t *testing.T) {
 	entries := []diff.FileEntry{{Path: "a.go", Status: diff.FileModified}}
 	calls := 0
 	r := &mocks.RendererMock{
@@ -84,27 +82,31 @@ func TestModel_ReviewStatsLazyOnFirstOpen(t *testing.T) {
 	}
 	m := testNewModel(t, r, annotation.NewStore(), noopHighlighter(), ModelConfig{ReviewInfo: &ReviewInfoConfig{}})
 
-	// drive the files-loaded path directly so FileDiff calls reflect post-load state
-	result, _ := m.Update(filesLoadedMsg{entries: entries})
+	result, cmd := m.Update(filesLoadedMsg{entries: entries})
 	m = result.(Model)
-	assert.False(t, m.review.statsRequested, "stats must not be requested before the overlay is opened")
-
-	// reset the FileDiff call counter — only the lazy stats fetch should bump it
-	calls = 0
-
-	statsCmd := m.triggerReviewStats()
-	require.NotNil(t, statsCmd, "first open must produce a stats fetch command")
 	assert.True(t, m.review.statsRequested)
-
-	// run the lazy stats fetch — now FileDiff is called for review aggregation
-	statsMsg := statsCmd().(reviewStatsLoadedMsg)
-	assert.Equal(t, len(entries), calls, "lazy stats fetch must call FileDiff once per entry")
-	result, _ = m.Update(statsMsg)
-	m = result.(Model)
+	assert.Zero(t, calls, "file loading must schedule stats without blocking on them")
+	require.NotNil(t, cmd)
+	batch := cmd().(tea.BatchMsg)
+	for _, inner := range batch {
+		if msg, ok := inner().(reviewStatsLoadedMsg); ok {
+			result, _ = m.Update(msg)
+			m = result.(Model)
+		}
+	}
 	assert.True(t, m.review.statsLoaded)
-
-	// second open does NOT re-fetch
-	assert.Nil(t, m.triggerReviewStats(), "second open within the same load generation must not re-fetch")
+	assert.Equal(t, 1, m.review.adds)
+	m.layout.width = 120
+	callsBefore := calls
+	for range 3 {
+		assert.Nil(t, m.triggerReviewStats(), "reuse cached stats within a load generation")
+		assert.Contains(t, m.statusBarText(), "+1/-0")
+	}
+	assert.Equal(t, callsBefore, calls, "rendering must not fetch diffs")
+	result, _ = m.Update(filesLoadedMsg{entries: entries})
+	m = result.(Model)
+	assert.True(t, m.review.statsRequested)
+	assert.False(t, m.review.statsLoaded, "reload must refresh the totals")
 }
 
 func TestModel_ReviewStatsEarlyInfoOpenFetchesAfterFilesLoad(t *testing.T) {

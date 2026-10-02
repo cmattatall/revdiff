@@ -28,7 +28,7 @@ Built for a specific use case: reviewing code changes, plans, and documents with
 - Filter file tree to show only annotated files
 - Status line with filename, diff stats, hunk position, line number, and mode indicators
 - Help overlay (`?`) showing all keybindings organized by section
-- Info popup (`i`) showing launch scope (mode, VCS, ref, filters, file/status counts, aggregate `+/-` line stats), the optional `--description` prose, and the commit log subject + body for every commit in the current ref range (git/hg/jj) — useful for restoring narrative context when reviewing PR-style diffs
+- Review totals in the bottom-right status bar: file counts, added/removed lines, and file statuses
 - Markdown TOC navigation: single-file markdown files in context-only mode show a table-of-contents pane with header navigation and active section tracking
 - All-files mode: browse and annotate all tracked files with `--all-files` (git `ls-files` or jj `file list`), filter with `--include` and `--exclude`
 - No-VCS file review: `--only` files outside a VCS repo (or not in any diff) are shown as context-only with full annotation support
@@ -89,7 +89,7 @@ Run `./plugins/amp/install.sh` from this fork's repository root (requires Go). I
 
 1. Open an Amp thread in your Git checkout. The plugin registers the session automatically, without posting a setup message. After reloading the plugin in an existing thread, registration happens when you next send a prompt or choose **revdiff: connect**.
 2. Run `revdiff` in another terminal pane in the **same directory**. It automatically connects when exactly one live Amp session matches. The default working-tree view includes staged, unstaged, and untracked files. Type `:harness connect amp` to retry discovery manually without sending annotations. If multiple sessions match, disconnect the extras or use **Ctrl+O → revdiff: connect** in the intended Amp thread to get an explicit `--amp` command.
-3. Annotate with `Enter` or `a` (line) and `A` (file). Press `O` (Shift+O) or run `:harness send` to send feedback to that Amp thread without leaving revdiff. Amp receives it as a steering message, including while working.
+3. Annotate with `Enter` or `a` (line) and `A` (file). Press `O` (Shift+O) or run `:w` to send annotations to that Amp thread without leaving revdiff. Use `:harness send` (`:hs`) to compose a general message instead. Amp receives feedback as a steering message, including while working.
 4. Press `s` on an added/removed line to stage that contiguous change from **Changes**, or unstage it from **Staged**. Hunk operations support modified, tracked regular text files; new/deleted files, renames, binary files, mode changes, and ref comparisons are not supported. They change the index, never the working file, and reject stale displayed changes.
 5. Press `S` (Shift+S) to stage or unstage the entire selected file from the tree or diff pane (`stage_file`, rebindable). In **Changes**, this stages the current working-tree version, including edits since the last render, like `git add`. In **Staged**, it restores the index to HEAD (new files become untracked), without changing working files. Whole-file operations support new/deleted files, renames, binaries, symlinks, and mode changes. Both shortcuts require no pending annotations on the selected file or its rename origin. Annotations on other files, including unconfirmed sends, remain intact and do not block staging or unstaging; an active send must finish first.
 
@@ -686,7 +686,7 @@ git format-patch -1 --stdout | revdiff --stdin
 
 ### Review Description
 
-Use `--description` (or `--description-file=path.md`) to attach prose context to a review. The text is rendered at the top of the info popup (`i` key), with the same markdown highlighting used for `.md` files in the diff view. Useful when an agent (or a script) launches revdiff on your behalf and you come back to it later — the popup tells you what the change is and why.
+Use `--description` (or `--description-file=path.md`) to attach prose context to a review. The optional info popup renders it with markdown highlighting. This popup has no default shortcut or palette command. To use it, bind the `info` action in your keybindings file, for example `map alt+i info`. Review statistics appear in the bottom-right status bar without opening a popup.
 
 ```bash
 revdiff HEAD~3 --description="# Refactor auth middleware
@@ -767,7 +767,7 @@ In Git working-tree reviews, the sidebar has two fixed-height regions separated 
 | `n/p` | Next/previous changed file; next/prev header in markdown TOC mode (n = next match when search active) |
 | `P` | Open the file picker |
 | `[` / `]` | Cycle through previous/next hunks in the current file (diff focus) or across the tree (tree focus) |
-| `e` | Open focused file in `$EDITOR` |
+| `:edit` | Open focused file in `$EDITOR` |
 
 The file picker lists paths currently visible in the sidebar, so annotated-only and unreviewed-only filters remain active. Printable keys always filter full relative paths; use the arrow keys or mouse wheel to move, and press `Enter` or left-click to jump. `Backspace` edits the filter. The first `Esc` clears a non-empty filter and keeps the picker open; the second closes it. Because printable keys always filter, `P` typed inside the picker adds to the filter rather than closing it; a `jump_file` binding with a modifier (e.g. `map alt+f jump_file`) closes the picker when pressed again.
 
@@ -787,21 +787,25 @@ Use `:focus staged` (`:fs`) or `:focus changed` (`:fc`) to focus that section of
 
 Use `:focus tree` to return to the selected tree section, or `:focus next` to switch panes. Palette commands use readable names such as `:focus diff`. Underscore-style keybinding IDs such as `focus_diff` are for the keybindings file, not command aliases.
 
-Display commands request an explicit state: `:diff context compact` / `:diff context full` select nearby or whole-file context; `:diff removed hide` / `:diff removed show` fold or expand removed lines; `:diff words on` / `:diff words off` control word-change highlighting; and `:tree show` / `:tree hide` control the sidebar. Repeating a command keeps the requested state. Keyboard shortcuts still toggle. Related commands include `:hunk toggle`, `:filter annotated`, `:filter unreviewed`, `:review mark`, `:review info`, and `:theme select`. Use `:files untracked show` / `:files untracked hide` where untracked filtering is available. Split working-tree reviews already include untracked files in Changes.
+Display commands request an explicit state: `:diff context compact` / `:diff context full` select nearby or whole-file context; `:diff removed hide` / `:diff removed show` fold or expand removed lines; `:diff words on` / `:diff words off` control word-change highlighting; and `:tree show` / `:tree hide` control the sidebar. Repeating a command keeps the requested state. Keyboard shortcuts still toggle. Related commands include `:hunk toggle`, `:filter annotated`, `:filter unreviewed`, `:review mark`, and `:theme select`. Use `:files untracked show` / `:files untracked hide` where untracked filtering is available. Split working-tree reviews already include untracked files in Changes.
 
 `.` or `:hunk toggle` shows/hides removed lines in the hunk under the diff cursor, from either pane. From normal view it enables collapsed mode while leaving the other hunks expanded. Repeating it reopens the hunk. Deletion-only hunks collapse to a placeholder. Context lines and addition-only hunks show a hint because there are no removed lines to fold.
 
 Vim-style commands are available too: `:set number` / `:set nonumber` show/hide line numbers, and `:set wrap` / `:set nowrap` enable/disable wrapping. Repeating a `set` command keeps the requested state rather than toggling it. `:q` quits normally, and `:w` flushes annotations to the configured output or connected harness (it does not write source files). These names also support completion.
 
-Harness commands support completion too: `:harness connect amp` looks for an Amp session in the current directory without sending annotations; `:harness send` uses the same send/flush action as `O` and `:w`. An existing connection stays bound to its original session, including after an unconfirmed send.
+`:q` keeps the command box open when feedback is unsent. Send annotations with `:w`, or reopen a message draft with `:hs`. Successful delivery permits quitting; failed delivery or subsequent annotation edits still block it. `:q!` explicitly discards remaining feedback and quits without emitting annotations. There is no default single-key quit shortcut.
+
+Harness commands support completion too: `:harness connect amp` looks for an Amp session in the current directory without sending anything. `:harness send` (`:hs`) opens a general-message box with no file or line association. `Enter` sends the message; `Esc` closes the box and keeps the draft for this session. Sending a message leaves annotations untouched. Use `O` or `:w` to send annotations. An existing connection stays bound to its original session. Unconfirmed deliveries retain their original text for retry before another message or annotation batch can be sent.
 
 Thread and status information remain visible while you type. `Esc` cancels; running a command closes the palette and restores the diff's height. The command pane also works with `--no-status-bar` and, for commands such as `help` and `quit`, without a selected file.
 
-Help (`?` or `:help`) lists keybindings with palette commands where available. Aliases share the canonical command's row, for example `:focus changed (:fc)`. Keyboard navigation (`n`/`N`, arrows, `J`/`K`, paging, and hunk jumps) stays in help without typed commands. The **Command palette** section lists harness connections and commands without a bound key.
+Help (`?` or `:help`) lists each command once in its functional section, with aliases inline, for example `:focus changed (:fc)`. Commands stay in their sections even without keybindings. **Harness** groups connection and message commands; **Miscellaneous** holds shell commands and other ungrouped operations. Keyboard navigation (`n`/`N`, arrows, `J`/`K`, paging, and hunk jumps) stays in help without typed commands.
 
 Use `:annotation next` and `:annotation prev` to jump between annotations. These commands and `:w` appear in help under **Annotations**. Display settings, including `:blame on` / `:blame off` for the blame gutter, work from either tree or diff focus.
 
 Run `:! <command>` to execute a shell command, for example `:! git status`. It runs through `$SHELL` (or `/bin/sh`) in revdiff's launch directory, with normal quoting, pipes, and terminal input/output. Press Enter when finished to return to the review. Commands are kept in session history with their original case. Annotations are preserved, and `:reload` refreshes the diff after external changes.
+
+Use `:git <args>` as shorthand for `:! git <args>`, for example `:git status` or `:git commit -m "Fix parsing"`. Arguments retain their case and shell quoting.
 
 Each command opens a clean screen without exposing or clearing your shell's scrollback. Use `:!!` to rerun the last shell command in this session, even after other palette commands.
 
@@ -841,7 +845,7 @@ The `/` prompt and search-history help appear above the footer, including with `
 
 While the annotation input is active, press `Alt+E` (or whatever key is bound to `open_editor`) to hand off the current text to an external editor for multi-line comments. `Ctrl+E` now retains its standard end-of-line behavior; users who prefer the old shortcut can add `map ctrl+e open_editor`. Editor resolution: `$EDITOR` → `$VISUAL` → `vi`. Values with arguments work (e.g. `EDITOR="code --wait"`). On editor save and quit, the full file contents (including newlines) become the annotation. Quitting the editor with an empty file cancels the annotation and preserves any previously stored note on that line. Multi-line annotations are rendered line-by-line in the diff view, shown flattened in the annotation list popup (`@`), and emitted with embedded newlines in the structured output.
 
-Run `:edit` or press `e` to open the focused file in `$EDITOR` (`open_file_in_editor` — rebindable) when revdiff has a stable source path. From the file tree, this opens the selected file without a line target; from the diff, it uses the focused source line. Editing from the **Staged** tree or a staged diff reports an error; select the file in **Changes** instead. Editor resolution is the same `$EDITOR` → `$VISUAL` → `vi` chain. Known editors receive either `$EDITOR +N path` or `$EDITOR --goto path:N` as appropriate; unknown editors receive only the file path. File lines are resolved on a best-effort basis. For working tree changes, a clean editor exit reloads the selected file. For refs, a clean editor exit returns to revdiff without reloading the displayed diff. In compare mode, `:edit` opens the `--compare-new` side. Working tree files with line annotations cannot be opened for editing because edits can orphan those annotations. Diffs read with `--stdin` do not support opening files. Unsupported rows or files and editor errors show a status hint instead of launching an editor or changing the diff.
+Run `:edit` to open the focused file in `$EDITOR` (`open_file_in_editor` — optionally bindable, with no default key) when revdiff has a stable source path. From the file tree, this opens the selected file without a line target; from the diff, it uses the focused source line. Editing from the **Staged** tree or a staged diff reports an error; select the file in **Changes** instead. Editor resolution is the same `$EDITOR` → `$VISUAL` → `vi` chain. Known editors receive either `$EDITOR +N path` or `$EDITOR --goto path:N` as appropriate; unknown editors receive only the file path. File lines are resolved on a best-effort basis. For working tree changes, a clean editor exit reloads the selected file. For refs, a clean editor exit returns to revdiff without reloading the displayed diff. In compare mode, `:edit` opens the `--compare-new` side. Working tree files with line annotations cannot be opened for editing because edits can orphan those annotations. Diffs read with `--stdin` do not support opening files. Unsupported rows or files and editor errors show a status hint instead of launching an editor or changing the diff.
 
 Press `O` to export the current annotations without exiting (`flush_output`, rebindable). Configure `--output`, `--post-flush-command`, or both. With `--output`, each flush atomically overwrites the file with the full current annotation set (a snapshot, not an append log). With `--post-flush-command`, the same snapshot is sent to the command on stdin. If neither is configured, or if there are no annotations, revdiff shows a status hint and does nothing.
 
@@ -885,9 +889,8 @@ Press `Space` to mark the focused file reviewed. Press `F` to toggle the sidebar
 | `f` | Toggle filter: all files / annotated only (shown when annotations exist) |
 | `F` | Toggle filter: all files / unreviewed only |
 | `?` | Toggle help overlay showing all keybindings |
-| `i` | Toggle info popup — review scope (mode, VCS, ref, filters, file/status counts, aggregate `+/-` stats) plus the commit log for the current ref range when applicable |
 | `R` | Reload diff from VCS (warns if annotations exist) |
-| `q` | Quit, output annotations to stdout |
+| `:q` | Quit after sending feedback; `:q!` discards unsent feedback |
 
 ### Status Bar Icons
 

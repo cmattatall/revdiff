@@ -478,7 +478,7 @@ func TestHarnessConnectFailurePreservesAnnotations(t *testing.T) {
 	}
 }
 
-func TestHarnessSendJoinsManualConnect(t *testing.T) {
+func TestAnnotationSendJoinsManualConnect(t *testing.T) {
 	sender := &feedbackStub{harness: "amp", err: errors.New("unconfirmed")}
 	lookups := 0
 	m := testNewModel(t, plainRenderer(), annotation.NewStore(), noopHighlighter(), ModelConfig{
@@ -491,7 +491,7 @@ func TestHarnessSendJoinsManualConnect(t *testing.T) {
 	model, lookup := m.connectHarness("amp")
 	m = model.(Model)
 	m.startCommand()
-	m.command.input.SetValue("harness send")
+	m.command.input.SetValue("w")
 	model, duplicate := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = model.(Model)
 	require.Nil(t, duplicate, "send joins the manual lookup, even without automatic discovery")
@@ -508,7 +508,7 @@ func TestHarnessSendJoinsManualConnect(t *testing.T) {
 	require.Nil(t, cmd, "connect cannot discard the bound session's retry cache")
 	sender.err = nil
 	m.startCommand()
-	m.command.input.SetValue("harness send")
+	m.command.input.SetValue("w")
 	model, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = model.(Model)
 	model, _ = m.Update(cmd())

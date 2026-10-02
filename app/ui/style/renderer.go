@@ -1,6 +1,7 @@
 package style
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/umputun/revdiff/app/diff"
@@ -80,6 +81,23 @@ func (r Renderer) StatusBarSeparator() string {
 	muted := r.res.Color(ColorKeyMutedFg)
 	statusFg := r.res.Color(ColorKeyStatusFg)
 	return " " + string(muted) + "|" + string(statusFg) + " "
+}
+
+// StatusBarDiffStats colors line totals without resetting the bar's background.
+func (r Renderer) StatusBarDiffStats(adds, removes int) string {
+	paint := func(value string, key ColorKey) string {
+		fg := r.res.Color(key)
+		if fg == "" {
+			return value
+		}
+		restore := r.res.Color(ColorKeyStatusFg)
+		if restore == "" {
+			restore = ResetFg
+		}
+		return string(fg) + value + string(restore)
+	}
+	return paint(fmt.Sprintf("+%d", adds), ColorKeyAddLineFg) + "/" +
+		paint(fmt.Sprintf("-%d", removes), ColorKeyRemoveLineFg)
 }
 
 // FileStatusMark returns a colored file status character (A, M, D, ?, etc.)

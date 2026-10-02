@@ -23,7 +23,7 @@ func (m Model) View() string {
 	// nil-populated and the diff pane has no file selected. Showing the empty two-pane
 	// layout here would flash a misleading "no changes" state for as long as ChangedFiles
 	// takes to return (can be 100-500ms on large repos).
-	if !m.filesLoaded && !m.command.active && !m.overlay.Active() {
+	if !m.filesLoaded && !m.command.active && !m.message.active && !m.overlay.Active() {
 		return "loading files..."
 	}
 
@@ -271,12 +271,18 @@ func (m Model) statusBarContent() string {
 		rightParts = append(rightParts, fmt.Sprintf("%d %s", cnt, suffix))
 	}
 	rightParts = append(rightParts, m.statusModeIcons(), "? help")
+	if stats := m.reviewFooterText(); stats != "" {
+		rightParts = append(rightParts, stats)
+	}
 
 	// build separator with muted foreground using raw ANSI (not lipgloss.Render)
 	// to avoid full reset that would break the status bar background
 	sep := m.renderer.StatusBarSeparator()
 	left := strings.Join(segments, sep)
 	right := strings.Join(rightParts, sep)
+	if stats := m.reviewFooterText(); stats != "" && lipgloss.Width(right) > max(m.layout.width-2, 0) {
+		right = ansi.Truncate(stats, max(m.layout.width-2, 0), "…")
+	}
 
 	// truncate filename from left with … if status line is too wide
 	minRight := lipgloss.Width(right) + 5 // 2 for status bar padding + 3 for separator
@@ -299,6 +305,9 @@ func (m Model) statusBarContent() string {
 		statsStr := m.fileStatsText()
 		nameMax := max(available-lipgloss.Width(statsStr)-lipgloss.Width(sep), 4) // reserve separator between name and stats
 		left = style.TruncateLeftToWidth(cleanName, nameMax) + sep + statsStr
+	}
+	if m.review.cfg != nil {
+		left = ansi.Truncate(left, available, "…")
 	}
 
 	return m.joinStatusSections(left, right, sep)

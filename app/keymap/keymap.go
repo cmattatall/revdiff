@@ -263,10 +263,10 @@ func defaultDescriptions() []HelpEntry {
 		{ActionInfo, "show review info popup", "View"},
 		{ActionReload, "reload diff from VCS", "View"},
 
-		// quit
-		{ActionQuit, "quit", "Quit"},
-		{ActionHelp, "show help", "Quit"},
-		{ActionDismiss, "dismiss / cancel", "Quit"},
+		// miscellaneous
+		{ActionQuit, "quit", "Miscellaneous"},
+		{ActionHelp, "show help", "Miscellaneous"},
+		{ActionDismiss, "dismiss / cancel", "Miscellaneous"},
 	}
 }
 
@@ -292,7 +292,6 @@ func defaultBindings() map[string]Action {
 		":":      ActionCommand,
 		"]":      ActionNextHunk,
 		"[":      ActionPrevHunk,
-		"e":      ActionOpenFileInEditor,
 		"tab":    ActionTogglePane,
 		"h":      ActionFocusTree,
 		"l":      ActionFocusDiff,
@@ -320,10 +319,8 @@ func defaultBindings() map[string]Action {
 		"F":      ActionFilterUnreviewed,
 		"u":      ActionToggleUntracked,
 		"f":      ActionFilter,
-		"q":      ActionQuit,
 		"?":      ActionHelp,
 		"T":      ActionThemeSelect,
-		"i":      ActionInfo,
 		"R":      ActionReload,
 		"esc":    ActionDismiss,
 	}

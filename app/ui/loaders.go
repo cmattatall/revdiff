@@ -476,12 +476,8 @@ func (m Model) handleFilesLoaded(msg filesLoadedMsg) (tea.Model, tea.Cmd) {
 		log.Printf("[WARN] %s", w)
 	}
 	entries := m.filterOnly(msg.entries)
-	statsPending := m.review.statsRequested && !m.review.statsLoaded
 	m.setReviewEntries(entries)
-	var statsCmd tea.Cmd
-	if statsPending {
-		statsCmd = m.triggerReviewStats()
-	}
+	statsCmd := m.triggerReviewStats()
 	m.refreshInfoOverlay()
 	if len(entries) == 0 && len(m.cfg.only) > 0 {
 		m.layout.viewport.SetContent("no files match --only filter")
@@ -816,7 +812,7 @@ func (m Model) fileStatsText() string {
 	if m.file.adds == 0 && m.file.removes == 0 && len(m.file.lines) > 0 {
 		return fmt.Sprintf("%d lines", len(m.file.lines))
 	}
-	return fmt.Sprintf("+%d/-%d", m.file.adds, m.file.removes)
+	return m.renderer.StatusBarDiffStats(m.file.adds, m.file.removes)
 }
 
 // skipInitialDividers positions diffCursor on the first visible line.

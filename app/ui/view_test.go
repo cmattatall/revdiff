@@ -18,6 +18,32 @@ import (
 	"github.com/umputun/revdiff/app/ui/style"
 )
 
+func TestModel_ReviewStatsBottomRight(t *testing.T) {
+	m := testModel([]string{"a.go", "b.go", "c.go"}, nil)
+	m.review.cfg = &ReviewInfoConfig{VCS: "git"}
+	m.review.entries = []diff.FileEntry{{Path: "a.go"}, {Path: "b.go"}, {Path: "c.go"}}
+	m.review.statsLoaded = true
+	m.review.adds, m.review.removes = 17, 6
+	m.review.statusCounts = map[diff.FileStatus]int{diff.FileModified: 2, diff.FileAdded: 1}
+	m.file.adds, m.file.removes = 3, 2
+	m.renderer = style.NewRenderer(style.NewResolver(style.Colors{AddFg: "#00ff00", RemoveFg: "#ff0000", StatusFg: "#abcdef"}))
+	require.Contains(t, m.fileStatsText(), "\033[38;2;0;255;0m+3")
+	require.Contains(t, m.fileStatsText(), "\033[38;2;255;0;0m-2")
+	const stats = "3 files · +17/-6 · A1 M2 · git"
+	for _, width := range []int{120, 60, 32, 12, 0} {
+		m.layout.width = width
+		rendered := m.statusBarText()
+		text := ansi.Strip(rendered)
+		require.NotContains(t, text, "\n")
+		require.LessOrEqual(t, ansi.StringWidth(text), max(width-2, 0))
+		if width >= 32 {
+			require.True(t, strings.HasSuffix(text, stats), text)
+			require.Contains(t, rendered, "\033[38;2;0;255;0m+17")
+			require.Contains(t, rendered, "\033[38;2;255;0;0m-6")
+		}
+	}
+}
+
 func TestModel_SessionPanel(t *testing.T) {
 	m := testModel([]string{"a.go"}, nil)
 	m.review.cfg = &ReviewInfoConfig{VCS: "git", WorkDir: "/work/revdiff"}

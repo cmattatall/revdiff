@@ -14,6 +14,9 @@ import (
 )
 
 // FeedbackSender delivers feedback to a bound harness session.
+// Send accepts general messages or formatted annotations and returns nil only
+// after the harness acknowledges delivery. Calls are serial, with identical
+// content retried after a failure.
 // Name methods return cached metadata and must not perform IO.
 type FeedbackSender interface {
 	Send(content string) error
@@ -46,6 +49,13 @@ const (
 	liveStaging
 )
 
+type feedbackKind int
+
+const (
+	feedbackAnnotations feedbackKind = iota
+	feedbackMessage
+)
+
 // Discovery may overlap staging. Sending and staging are mutually exclusive;
 // a failed send returns to idle with its pending snapshot retained for retry.
 type liveState struct {
@@ -58,6 +68,7 @@ type liveState struct {
 	err         error
 	pending     []annotation.Annotation
 	content     string
+	kind        feedbackKind
 	stageAnchor *stageAnchor
 }
 
@@ -175,12 +186,12 @@ func (m Model) liveTick() tea.Cmd {
 
 func (m Model) livePaused() bool {
 	return !m.filesLoaded || m.file.requestedPath != "" || m.store.Count() > 0 ||
-		m.live.operation != liveIdle || len(m.live.pending) > 0 || m.liveInteractionActive()
+		m.live.operation != liveIdle || m.live.content != "" || m.liveInteractionActive()
 }
 
 func (m Model) liveInteractionActive() bool {
 	return m.annot.annotating || m.search.active || m.nav.scanKind != treeScanIdle ||
-		m.command.active || m.overlay.Active() || m.reload.pending
+		m.command.active || m.message.active || m.overlay.Active() || m.reload.pending
 }
 
 func (m Model) pollLive() (tea.Model, tea.Cmd) {
@@ -243,7 +254,7 @@ func (m Model) sendFeedback() (tea.Model, tea.Cmd) {
 	if m.live.operation != liveIdle {
 		return m, nil
 	}
-	if len(m.live.pending) == 0 {
+	if m.live.content == "" {
 		if m.store.Count() == 0 {
 			m.output.hint = "No annotations to send"
 			return m, nil
@@ -258,6 +269,7 @@ func (m Model) sendFeedback() (tea.Model, tea.Cmd) {
 			m.live.pending = append(m.live.pending, m.store.Get(file)...)
 		}
 		m.live.content = content
+		m.live.kind = feedbackAnnotations
 	}
 	m.live.operation = liveSending
 	m.output.hint = "Sending feedback"
@@ -270,6 +282,20 @@ func (m Model) handleFeedbackSent(msg feedbackSentMsg) (tea.Model, tea.Cmd) {
 	m.live.err = msg.err
 	if msg.err != nil {
 		m.output.hint = msg.err.Error()
+		if m.message.active {
+			m.message.err = msg.err.Error() + " · Enter retries the same message"
+		}
+		return m, nil
+	}
+	if m.live.kind == feedbackMessage {
+		m.live.content = ""
+		m.live.kind = feedbackAnnotations
+		m.message.draft = ""
+		if m.message.active {
+			m.message.input.SetValue("")
+			m.closeHarnessMessage()
+		}
+		m.output.hint = "Message sent"
 		return m, nil
 	}
 	// Do not delete annotations edited or added while the request was in flight.

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -15,7 +16,7 @@ import (
 	"github.com/umputun/revdiff/app/ui/style"
 )
 
-// commandState holds the action palette and Vim-style source-line jump prompt.
+// commandState holds command input, completion, and history.
 type commandState struct {
 	active        bool
 	input         textinput.Model
@@ -30,7 +31,109 @@ type commandState struct {
 type commandEntry struct {
 	name        string
 	description string
-	action      keymap.Action
+	aliases     []string
+	section     string
+}
+
+type paletteCommand interface {
+	metadata() commandEntry
+	matchesInput(string) bool
+	helpName() string
+	execute(*Model, string) (tea.Model, tea.Cmd)
+}
+
+type tuiCommand struct {
+	commandEntry
+	action keymap.Action
+	scope  commandScope
+	run    func(*Model, commandScope) (tea.Model, tea.Cmd)
+}
+
+// TODO: Move scope into shared UI state so actions outside the command palette
+// can use the same scope and mode rules.
+type commandScope int
+
+const (
+	commandScopeReview commandScope = iota
+	commandScopeFile
+	commandScopeHunk
+	commandScopeSelection // use the focused hunk, otherwise the selected file
+)
+
+func (scope commandScope) resolve(m *Model) (commandScope, string) {
+	if scope == commandScopeReview {
+		return scope, ""
+	}
+	if !m.filesLoaded || m.file.requestedPath != "" {
+		return scope, "Wait for the selected file to load"
+	}
+	if m.file.name == "" {
+		return scope, "No file selected"
+	}
+	_, onHunk := m.cursorHunkStart()
+	onHunk = onHunk && m.layout.focus == paneDiff
+	if scope == commandScopeSelection {
+		scope = commandScopeFile
+		if onHunk {
+			scope = commandScopeHunk
+		}
+	}
+	if scope == commandScopeHunk && !onHunk {
+		return scope, "Move the diff cursor onto a change hunk"
+	}
+	return scope, ""
+}
+
+type shellCommand struct {
+	commandEntry
+	prefix string
+}
+
+func (e commandEntry) metadata() commandEntry { return e }
+
+func (e commandEntry) matchesName(name string) bool {
+	return e.name == name || slices.Contains(e.aliases, name)
+}
+
+func (c tuiCommand) matchesInput(value string) bool {
+	return c.matchesName(strings.ToLower(value))
+}
+
+func (c shellCommand) arguments(value string) (string, bool) {
+	for _, name := range append([]string{c.name}, c.aliases...) {
+		if len(value) < len(name) || !strings.EqualFold(value[:len(name)], name) {
+			continue
+		}
+		args := value[len(name):]
+		if args == "" || args[0] == ' ' || args[0] == '\t' {
+			return args, true
+		}
+	}
+	return "", false
+}
+
+func (c shellCommand) matchesInput(value string) bool {
+	_, ok := c.arguments(value)
+	return ok
+}
+
+func (c shellCommand) execute(m *Model, value string) (tea.Model, tea.Cmd) {
+	args, _ := c.arguments(value)
+	return m.runShellCommand("! " + c.prefix + args)
+}
+
+func (e commandEntry) helpName() string {
+	name := ":" + e.name
+	if len(e.aliases) > 0 {
+		name += " (:" + strings.Join(e.aliases, ", :") + ")"
+	}
+	return name
+}
+
+func (c shellCommand) helpName() string {
+	entry := c.commandEntry
+	entry.name += " <args>"
+	return entry.helpName()
 }
 
 type commandSetting struct {
@@ -115,35 +218,32 @@ func (m Model) paletteCommand(action keymap.Action) string {
 	case keymap.ActionThemeSelect:
 		return "theme select"
 	case keymap.ActionInfo:
-		return "review info"
+		return ""
 	default:
 		return string(action)
 	}
 }
 
-func (m Model) commandEntries() []commandEntry {
-	entries := []commandEntry{
-		{"annotate", "annotate the selected hunk or file", ""},
-		{"annotate hunk", "annotate the change hunk under the diff cursor", ""},
-		{"blame view", "inspect the current line's commit and associated GitHub PR", ""},
-		{"bv", "inspect line blame (:blame view)", ""},
-		{"q", "quit", keymap.ActionQuit},
-		{"harness send", "send annotations to the connected harness", keymap.ActionFlushOutput},
-		{"fd", "focus the diff pane", keymap.ActionFocusDiff},
+func (m Model) commandEntries() []paletteCommand {
+	entries := []paletteCommand{
+		tuiCommand{commandEntry: commandEntry{name: "annotate", description: "annotate the selected hunk or file", aliases: []string{"a"}, section: "Annotations"}, scope: commandScopeSelection, run: (*Model).annotateScope},
+		tuiCommand{commandEntry: commandEntry{name: "annotate hunk", description: "annotate the change hunk under the diff cursor", section: "Annotations"}, scope: commandScopeHunk, run: (*Model).annotateScope},
+		tuiCommand{commandEntry: commandEntry{name: "blame view", description: "inspect the current line's commit and associated GitHub PR", aliases: []string{"bv"}, section: "View"}},
+		shellCommand{commandEntry: commandEntry{name: "git", description: "run git through the shell", section: "Miscellaneous"}, prefix: "git"},
+		tuiCommand{commandEntry: commandEntry{name: "harness send", description: "compose a message to the connected harness", aliases: []string{"hs"}, section: "Harness"}},
+		tuiCommand{commandEntry: commandEntry{name: "quit!", description: "discard unsent feedback and quit", aliases: []string{"q!"}, section: "Miscellaneous"}},
 	}
 	settings := m.commandSettings()
 	for _, setting := range settings {
 		entries = append(entries,
-			commandEntry{setting.on, setting.onDescription, setting.action},
-			commandEntry{setting.off, setting.offDescription, setting.action},
+			tuiCommand{commandEntry: commandEntry{name: setting.on, description: setting.onDescription, section: "View"}, action: setting.action},
+			tuiCommand{commandEntry: commandEntry{name: setting.off, description: setting.offDescription, section: "View"}, action: setting.action},
 		)
 	}
 	if _, ok := m.tree.(*workingTree); ok {
 		entries = append(entries,
-			commandEntry{"focus staged", "focus the Staged section", ""},
-			commandEntry{"focus changed", "focus the Changes section", ""},
-			commandEntry{"fs", "focus the Staged section", ""},
-			commandEntry{"fc", "focus the Changes section", ""},
+			tuiCommand{commandEntry: commandEntry{name: "focus staged", description: "focus the Staged section", aliases: []string{"fs"}, section: keymap.SectionPane}},
+			tuiCommand{commandEntry: commandEntry{name: "focus changed", description: "focus the Changes section", aliases: []string{"fc"}, section: keymap.SectionPane}},
 		)
 	}
 actions:
@@ -157,13 +257,24 @@ actions:
 			}
 		}
 		if name := m.paletteCommand(entry.Action); name != "" {
-			entries = append(entries, commandEntry{name, entry.Description, entry.Action})
+			command := tuiCommand{commandEntry: commandEntry{name: name, description: entry.Description, section: entry.Section}, action: entry.Action}
+			switch entry.Action {
+			case keymap.ActionQuit:
+				command.aliases = []string{"q"}
+			case keymap.ActionHelp:
+				command.aliases = []string{"h"}
+			case keymap.ActionFocusDiff:
+				command.aliases = []string{"fd"}
+			case keymap.ActionAnnotateFile:
+				command.scope, command.run = commandScopeFile, (*Model).annotateScope
+			}
+			entries = append(entries, command)
 		}
 	}
 	for name := range m.live.harnesses {
-		entries = append(entries, commandEntry{"harness connect " + name, "connect to " + name + " in this directory", ""})
+		entries = append(entries, tuiCommand{commandEntry: commandEntry{name: "harness connect " + name, description: "connect to " + name + " in this directory", section: "Harness"}})
 	}
-	sort.Slice(entries, func(i, j int) bool { return entries[i].name < entries[j].name })
+	sort.Slice(entries, func(i, j int) bool { return entries[i].metadata().name < entries[j].metadata().name })
 	return entries
 }
 
@@ -177,7 +288,8 @@ func (m *Model) startCommand() tea.Cmd {
 	ti.CharLimit = 128
 	ti.Width = max(1, m.layout.width-5) // borders, padding, and ':'
 	cmd := ti.Focus()
-	m.command = commandState{active: true, input: ti, history: m.command.history, lastShell: m.command.lastShell}
+	m.command = commandState{active: true, input: ti, history: m.command.history,
+		lastShell: m.command.lastShell}
 	// The command pane remains independent of --no-status-bar.
 	m.layout.viewport.Height = m.paneHeight() - 1
 	return cmd
@@ -247,90 +359,28 @@ func (m *Model) submitCommand() (tea.Model, tea.Cmd) {
 	if strings.HasPrefix(value, "!") {
 		return m.runShellCommand(value)
 	}
+	commands := m.commandEntries()
+	for _, command := range commands {
+		if command.matchesInput(value) {
+			return command.execute(m, value)
+		}
+	}
 	value = strings.ToLower(value)
-	if value == "h" {
-		value = "help"
-	}
-	if value == "a" {
-		value = "annotate"
-	}
 	if value == "" {
 		m.closeCommand()
 		return *m, nil
 	}
 	if matches := m.commandMatches(); len(matches) == 1 {
 		value = matches[0].name
+		for _, command := range commands {
+			if command.matchesInput(value) {
+				return command.execute(m, value)
+			}
+		}
 	}
 	if name, ok := strings.CutPrefix(value, "harness connect "); ok {
-		if m.live.harnesses[name] == nil {
-			m.command.err = "Unknown or unavailable harness in this review: " + name
-			return *m, nil
-		}
-		m.command.remember(value)
-		m.closeCommand()
-		return m.connectHarness(name)
-	}
-	for _, entry := range m.commandEntries() {
-		if entry.name == value {
-			if entry.name == "annotate" || entry.name == "annotate file" || entry.name == "annotate hunk" {
-				if !m.filesLoaded || m.file.requestedPath != "" {
-					m.command.err = "Wait for the selected file to load"
-					return *m, nil
-				}
-				if m.file.name == "" {
-					m.command.err = "No file selected"
-					return *m, nil
-				}
-				if _, ok := m.cursorHunkStart(); entry.name == "annotate hunk" && (!ok || m.layout.focus != paneDiff) {
-					m.command.err = "Move the diff cursor onto a change hunk"
-					return *m, nil
-				}
-			}
-			// Close first: live operations must not see the palette as a modal
-			// blocker, and newly opened overlays need the restored pane height.
-			m.command.remember(entry.name)
-			m.closeCommand()
-			if entry.action == keymap.ActionToggleCollapsed {
-				m.setCollapsedMode(entry.name == "diff removed hide")
-				return *m, nil
-			}
-			// Explicit settings use toggle dispatch only when the state must change.
-			for _, setting := range m.commandSettings() {
-				if setting.action == entry.action && setting.enabled == (entry.name == setting.on) {
-					return *m, nil
-				}
-			}
-			switch entry.name {
-			case "blame view", "bv":
-				return m.openBlameView()
-			case "annotate", "annotate file", "annotate hunk":
-				_, onHunk := m.cursorHunkStart()
-				hunk := entry.name == "annotate hunk" || (entry.name == "annotate" && m.layout.focus == paneDiff && onHunk)
-				m.layout.focus = paneDiff
-				var cmd tea.Cmd
-				if hunk {
-					cmd = m.startHunkAnnotation()
-				} else {
-					cmd = m.startFileAnnotation()
-				}
-				m.layout.viewport.SetContent(m.renderDiff())
-				return *m, cmd
-			case "focus diff", "fd":
-				m.layout.focus = paneDiff
-				return *m, nil
-			case "focus staged", "focus changed", "fs", "fc":
-				// These entries exist only for the split working-tree sidebar.
-				m.tree.(*workingTree).activeStaged = entry.name == "focus staged" || entry.name == "fs"
-				if m.layout.treeHidden {
-					m.toggleTreePane()
-				}
-				m.layout.focus = paneTree
-				m.pendingAnnotJump = nil
-				m.nav.pendingHunkJump = nil
-				return m.loadSelectedIfChanged()
-			}
-			return m.dispatchAction(entry.action)
-		}
+		m.command.err = "Unknown or unavailable harness in this review: " + name
+		return *m, nil
 	}
 	n, err := strconv.Atoi(value)
 	if value != "$" && (err != nil || n < 1 || strings.Trim(value, "0123456789") != "") {
@@ -435,7 +485,7 @@ func (m Model) commandPaneHeight() int {
 	if m.command.active && m.command.historySearch {
 		return m.commandHistoryRows() + 4 // title, filter, and two borders
 	}
-	if m.command.active || m.search.active {
+	if m.command.active || m.search.active || m.message.active {
 		return 4 // input, help/error, and two borders
 	}
 	return 0
@@ -468,7 +518,7 @@ func (m Model) commandPaneView() string {
 		help = fmt.Sprintf("%s (%d/%d) · %s",
 			entry.name, m.command.selected+1, len(matches), entry.description)
 		query := strings.ToLower(strings.TrimSpace(m.command.input.Value()))
-		if len(matches) == 1 || query == entry.name || (query == "h" && entry.name == "help") || (query == "a" && entry.name == "annotate") {
+		if len(matches) == 1 || entry.matchesName(query) {
 			help = entry.description
 		}
 		if query == "" {

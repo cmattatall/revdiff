@@ -20,6 +20,19 @@ import (
 // annotKeyFile is the lookup key for file-level annotations in wrappedAnnotationLineCount.
 const annotKeyFile = "file"
 
+// annotateScope opens an annotation for the command's resolved file or hunk.
+func (m *Model) annotateScope(scope commandScope) (tea.Model, tea.Cmd) {
+	m.layout.focus = paneDiff
+	var cmd tea.Cmd
+	if scope == commandScopeHunk {
+		cmd = m.startHunkAnnotation()
+	} else {
+		cmd = m.startFileAnnotation()
+	}
+	m.layout.viewport.SetContent(m.renderDiff())
+	return *m, cmd
+}
+
 // annotPrefix returns the cached annotation line prefix (marker + space).
 func (m Model) annotPrefix() string {
 	return m.cfg.annotPrefix

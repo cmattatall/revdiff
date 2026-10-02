@@ -882,6 +882,7 @@ func TestModel_EditUsesFocusedContext(t *testing.T) {
 				m.store.Add(annotation.Annotation{File: other, Line: 1, Comment: "unrelated note"})
 				fake := mockSourceEditor(nil)
 				m.editor = fake
+				m.keymap.Bind("e", keymap.ActionOpenFileInEditor)
 				key := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")}
 				if palette {
 					m.startCommand()

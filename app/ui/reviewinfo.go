@@ -13,10 +13,8 @@ import (
 	"github.com/umputun/revdiff/app/ui/overlay"
 )
 
-// setReviewEntries records the per-file portion of the review-info summary
-// (status histogram, snapshot for stats) at file-load time. Aggregate line
-// stats are NOT computed here — they are loaded lazily on the first time the
-// user opens the review-info overlay (see triggerReviewStats).
+// setReviewEntries snapshots the file list and invalidates cached totals.
+// handleFilesLoaded schedules the aggregate stats after each refresh.
 func (m *Model) setReviewEntries(entries []diff.FileEntry) {
 	m.review.statusCounts = make(map[diff.FileStatus]int)
 	for _, e := range entries {
@@ -41,14 +39,9 @@ func (m *Model) setReviewEntries(entries []diff.FileEntry) {
 	m.review.statsLoadSeq++ // invalidate any in-flight stats fetch
 }
 
-// triggerReviewStats schedules a lazy aggregate-stats fetch the first time the
-// review-info overlay is opened in this load generation. Subsequent opens read
-// from cache; a reload (which calls setReviewEntries again) flips
-// statsRequested back to false so the next open re-fetches. Returns nil when
-// stats are not applicable (AllFiles or focused-test mode where the config is
-// nil), already in flight, or opened before the file list has loaded. In the
-// last case statsRequested remains true so handleFilesLoaded can schedule the
-// deferred fetch once entries are known.
+// triggerReviewStats schedules aggregate stats once per file-list generation.
+// Rendering and navigation use the cached result without fetching diffs.
+// All-files reviews skip line totals.
 func (m *Model) triggerReviewStats() tea.Cmd {
 	if m.review.statsRequested {
 		return nil
@@ -230,8 +223,8 @@ func (m Model) reviewHeaderText() string {
 	}
 }
 
-// reviewFooterText returns the aggregate-stats summary rendered in the
-// popup's bottom border. Pieces are joined with " · " in this order:
+// reviewFooterText returns the aggregate-stats summary for the status bar.
+// Pieces are joined with " · " in this order:
 // file count, line totals, file-status histogram, vcs name. Pieces that
 // don't apply in the current mode (e.g. line totals while in --all-files
 // mode) are dropped silently. Empty when m.review.cfg is nil regardless of
@@ -245,7 +238,14 @@ func (m Model) reviewFooterText() string {
 	}
 	parts := []string{m.reviewFilesText()}
 	if !m.review.cfg.AllFiles {
-		parts = append(parts, m.reviewLinesText())
+		lines := m.reviewLinesText()
+		if m.review.statsLoaded && m.review.err == nil && (m.review.adds > 0 || m.review.removes > 0) {
+			lines = m.renderer.StatusBarDiffStats(m.review.adds, m.review.removes)
+			if m.review.partial {
+				lines += " (partial)"
+			}
+		}
+		parts = append(parts, lines)
 	}
 	if s := m.reviewStatusText(); s != "" {
 		parts = append(parts, s)

@@ -89,6 +89,25 @@ func TestRenderer_StatusBarSeparator(t *testing.T) {
 	})
 }
 
+func TestRenderer_StatusBarDiffStats(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		res  Resolver
+		want string
+	}{
+		{"colored", NewResolver(Colors{AddFg: "#00ff00", RemoveFg: "#ff0000", StatusFg: "#abcdef"}),
+			"\033[38;2;0;255;0m+17\033[38;2;171;205;239m/\033[38;2;255;0;0m-6\033[38;2;171;205;239m"},
+		{"plain", PlainResolver(), "+17/-6"},
+		{"default foreground", NewResolver(Colors{AddFg: "#00ff00", RemoveFg: "#ff0000"}),
+			"\033[38;2;0;255;0m+17\033[39m/\033[38;2;255;0;0m-6\033[39m"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			renderer := NewRenderer(tc.res)
+			require.Equal(t, tc.want, renderer.StatusBarDiffStats(17, 6))
+		})
+	}
+}
+
 func TestRenderer_FileStatusMark(t *testing.T) {
 	rnd := NewRenderer(NewResolver(fullColorsForTesting))
 

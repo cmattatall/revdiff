@@ -18,12 +18,12 @@ func TestCommandHistoryRecordsExecution(t *testing.T) {
 		model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 		m = model.(Model)
 	}
-	require.Equal(t, []string{"set wrap", "fd"}, m.command.history)
+	require.Equal(t, []string{"set wrap", "focus diff"}, m.command.history)
 	m.startCommand()
 	m.command.input.SetValue("unfinished")
 	m.closeCommand()
 	m.startCommand()
-	require.Equal(t, []string{"set wrap", "fd"}, m.command.history, "canceling must not record the draft")
+	require.Equal(t, []string{"set wrap", "focus diff"}, m.command.history, "canceling must not record the draft")
 }
 
 func TestCommandHistoryBoundedAndFuzzy(t *testing.T) {

@@ -274,10 +274,10 @@ func TestModel_FilterToggleLoadsDiffForNewSelection(t *testing.T) {
 	}
 }
 
-func TestModel_QuitKey(t *testing.T) {
+func TestModel_QuitAction(t *testing.T) {
 	m := testModel([]string{"a.go"}, nil)
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	_, cmd := m.dispatchAction(keymap.ActionQuit)
 	require.NotNil(t, cmd)
 
 	// cmd should be tea.Quit
@@ -286,12 +286,13 @@ func TestModel_QuitKey(t *testing.T) {
 	assert.True(t, ok)
 }
 
-func TestModel_QuitPreservesAnnotations(t *testing.T) {
+func TestModel_QuitPreservesAcknowledgedAnnotations(t *testing.T) {
 	m := testModel([]string{"a.go", "b.go"}, nil)
 	m.store.Add(annotation.Annotation{File: "a.go", Line: 5, Type: "+", Comment: "needs review"})
 	m.store.Add(annotation.Annotation{File: "b.go", Line: 10, Type: " ", Comment: "check this"})
+	m.output.saved = m.store.FormatOutput()
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	result, cmd := m.dispatchAction(keymap.ActionQuit)
 	require.NotNil(t, cmd)
 
 	// verify annotations survive the quit
@@ -306,7 +307,7 @@ func TestModel_QuitPreservesAnnotations(t *testing.T) {
 func TestModel_QuitNoAnnotationsEmptyOutput(t *testing.T) {
 	m := testModel([]string{"a.go"}, nil)
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	result, cmd := m.dispatchAction(keymap.ActionQuit)
 	require.NotNil(t, cmd)
 
 	model := result.(Model)
@@ -390,9 +391,9 @@ func TestModel_HandleInfo_OpensOverlayWhenApplicable(t *testing.T) {
 	m.commits.loaded = true
 	m.commits.list = commits
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	result, _ := m.dispatchAction(keymap.ActionInfo)
 	model := result.(Model)
-	assert.True(t, model.overlay.Active(), "i should open the overlay when applicable")
+	assert.True(t, model.overlay.Active(), "custom info binding opens the overlay")
 	assert.Equal(t, overlay.KindInfo, model.overlay.Kind())
 }
 
@@ -408,7 +409,7 @@ func TestModel_HandleInfo_OpensOverlayEvenWhenCommitsHidden(t *testing.T) {
 	m.commits.source = fake
 	m.commits.applicable = false // e.g. stdin/staged/only mode
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	result, _ := m.dispatchAction(keymap.ActionInfo)
 	model := result.(Model)
 	assert.True(t, model.overlay.Active(), "overlay must open in every mode — commits section hides itself")
 	assert.Equal(t, overlay.KindInfo, model.overlay.Kind())
@@ -420,7 +421,7 @@ func TestModel_HandleInfo_OpensOverlayWhenSourceNil(t *testing.T) {
 	m.commits.source = nil
 	m.commits.applicable = false // applicable always collapses to false without a source
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	result, _ := m.dispatchAction(keymap.ActionInfo)
 	model := result.(Model)
 	assert.True(t, model.overlay.Active(), "overlay opens even with no commit source — session section still useful")
 }
@@ -433,7 +434,7 @@ func TestModel_HandleInfo_StoresErrorInSpec(t *testing.T) {
 	m.commits.loaded = true
 	m.commits.err = boom
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	result, _ := m.dispatchAction(keymap.ActionInfo)
 	model := result.(Model)
 	assert.True(t, model.overlay.Active(), "overlay opens even on fetch failure so user sees the error")
 	assert.Equal(t, overlay.KindInfo, model.overlay.Kind())
@@ -442,15 +443,13 @@ func TestModel_HandleInfo_StoresErrorInSpec(t *testing.T) {
 }
 
 func TestModel_HandleInfo_OpensImmediatelyDuringLoad(t *testing.T) {
-	// regression: pressing `i` before commits finish loading must open the
-	// popup immediately. The commits section renders "loading commits…"
-	// inline; the previous behavior of refusing to open is gone.
+	// Custom info bindings can open the popup before commits finish loading.
 	m := testModel([]string{"a.go"}, nil)
 	m.commits.source = &fakeCommitLog{}
 	m.commits.applicable = true
 	m.commits.loaded = false
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	result, _ := m.dispatchAction(keymap.ActionInfo)
 	model := result.(Model)
 	assert.True(t, model.overlay.Active(), "overlay opens immediately even while commits are loading")
 }
@@ -482,7 +481,7 @@ func TestModel_HandleInfo_TruncatedFlagPropagates(t *testing.T) {
 	m.commits.list = full
 	m.commits.truncated = true
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	result, _ := m.dispatchAction(keymap.ActionInfo)
 	model := result.(Model)
 	assert.True(t, model.commits.truncated, "MaxCommits result sets the truncated flag")
 	assert.True(t, model.overlay.Active())
@@ -925,35 +924,49 @@ func TestBuildHelpSpec_PaletteCommands(t *testing.T) {
 	}
 	entries := map[string]overlay.HelpEntry{}
 	motions := map[string]overlay.HelpEntry{}
+	var sectionNames []string
 	for _, section := range m.buildHelpSpec().Sections {
+		sectionNames = append(sectionNames, section.Title)
 		for _, entry := range section.Entries {
 			if entry.Command != "" {
+				require.NotContains(t, entries, entry.Command, "each command appears in one help section")
 				entries[entry.Command] = entry
-				if entry.Command == ":w (:harness send)" {
+				if entry.Command == ":w" {
 					require.Equal(t, "Annotations", section.Title)
+				}
+				if strings.HasPrefix(entry.Command, ":harness ") {
+					require.Equal(t, "Harness", section.Title)
+				}
+				if entry.Command == ":edit" {
+					require.Equal(t, "File/Hunk", section.Title)
+				}
+				if entry.Command == ":quit (:q)" || entry.Command == ":quit! (:q!)" {
+					require.Equal(t, "Miscellaneous", section.Title)
 				}
 			} else {
 				motions[entry.Description] = entry
 			}
 		}
 	}
+	require.Equal(t, []string{"Navigation", "Annotations", "Harness", "File/Hunk", "Pane", "Markdown TOC (single-file full-context mode)", "Search", "View", "Miscellaneous"}, sectionNames)
 	for _, description := range []string{"scroll left", "scroll right / focus diff", "scroll diff down", "scroll diff up", "next file / search match", "prev file / search match"} {
 		require.NotEmpty(t, motions[description].Keys, "motion help keeps its keybindings: %s", description)
 	}
 	for _, command := range m.commandEntries() {
 		found := false
 		for label := range entries {
-			if strings.Split(label, " (")[0] == ":"+command.name || strings.Contains(label, "(:"+command.name+")") {
+			name := strings.TrimSuffix(strings.Split(label, " (")[0], " <args>")
+			if name == ":"+command.metadata().name {
 				found = true
 			}
 		}
-		assert.True(t, found, "help must include %s, either as a command or an inline alias", command.name)
+		assert.True(t, found, "help must include %s", command.metadata().name)
 	}
-	assert.Equal(t, "Ctrl+F", entries[":w (:harness send)"].Keys)
-	assert.Contains(t, entries[":w (:harness send)"].Description, "harness / output / hook")
+	assert.Equal(t, "Ctrl+F", entries[":w"].Keys)
+	assert.Contains(t, entries[":w"].Description, "harness / output / hook")
 	assert.Empty(t, entries[":quit (:q)"].Keys, "unbinding quit must not hide its palette command")
 	assert.Contains(t, entries, ":set number")
-	assert.Equal(t, "e", entries[":edit"].Keys)
+	assert.Contains(t, entries, ":edit")
 	assert.Contains(t, entries, ":harness connect example")
 }
 
@@ -961,7 +974,7 @@ func TestBuildHelpSpec_GroupedAliases(t *testing.T) {
 	m := splitTestModel(t)
 	for canonical, alias := range map[string]string{
 		"focus diff": "fd", "focus changed": "fc", "focus staged": "fs",
-		"blame view": "bv", "quit": "q", "help": "h", "annotate": "a", "w": "harness send",
+		"blame view": "bv", "quit": "q", "help": "h", "annotate": "a", "harness send": "hs",
 	} {
 		want := ":" + canonical + " (:" + alias + ")"
 		var rows []string
@@ -1037,7 +1050,6 @@ func TestBuildHelpSpec_StatusIconsOnToggleRows(t *testing.T) {
 		{"View", "show unreviewed files", "○ show unreviewed files"},
 		{"View", "show/hide untracked files", "∅ show/hide untracked files"},
 		{"View", "show/hide removed lines in current hunk", "  show/hide removed lines in current hunk"},
-		{"View", "show review info popup", "  show review info popup"},
 		{"Search", "search current file or file tree by focus", "≋ search current file or file tree by focus"},
 		{"Search", "recall previous search query (in search prompt)", "  recall previous search query (in search prompt)"},
 		{"Navigation", "move cursor down", "move cursor down"},

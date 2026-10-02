@@ -52,7 +52,7 @@ func TestDefault_allExpectedBindings(t *testing.T) {
 		{"n", ActionNextItem}, {"N", ActionPrevItem}, {"p", ActionPrevItem},
 		{"P", ActionJumpFile},
 		{":", ActionCommand},
-		{"]", ActionNextHunk}, {"[", ActionPrevHunk}, {"e", ActionOpenFileInEditor},
+		{"]", ActionNextHunk}, {"[", ActionPrevHunk},
 		{"s", ActionStageHunk}, {"S", ActionStageFile},
 		{"tab", ActionTogglePane}, {"h", ActionFocusTree}, {"l", ActionFocusDiff},
 		{"/", ActionSearch},
@@ -63,8 +63,7 @@ func TestDefault_allExpectedBindings(t *testing.T) {
 		{"L", ActionToggleLineNums}, {"B", ActionToggleBlame}, {"W", ActionToggleWordDiff},
 		{".", ActionToggleHunk}, {" ", ActionMarkReviewed}, {"f", ActionFilter}, {"F", ActionFilterUnreviewed},
 		{"u", ActionToggleUntracked},
-		{"q", ActionQuit}, {"?", ActionHelp}, {"T", ActionThemeSelect}, {"esc", ActionDismiss},
-		{"i", ActionInfo},
+		{"?", ActionHelp}, {"T", ActionThemeSelect}, {"esc", ActionDismiss},
 		{"R", ActionReload},
 	}
 	for _, tt := range tests {
@@ -228,6 +227,7 @@ func TestKeysFor(t *testing.T) {
 
 func TestBind(t *testing.T) {
 	km := Default()
+	km.Bind("q", ActionQuit)
 	km.Bind("x", ActionQuit)
 	assert.Equal(t, ActionQuit, km.Resolve("x"))
 	// original binding still works
@@ -236,6 +236,7 @@ func TestBind(t *testing.T) {
 
 func TestUnbind(t *testing.T) {
 	km := Default()
+	km.Bind("q", ActionQuit)
 	km.Unbind("q")
 	assert.Equal(t, Action(""), km.Resolve("q"))
 	// other bindings unaffected
@@ -265,7 +266,7 @@ func TestHelpSections(t *testing.T) {
 	assert.Contains(t, names, "Search")
 	assert.Contains(t, names, "Annotations")
 	assert.Contains(t, names, "View")
-	assert.Contains(t, names, "Quit")
+	assert.Contains(t, names, "Miscellaneous")
 
 	// verify entries have keys
 	for _, s := range sections {
@@ -293,6 +294,7 @@ func TestHelpSections_unmappedActionOmitted(t *testing.T) {
 
 func TestHelpSections_customBindingReflected(t *testing.T) {
 	km := Default()
+	km.Bind("q", ActionQuit)
 	km.Bind("x", ActionQuit)
 	sections := km.HelpSections()
 
@@ -365,11 +367,6 @@ func TestActionOpenEditor_HelpEntry(t *testing.T) {
 
 func TestActionOpenFileInEditor_IsValid(t *testing.T) {
 	assert.True(t, IsValidAction(ActionOpenFileInEditor))
-}
-
-func TestActionOpenFileInEditor_DefaultBinding(t *testing.T) {
-	km := Default()
-	assert.Equal(t, ActionOpenFileInEditor, km.Resolve("e"))
 }
 
 func TestActionOpenFileInEditor_HelpEntry(t *testing.T) {
@@ -491,8 +488,8 @@ func TestParse_acceptsDeprecatedCommitInfoAlias(t *testing.T) {
 }
 
 func TestInfo_roundTrip(t *testing.T) {
-	// default binding resolves correctly
 	km := Default()
+	km.Bind("i", ActionInfo)
 	assert.Equal(t, ActionInfo, km.Resolve("i"))
 
 	// action appears in help sections
@@ -758,7 +755,7 @@ func TestLoad_withOverrides(t *testing.T) {
 	km, err := Load(tmpFile)
 	require.NoError(t, err)
 	assert.Equal(t, ActionQuit, km.Resolve("x"))    // new binding
-	assert.Equal(t, ActionQuit, km.Resolve("q"))    // default still works
+	assert.Equal(t, ActionHelp, km.Resolve("?"))    // default still works
 	assert.Equal(t, Action(""), km.Resolve("j"))    // unmapped
 	assert.Equal(t, ActionDown, km.Resolve("down")) // other default still works
 }
@@ -793,7 +790,7 @@ func TestLoadOrDefault_noFile(t *testing.T) {
 	km := LoadOrDefault("/nonexistent/path/keybindings")
 	// should return defaults
 	assert.Equal(t, ActionDown, km.Resolve("j"))
-	assert.Equal(t, ActionQuit, km.Resolve("q"))
+	assert.Equal(t, ActionHelp, km.Resolve("?"))
 }
 
 func TestLoadOrDefault_emptyPath(t *testing.T) {
@@ -835,11 +832,11 @@ func TestDump_format(t *testing.T) {
 	assert.Contains(t, output, "# Search")
 	assert.Contains(t, output, "# Annotations")
 	assert.Contains(t, output, "# View")
-	assert.Contains(t, output, "# Quit")
+	assert.Contains(t, output, "# Miscellaneous")
 
 	// should contain map lines for known bindings
 	assert.Contains(t, output, "map j down")
-	assert.Contains(t, output, "map q quit")
+	assert.Contains(t, output, "map ? help")
 	assert.Contains(t, output, "map / search")
 
 	// should not contain unmap lines (dump only writes effective bindings)
@@ -984,7 +981,6 @@ func TestAcceptance_defaultKeymapPreservesAllBindings(t *testing.T) {
 	km := Default()
 	assert.Equal(t, ActionDown, km.Resolve("j"))
 	assert.Equal(t, ActionUp, km.Resolve("k"))
-	assert.Equal(t, ActionQuit, km.Resolve("q"))
 	assert.Equal(t, ActionHelp, km.Resolve("?"))
 	assert.Equal(t, ActionSearch, km.Resolve("/"))
 	assert.Equal(t, ActionToggleCollapsed, km.Resolve("v"))
@@ -996,6 +992,7 @@ func TestAcceptance_defaultKeymapPreservesAllBindings(t *testing.T) {
 func TestAcceptance_additiveBinding(t *testing.T) {
 	// map x quit → x quits, q still quits (additive, not replacement)
 	km := Default()
+	km.Bind("q", ActionQuit)
 	km.Bind("x", ActionQuit)
 	assert.Equal(t, ActionQuit, km.Resolve("x"), "x should quit after binding")
 	assert.Equal(t, ActionQuit, km.Resolve("q"), "q should still quit (additive)")
@@ -1004,6 +1001,7 @@ func TestAcceptance_additiveBinding(t *testing.T) {
 func TestAcceptance_unmapThenRemap(t *testing.T) {
 	// unmap q + map x quit → only x quits
 	km := Default()
+	km.Bind("q", ActionQuit)
 	km.Unbind("q")
 	km.Bind("x", ActionQuit)
 	assert.Equal(t, ActionQuit, km.Resolve("x"), "x should quit")
@@ -1017,7 +1015,6 @@ func TestAcceptance_dumpKeysShowsEffective(t *testing.T) {
 	require.NoError(t, km.Dump(&buf))
 	output := buf.String()
 	assert.Contains(t, output, "map j down")
-	assert.Contains(t, output, "map q quit")
 	assert.Contains(t, output, "map ? help")
 }
 
@@ -1047,7 +1044,6 @@ func TestAcceptance_helpReflectsCustomBindings(t *testing.T) {
 		for _, entry := range sec.Entries {
 			if entry.Action == ActionQuit {
 				keys := km.KeysFor(ActionQuit)
-				assert.Contains(t, keys, "q")
 				assert.Contains(t, keys, "x")
 				found = true
 			}
@@ -1266,6 +1262,7 @@ func TestDump_RoundTripsChords(t *testing.T) {
 
 func TestKeysFor_IncludesChordKeys(t *testing.T) {
 	km := Default()
+	km.Bind("q", ActionQuit)
 	km.Bind("ctrl+w>x", ActionQuit)
 
 	keys := km.KeysFor(ActionQuit)

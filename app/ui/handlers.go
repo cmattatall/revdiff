@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"slices"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -52,32 +53,6 @@ func (m Model) formatKeysForHelp(action keymap.Action) string {
 	return strings.Join(display, " / ")
 }
 
-// commandHelpName groups aliases with their canonical command.
-func (m Model) commandHelpName(name string) string {
-	switch name {
-	case "", "a", "h", "q", "fd", "fc", "fs", "bv", "harness send":
-		return ""
-	case "annotate":
-		return ":annotate (:a)"
-	case "help":
-		return ":help (:h)"
-	case "quit":
-		return ":quit (:q)"
-	case "focus diff":
-		return ":focus diff (:fd)"
-	case "focus changed":
-		return ":focus changed (:fc)"
-	case "focus staged":
-		return ":focus staged (:fs)"
-	case "blame view":
-		return ":blame view (:bv)"
-	case "w":
-		return ":w (:harness send)"
-	default:
-		return ":" + name
-	}
-}
-
 // buildHelpSpec builds an overlay.HelpSpec from the keymap's help sections,
 // converting raw key names to display names and inserting the TOC section.
 // When the vim-motion preset is active, appends a synthetic "Vim motion"
@@ -85,6 +60,8 @@ func (m Model) commandHelpName(name string) string {
 // keymap since they're only reachable through the interceptor).
 func (m Model) buildHelpSpec() overlay.HelpSpec {
 	sections := m.keymap.HelpSections()
+	commands := m.commandEntries()
+	shown := make(map[string]bool)
 	var result []overlay.HelpSection
 	for _, sec := range sections {
 		pad := m.helpIconPad(sec)
@@ -93,7 +70,14 @@ func (m Model) buildHelpSpec() overlay.HelpSpec {
 			if m.cfg.workingTree && e.Action == keymap.ActionToggleUntracked {
 				continue
 			}
-			command := m.commandHelpName(m.paletteCommand(e.Action))
+			command := ""
+			for _, entry := range commands {
+				if name := entry.metadata().name; name == m.paletteCommand(e.Action) {
+					command = entry.helpName()
+					shown[name] = true
+					break
+				}
+			}
 			entries = append(entries, overlay.HelpEntry{
 				Keys:        m.formatKeysForHelp(e.Action),
 				Command:     command,
@@ -115,25 +99,42 @@ func (m Model) buildHelpSpec() overlay.HelpSpec {
 	if m.modes.vimMotion {
 		result = append(result, m.buildVimMotionHelpSection())
 	}
-	// Include harness connectors and actions with no key binding.
-	palette := overlay.HelpSection{Title: "Command palette"}
-	for _, entry := range m.commandEntries() {
-		name := m.commandHelpName(entry.name)
-		if name == "" {
+	appendEntry := func(section string, entry overlay.HelpEntry) {
+		if section == "" {
+			section = "Miscellaneous"
+		}
+		for i := range result {
+			if result[i].Title == section {
+				result[i].Entries = append(result[i].Entries, entry)
+				return
+			}
+		}
+		result = append(result, overlay.HelpSection{Title: section, Entries: []overlay.HelpEntry{entry}})
+	}
+	for _, entry := range commands {
+		info := entry.metadata()
+		if shown[info.name] {
 			continue
 		}
-		if entry.name == m.paletteCommand(entry.action) && len(m.keymap.KeysFor(entry.action)) > 0 {
-			continue
-		}
-		palette.Entries = append(palette.Entries, overlay.HelpEntry{
-			Command: name, Description: entry.description,
+		appendEntry(info.section, overlay.HelpEntry{
+			Command: entry.helpName(), Description: info.description,
 		})
 	}
 	if m.shell != nil {
-		palette.Entries = append(palette.Entries, overlay.HelpEntry{Command: ":! <command>", Description: "run a shell command"})
-		palette.Entries = append(palette.Entries, overlay.HelpEntry{Command: ":!!", Description: "repeat the previous shell command"})
+		appendEntry("Miscellaneous", overlay.HelpEntry{Command: ":! <command>", Description: "run a shell command"})
+		appendEntry("Miscellaneous", overlay.HelpEntry{Command: ":!!", Description: "repeat the previous shell command"})
 	}
-	result = append(result, palette)
+	priority := []string{"Navigation", "Annotations", "Harness"}
+	slices.SortStableFunc(result, func(a, b overlay.HelpSection) int {
+		i, j := slices.Index(priority, a.Title), slices.Index(priority, b.Title)
+		if i < 0 {
+			i = len(priority)
+		}
+		if j < 0 {
+			j = len(priority)
+		}
+		return i - j
+	})
 	return overlay.HelpSpec{Sections: result}
 }
 

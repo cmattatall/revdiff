@@ -100,7 +100,7 @@ to carry the rename origin:
   so `parseUnifiedDiff` produces a binary placeholder.
 
 **CommitLogger capability** (`CommitLog(ref string) ([]CommitInfo, error)`) — an additive capability
-interface implemented by `Git`/`Hg`/`Jj` and consumed by the `i` info overlay. Separate from the
+interface implemented by `Git`/`Hg`/`Jj` and consumed by the optional info overlay. Separate from the
 base `Renderer` so non-VCS renderers (`FileReader`, `DirectoryReader`, `StdinReader`) stay
 unaffected. Each VCS translates the pre-combined ref string to its own log syntax (`X..HEAD` for
 git, `X::.` for hg, `X..@` for jj), caps results at 500 commits, and strips raw `\x1b` bytes from
@@ -181,10 +181,21 @@ across files by concern to keep files under ~500 lines:
   keeps keyboard motions out of the palette while preserving their help entries,
   accepts a unique completion on Enter, and closes before forwarding resolved action names
   through `dispatchAction`. Named lookups injected through `ModelConfig.Harnesses` supply
-  `:harness connect <type>`; `:harness send` shares the normal flush action. It
+  `:harness connect <type>`. Each command owns its aliases, shared by matching, completion,
+  execution, and inline help labels. `tuiCommand` and `shellCommand` embed shared
+  `commandEntry` metadata and implement `paletteCommand` for matching and execution.
+  TUI commands declare review, file, hunk, or inferred-selection scope. Scope validation
+  runs before execution and passes the resolved scope to command handlers, including
+  annotation creation. Shell commands carry a prefix, such as `git`,
+  and forward arguments unchanged through `ShellRunner`. The palette
   pauses live refresh and renders a four-row bordered command pane above the footer,
   with separate input and help/error rows, even with the status bar hidden. Search uses the
   same pane frame and height accounting while retaining its own matching and query-history state.
+- **`harness_message.go`** — `:harness send` / `:hs` compose plain feedback without
+  file associations or annotation-store changes. Its own input state holds drafts across
+  closing the pane, independent of command history. It shares only the input-pane rendering.
+  Message and annotation delivery share the serial sender and retry snapshot, tagged
+  by feedback kind so message acknowledgments never clear annotations.
 - **`command_history.go`** — bounded in-session command history and Ctrl+R case-insensitive
   subsequence search. The command pane expands into a selectable list with a filter input;
   its visible window follows the selection without separate scroll state.
@@ -294,7 +305,9 @@ Layered popup system with mutual exclusivity (one overlay at a time).
   filters, file/status counts, aggregate `+/-`) lives in the popup's top/bottom borders; commit log
   shows subject + body of every commit in the current ref range. Commits are populated eagerly at
   startup via `loadCommits()` in parallel with `loadFiles()` under `tea.Batch`; re-fetched on `R`
-  reload. `handleInfo` always opens the popup; if the user presses `i` before the fetch lands, the
+  reload. The `info` action is available only through custom keybindings, not a default key
+  or palette command. Review totals appear in the bottom-right status bar, loaded asynchronously
+  once per file-list generation and cached across navigation. If the optional popup opens before the fetch lands, the
   commits section renders an inline "loading commits…" placeholder which flips to the rendered list
   when `commitsLoadedMsg` arrives (`refreshInfoOverlay` pushes a fresh spec into the open overlay).
   Sized via `clamp(term_w * 0.9, 30, 90)` × `term_h - 4`, wraps body text at word boundaries using
@@ -613,17 +626,17 @@ the previous row wins.
 ### Overlay Flow
 
 ```
-User presses '?' / '@' / 'T' / 'P' / 'i'
+User presses '?' / '@' / 'T' / 'P' or a custom info binding
   → Model calls overlay.OpenHelp/OpenAnnotList/OpenThemeSelect/OpenFilePicker/OpenInfo
-      (for 'i': review scope is assembled from ReviewInfoConfig and current
-       file-load state; aggregate +/- stats are fetched lazily on first open
-       via loadReviewStats() and pushed into the open popup with UpdateInfo().
+      (for info: review scope is assembled from ReviewInfoConfig and current
+       file-load state. Aggregate +/- stats load after each file-list refresh
+       via loadReviewStats() for the footer and optional popup.
        Commits are fetched eagerly at startup via loadCommits(), running in
        parallel with loadFiles() under tea.Batch from Init(); triggerReload()
        re-fires both together. handleCommitsLoaded caches the result under a
        seq-guard (m.commits.loadSeq) and refreshes the open popup. The info
        popup always opens; modes without a meaningful commit range hide the
-       commits section instead of treating `i` as a no-op.)
+       commits section.)
   → overlay.Manager activates popup, blocks other overlays
   → key events route through Manager.HandleKey() → Outcome
   → Model switches on OutcomeKind:

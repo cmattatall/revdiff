@@ -19,6 +19,67 @@ type postFlushHookStub struct {
 	content string
 }
 
+func TestModel_QuitAfterDelivery(t *testing.T) {
+	for _, destination := range []string{"file", "hook", "harness"} {
+		t.Run(destination, func(t *testing.T) {
+			m := testModel([]string{"a.go"}, nil)
+			note := annotation.Annotation{File: "a.go", Line: 7, Comment: "original"}
+			m.store.Add(note)
+			sender := &feedbackStub{}
+			switch destination {
+			case "file":
+				m.cfg.outputPath = filepath.Join(t.TempDir(), "feedback.md")
+			case "hook":
+				m.postFlushHook = &postFlushHookStub{}
+			case "harness":
+				m.live.sender = sender
+			}
+			m.startCommand()
+			model, quit := m.quitReview(false)
+			m = model.(Model)
+			require.Nil(t, quit)
+			require.Contains(t, m.command.err, ":w")
+			require.Contains(t, m.command.err, ":q!")
+			m.closeCommand()
+			model, send := m.handleFlushOutput()
+			m = model.(Model)
+			switch destination {
+			case "harness":
+				model, _ = m.Update(send())
+				m = model.(Model)
+			case "hook":
+				model, _ = m.Update(postFlushFinishedMsg{content: m.store.FormatOutput()})
+				m = model.(Model)
+			}
+			_, quit = m.quitReview(false)
+			require.NotNil(t, quit)
+			require.IsType(t, tea.QuitMsg{}, quit())
+			note.Comment = "edited after delivery"
+			m.store.Add(note)
+			m.startCommand()
+			model, quit = m.quitReview(false)
+			m = model.(Model)
+			require.Nil(t, quit, "an edit to an existing annotation is unsent even when the count is unchanged")
+			require.Equal(t, []annotation.Annotation{note}, m.store.Get("a.go"))
+		})
+	}
+}
+
+func TestModel_QuitAfterFailedHook(t *testing.T) {
+	m := testModel([]string{"a.go"}, nil)
+	m.store.Add(annotation.Annotation{File: "a.go", Line: 3, Comment: "pending"})
+	m.cfg.outputPath = filepath.Join(t.TempDir(), "feedback.md")
+	m.postFlushHook = &postFlushHookStub{}
+	model, _ := m.handleFlushOutput()
+	m = model.(Model)
+	model, _ = m.Update(postFlushFinishedMsg{content: m.store.FormatOutput(), err: errors.New("failed")})
+	m = model.(Model)
+	m.startCommand()
+	model, quit := m.quitReview(false)
+	require.Nil(t, quit, "writing the file alone does not acknowledge a failed hook")
+	require.Contains(t, model.(Model).command.err, "Unsent")
+}
+
 func (s *postFlushHookStub) Prepare(content string) *exec.Cmd {
 	s.content = content
 	return exec.Command("sh", "-c", "exit 0")

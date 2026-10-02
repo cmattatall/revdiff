@@ -30,6 +30,9 @@ import (
 //			FileStatusMarkFunc: func(status diff.FileStatus) string {
 //				panic("mock out the FileStatusMark method")
 //			},
+//			StatusBarDiffStatsFunc: func(adds int, removes int) string {
+//				panic("mock out the StatusBarDiffStats method")
+//			},
 //			StatusBarSeparatorFunc: func() string {
 //				panic("mock out the StatusBarSeparator method")
 //			},
@@ -54,6 +57,9 @@ type styleRendererMock struct {
 
 	// FileStatusMarkFunc mocks the FileStatusMark method.
 	FileStatusMarkFunc func(status diff.FileStatus) string
+
+	// StatusBarDiffStatsFunc mocks the StatusBarDiffStats method.
+	StatusBarDiffStatsFunc func(adds int, removes int) string
 
 	// StatusBarSeparatorFunc mocks the StatusBarSeparator method.
 	StatusBarSeparatorFunc func() string
@@ -81,6 +87,13 @@ type styleRendererMock struct {
 			// Status is the status argument value.
 			Status diff.FileStatus
 		}
+		// StatusBarDiffStats holds details about calls to the StatusBarDiffStats method.
+		StatusBarDiffStats []struct {
+			// Adds is the adds argument value.
+			Adds int
+			// Removes is the removes argument value.
+			Removes int
+		}
 		// StatusBarSeparator holds details about calls to the StatusBarSeparator method.
 		StatusBarSeparator []struct {
 		}
@@ -90,6 +103,7 @@ type styleRendererMock struct {
 	lockFileAnnotationMark sync.RWMutex
 	lockFileReviewedMark   sync.RWMutex
 	lockFileStatusMark     sync.RWMutex
+	lockStatusBarDiffStats sync.RWMutex
 	lockStatusBarSeparator sync.RWMutex
 }
 
@@ -240,6 +254,42 @@ func (mock *styleRendererMock) FileStatusMarkCalls() []struct {
 	mock.lockFileStatusMark.RLock()
 	calls = mock.calls.FileStatusMark
 	mock.lockFileStatusMark.RUnlock()
+	return calls
+}
+
+// StatusBarDiffStats calls StatusBarDiffStatsFunc.
+func (mock *styleRendererMock) StatusBarDiffStats(adds int, removes int) string {
+	if mock.StatusBarDiffStatsFunc == nil {
+		panic("styleRendererMock.StatusBarDiffStatsFunc: method is nil but styleRenderer.StatusBarDiffStats was just called")
+	}
+	callInfo := struct {
+		Adds    int
+		Removes int
+	}{
+		Adds:    adds,
+		Removes: removes,
+	}
+	mock.lockStatusBarDiffStats.Lock()
+	mock.calls.StatusBarDiffStats = append(mock.calls.StatusBarDiffStats, callInfo)
+	mock.lockStatusBarDiffStats.Unlock()
+	return mock.StatusBarDiffStatsFunc(adds, removes)
+}
+
+// StatusBarDiffStatsCalls gets all the calls that were made to StatusBarDiffStats.
+// Check the length with:
+//
+//	len(mockedstyleRenderer.StatusBarDiffStatsCalls())
+func (mock *styleRendererMock) StatusBarDiffStatsCalls() []struct {
+	Adds    int
+	Removes int
+} {
+	var calls []struct {
+		Adds    int
+		Removes int
+	}
+	mock.lockStatusBarDiffStats.RLock()
+	calls = mock.calls.StatusBarDiffStats
+	mock.lockStatusBarDiffStats.RUnlock()
 	return calls
 }
 
