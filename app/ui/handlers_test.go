@@ -328,16 +328,19 @@ func TestModel_HandleEscKeyClearsSearch(t *testing.T) {
 	model := result.(Model)
 	assert.Empty(t, model.search.term, "esc should clear search term")
 	assert.Nil(t, model.search.matches, "esc should clear search matches")
+	assert.Equal(t, paneDiff, model.layout.focus, "clearing search takes precedence over returning focus")
 }
 
-func TestModel_HandleEscKeyNoopWithoutSearch(t *testing.T) {
-	m := testModel(nil, nil)
-	m.layout.focus = paneDiff
-
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
-	model := result.(Model)
-	assert.Empty(t, model.search.term)
-	assert.Nil(t, model.search.matches)
+func TestModel_HandleEscKeyUnavailableTree(t *testing.T) {
+	for _, singleFile := range []bool{false, true} {
+		m := testModel(nil, nil)
+		m.layout.focus = paneDiff
+		m.file.singleFile = singleFile
+		m.layout.treeHidden = !singleFile
+		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+		model := result.(Model)
+		assert.Equal(t, paneDiff, model.layout.focus, "do not focus an unavailable tree")
+	}
 }
 
 func TestModel_HandleFileAnnotateKey(t *testing.T) {

@@ -69,7 +69,7 @@ func (m Model) buildHelpSpec() overlay.HelpSpec {
 			}
 			entries = append(entries, overlay.HelpEntry{
 				Keys:        m.formatKeysForHelp(e.Action),
-				Command:     ":" + string(e.Action),
+				Command:     ":" + m.paletteCommand(e.Action),
 				Description: m.helpDescriptionWithIcon(e, pad),
 			})
 		}
@@ -91,7 +91,7 @@ func (m Model) buildHelpSpec() overlay.HelpSpec {
 	// Include aliases, harness connectors, and actions with no key binding.
 	palette := overlay.HelpSection{Title: "Command palette"}
 	for _, entry := range m.commandEntries() {
-		if entry.name == string(entry.action) && len(m.keymap.KeysFor(entry.action)) > 0 {
+		if entry.name == m.paletteCommand(entry.action) && len(m.keymap.KeysFor(entry.action)) > 0 {
 			continue
 		}
 		palette.Entries = append(palette.Entries, overlay.HelpEntry{
@@ -180,11 +180,15 @@ func (m Model) handleFileAnnotateKey() (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// handleEscKey clears active search results on esc.
+// handleEscKey clears search first, otherwise returns to the retained tree selection.
 func (m Model) handleEscKey() (tea.Model, tea.Cmd) {
 	if m.search.term != "" || len(m.search.matches) > 0 || m.nav.scanKind != treeScanIdle {
 		m.clearSearch()
 		m.layout.viewport.SetContent(m.renderDiff())
+		return m, nil
+	}
+	if m.layout.focus == paneDiff {
+		return m.handleSwitchToTree()
 	}
 	return m, nil
 }

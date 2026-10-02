@@ -281,7 +281,59 @@ func TestModel_CommandCompletion(t *testing.T) {
 	m = model.(Model)
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = model.(Model)
-	require.Equal(t, "toggle_wrap", m.command.input.Value(), "descriptions are searchable")
+	require.Equal(t, "view wrap", m.command.input.Value(), "descriptions are searchable")
+}
+
+func TestModel_CommandSemanticNames(t *testing.T) {
+	m := testModel(nil, nil)
+	for name, action := range map[string]keymap.Action{
+		"view collapsed": keymap.ActionToggleCollapsed, "view compact": keymap.ActionToggleCompact,
+		"view wrap": keymap.ActionToggleWrap, "view tree": keymap.ActionToggleTree,
+		"view numbers": keymap.ActionToggleLineNums, "view blame": keymap.ActionToggleBlame,
+		"view word diff": keymap.ActionToggleWordDiff, "view untracked": keymap.ActionToggleUntracked,
+		"hunk toggle": keymap.ActionToggleHunk, "review mark": keymap.ActionMarkReviewed,
+		"filter unreviewed": keymap.ActionFilterUnreviewed, "filter annotated": keymap.ActionFilter,
+		"theme select": keymap.ActionThemeSelect, "review info": keymap.ActionInfo,
+	} {
+		m.startCommand()
+		m.command.input.SetValue(name)
+		matches := m.commandMatches()
+		require.Len(t, matches, 1, name)
+		require.Equal(t, action, matches[0].action, name)
+		count := 0
+		for _, section := range m.buildHelpSpec().Sections {
+			for _, entry := range section.Entries {
+				if entry.Command == ":"+name {
+					count++
+				}
+				require.NotEqual(t, ":"+string(action), entry.Command, "help uses readable names")
+			}
+		}
+		require.Equal(t, 1, count, "help must not duplicate %s", name)
+	}
+}
+
+func TestModel_CommandViewToggles(t *testing.T) {
+	for _, command := range []string{"view wrap", "view word diff", "view word d", "toggle_wrap", "toggle_word_diff"} {
+		m := testModel([]string{"a.go"}, nil)
+		m.file.name, m.layout.focus = "a.go", paneDiff
+		m.file.lines = []diff.DiffLine{{NewNum: 1, Content: "line", ChangeType: diff.ChangeContext}}
+		m.modes.wrap, m.modes.wordDiff = false, false
+		for _, enabled := range []bool{true, false} {
+			m.startCommand()
+			m.command.input.SetValue(command)
+			model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			m = model.(Model)
+			require.False(t, m.command.active, command)
+			if strings.Contains(command, "wrap") {
+				require.Equal(t, enabled, m.modes.wrap, command)
+				require.False(t, m.modes.wordDiff)
+			} else {
+				require.Equal(t, enabled, m.modes.wordDiff, command)
+				require.False(t, m.modes.wrap)
+			}
+		}
+	}
 }
 
 func TestModel_CommandUniqueCompletionOnEnter(t *testing.T) {
@@ -580,6 +632,152 @@ func TestModel_CommandHelpFromEitherPaneWhileLoading(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestModel_CommandFocusSections(t *testing.T) {
+	for _, hidden := range []bool{false, true} {
+		m := splitTestModel(t)
+		w := m.tree.(*workingTree)
+		w.Rebuild([]diff.FileEntry{
+			{Path: "a.go", Staged: true}, {Path: "partial.go", Staged: true},
+			{Path: "a.go"}, {Path: "partial.go"},
+		})
+		require.True(t, w.staged.SelectByPath("partial.go"))
+		require.True(t, w.changes.SelectByPath("partial.go"))
+		m.layout.focus = paneDiff
+		if hidden {
+			m.toggleTreePane()
+		}
+		for _, target := range []struct {
+			command string
+			staged  bool
+			content string
+		}{
+			{"focus changed", false, "needle working copy"},
+			{"focus staged", true, "needle index"},
+		} {
+			m.startCommand()
+			m.command.input.SetValue(target.command)
+			model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			m = model.(Model)
+			require.False(t, m.command.active)
+			require.False(t, m.layout.treeHidden)
+			require.Equal(t, paneTree, m.layout.focus)
+			require.Equal(t, target.staged, m.selectedTreeStaged())
+			require.Equal(t, "partial.go", m.tree.SelectedFile(), "preserve the section's selection, not its first file")
+			require.NotNil(t, cmd, "the same path on the other side needs a new diff")
+			model, _ = m.Update(cmd())
+			m = model.(Model)
+			require.Equal(t, target.staged, m.file.staged)
+			require.Equal(t, target.content, m.file.lines[len(m.file.lines)-1].Content)
+
+			// A unique prefix runs without Tab, and repeated focus is not a toggle or reload.
+			m.startCommand()
+			m.command.input.SetValue(target.command[:len(target.command)-2])
+			require.Len(t, m.commandMatches(), 1)
+			model, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			m = model.(Model)
+			require.False(t, m.command.active)
+			require.Nil(t, cmd)
+			require.Equal(t, target.staged, m.selectedTreeStaged())
+		}
+	}
+}
+
+func TestModel_CommandFocusAliasesAndEscape(t *testing.T) {
+	m := splitTestModel(t)
+	w := m.tree.(*workingTree)
+	w.Rebuild([]diff.FileEntry{
+		{Path: "a.go", Staged: true}, {Path: "partial.go", Staged: true},
+		{Path: "a.go"}, {Path: "partial.go"},
+	})
+	require.True(t, w.staged.SelectByPath("partial.go"))
+	require.True(t, w.changes.SelectByPath("partial.go"))
+	for _, alias := range []string{"fc", "fs"} {
+		for _, command := range []string{alias, "fd"} {
+			m.startCommand()
+			m.command.input.SetValue(command)
+			model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			m = model.(Model)
+			if cmd != nil {
+				model, _ = m.Update(cmd())
+				m = model.(Model)
+			}
+			require.False(t, m.command.active)
+			if command == alias {
+				require.Equal(t, paneTree, m.layout.focus)
+				require.Equal(t, alias == "fs", m.selectedTreeStaged())
+			}
+		}
+		require.Equal(t, paneDiff, m.layout.focus)
+		// Escape dismisses the palette before moving focus on the next press.
+		m.startCommand()
+		model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+		m = model.(Model)
+		require.False(t, m.command.active)
+		require.Equal(t, paneDiff, m.layout.focus)
+		model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+		m = model.(Model)
+		require.Nil(t, cmd, "returning focus must not reload the diff")
+		require.Equal(t, paneTree, m.layout.focus)
+		require.Equal(t, alias == "fs", m.selectedTreeStaged())
+		require.Equal(t, "partial.go", m.tree.SelectedFile(), "return to the previous selection, not the first file")
+	}
+}
+
+func TestModel_CommandFocusEmptySectionCancelsLoad(t *testing.T) {
+	m := splitTestModel(t)
+	w := m.tree.(*workingTree)
+	w.changes.Rebuild(nil)
+	stale := m.requestFileDiff(m.file.name)()
+	m.startCommand()
+	m.command.input.SetValue("focus changed")
+	model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(Model)
+	require.Nil(t, cmd)
+	require.Equal(t, paneTree, m.layout.focus)
+	require.False(t, w.activeStaged)
+	require.Empty(t, m.file.name)
+	model, _ = m.Update(stale)
+	m = model.(Model)
+	require.Empty(t, m.file.name, "old staged load must not repopulate the empty Changes view")
+	require.Empty(t, m.file.lines)
+}
+
+func TestModel_CommandFocusDiff(t *testing.T) {
+	m := splitTestModel(t)
+	m.tree.(*workingTree).activeStaged = false
+	model, cmd := m.loadSelectedIfChanged()
+	m = model.(Model)
+	model, _ = m.Update(cmd())
+	m = model.(Model)
+	m.nav.diffCursor = 1
+	for range 2 {
+		m.startCommand()
+		m.command.input.SetValue("focus diff")
+		model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		m = model.(Model)
+		require.Nil(t, cmd)
+		require.False(t, m.command.active)
+		require.Equal(t, paneDiff, m.layout.focus)
+		require.Equal(t, 1, m.nav.diffCursor, "focusing must not reset the cursor")
+	}
+}
+
+func TestModel_CommandFocusWithoutSplitTree(t *testing.T) {
+	m := testModel([]string{"a.go"}, nil)
+	m.startCommand()
+	m.command.input.SetValue("focus staged")
+	require.Empty(t, m.commandMatches(), "no Staged section exists in historical/file reviews")
+	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(Model)
+	require.True(t, m.command.active)
+	require.Contains(t, m.command.err, "Unknown command")
+	m.command.input.SetValue("focus diff")
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(Model)
+	require.False(t, m.command.active)
+	require.Equal(t, paneDiff, m.layout.focus)
 }
 
 func TestModel_CommandOpenEditor(t *testing.T) {

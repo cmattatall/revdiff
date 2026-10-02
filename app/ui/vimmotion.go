@@ -97,6 +97,10 @@ func (m Model) interceptVimMotion(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 	// priority 4: other count consumer keys
 	if m.vim.count > 0 {
 		action := m.keymap.Resolve(msg.String())
+		if action == keymap.ActionDismiss {
+			m.consumeVimCount()
+			return m, nil, true // cancel the count without also leaving the diff
+		}
 		if m.modes.vimMotion {
 			// The preset deliberately overrides the normal j/k bindings.
 			action = ""

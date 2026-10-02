@@ -29,21 +29,68 @@ type commandEntry struct {
 	action      keymap.Action
 }
 
+// paletteCommand names user-facing commands independently of keybinding IDs.
+// Keep related operations together without exposing implementation-style names.
+func (m Model) paletteCommand(action keymap.Action) string {
+	switch action {
+	case keymap.ActionToggleCollapsed:
+		return "view collapsed"
+	case keymap.ActionToggleCompact:
+		return "view compact"
+	case keymap.ActionToggleWrap:
+		return "view wrap"
+	case keymap.ActionToggleTree:
+		return "view tree"
+	case keymap.ActionToggleLineNums:
+		return "view numbers"
+	case keymap.ActionToggleBlame:
+		return "view blame"
+	case keymap.ActionToggleWordDiff:
+		return "view word diff"
+	case keymap.ActionToggleHunk:
+		return "hunk toggle"
+	case keymap.ActionToggleUntracked:
+		return "view untracked"
+	case keymap.ActionMarkReviewed:
+		return "review mark"
+	case keymap.ActionFilterUnreviewed:
+		return "filter unreviewed"
+	case keymap.ActionFilter:
+		return "filter annotated"
+	case keymap.ActionThemeSelect:
+		return "theme select"
+	case keymap.ActionInfo:
+		return "review info"
+	default:
+		return string(action)
+	}
+}
+
 func (m Model) commandEntries() []commandEntry {
 	entries := []commandEntry{
 		{"q", "quit", keymap.ActionQuit},
 		{"w", "flush annotations to output or harness", keymap.ActionFlushOutput},
 		{"harness send", "send annotations to the connected harness", keymap.ActionFlushOutput},
+		{"focus diff", "focus the diff pane", keymap.ActionFocusDiff},
+		{"fd", "focus the diff pane", keymap.ActionFocusDiff},
 		{"set number", "show line numbers", keymap.ActionToggleLineNums},
 		{"set nonumber", "hide line numbers", keymap.ActionToggleLineNums},
 		{"set wrap", "enable word wrap", keymap.ActionToggleWrap},
 		{"set nowrap", "disable word wrap", keymap.ActionToggleWrap},
 	}
+	if _, ok := m.tree.(*workingTree); ok {
+		entries = append(entries,
+			commandEntry{"focus staged", "focus the Staged section", ""},
+			commandEntry{"focus changed", "focus the Changes section", ""},
+			commandEntry{"fs", "focus the Staged section", ""},
+			commandEntry{"fc", "focus the Changes section", ""},
+		)
+	}
 	for _, entry := range m.keymap.Actions() {
 		if m.cfg.workingTree && entry.Action == keymap.ActionToggleUntracked {
 			continue
 		}
-		entries = append(entries, commandEntry{string(entry.Action), entry.Description, entry.Action})
+		entries = append(entries, commandEntry{m.paletteCommand(entry.Action), entry.Description, entry.Action})
 	}
 	for name := range m.live.harnesses {
 		entries = append(entries, commandEntry{"harness connect " + name, "connect to " + name + " in this directory", ""})
@@ -138,13 +185,27 @@ func (m *Model) submitCommand() (tea.Model, tea.Cmd) {
 		return m.connectHarness(name)
 	}
 	for _, entry := range m.commandEntries() {
-		if entry.name == value {
+		// Accept exact keybinding IDs too, but keep them out of suggestions.
+		if entry.name == value || (string(entry.action) == value && entry.name == m.paletteCommand(entry.action)) {
 			// Close first: live operations must not see the palette as a modal
 			// blocker, and newly opened overlays need the restored pane height.
 			m.closeCommand()
 			// Vim's set/unset commands are idempotent, unlike the underlying
 			// toggle actions. Still use normal dispatch when a change is needed.
 			switch entry.name {
+			case "focus diff", "fd":
+				m.layout.focus = paneDiff
+				return *m, nil
+			case "focus staged", "focus changed", "fs", "fc":
+				// These entries exist only for the split working-tree sidebar.
+				m.tree.(*workingTree).activeStaged = entry.name == "focus staged" || entry.name == "fs"
+				if m.layout.treeHidden {
+					m.toggleTreePane()
+				}
+				m.layout.focus = paneTree
+				m.pendingAnnotJump = nil
+				m.nav.pendingHunkJump = nil
+				return m.loadSelectedIfChanged()
 			case "set number", "set nonumber":
 				if m.modes.lineNumbers == (entry.name == "set number") {
 					return *m, nil
