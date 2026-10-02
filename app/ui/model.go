@@ -106,6 +106,8 @@ type overlayManager interface {
 	OpenFilePicker(spec overlay.FilePickerSpec)
 	OpenInfo(spec overlay.InfoSpec)
 	UpdateInfo(spec overlay.InfoSpec)
+	OpenBlame(spec overlay.InfoSpec)
+	UpdateBlame(spec overlay.InfoSpec)
 	Close()
 	HandleKey(msg tea.KeyMsg, action keymap.Action) overlay.Outcome
 	HandleInput(msg tea.Msg) overlay.Outcome
@@ -579,6 +581,7 @@ type Model struct {
 	themes        ThemeCatalog   // theme catalog for discovery, resolve, and persistence
 	editor        ExternalEditor // launches $EDITOR for annotation editing and source-file opening
 	postFlushHook PostFlushHook  // optional command run after an in-session output flush
+	shell         ShellRunner
 
 	// grouped state
 	live   liveState        // harness feedback, automatic refresh, and index staging
@@ -613,6 +616,7 @@ type Model struct {
 	loadUntracked        func() ([]string, error)                 // fetches untracked files; nil when unavailable
 	loadUntrackedRenames func([]string) ([]diff.FileEntry, error) // pairs untracked renames against their deleted origin; nil for non-git
 	blameNow             time.Time                                // snapshot of time.Now() set once per render pass for blame age
+	blameViewSeq         uint64                                   // rejects results from a previously opened blame popup
 
 	// renderCache memoizes per-line rendered blocks for renderDiff. Held behind a
 	// pointer because renderDiff has a value receiver: every Model copy shares one
@@ -733,6 +737,7 @@ type ModelConfig struct {
 	Keymap               *keymap.Keymap                            // custom key bindings (nil uses defaults)
 	Editor               ExternalEditor                            // external-editor driver (nil uses app/editor.Editor{})
 	PostFlushHook        PostFlushHook                             // optional command run after an in-session output flush
+	Shell                ShellRunner                               // optional terminal handoff for :! commands
 	Feedback             FeedbackSender                            // optional harness connection; enables live refresh
 	DiscoverFeedback     func() (FeedbackSender, error)            // optional lookup until a connection is found
 	Harnesses            map[string]func() (FeedbackSender, error) // named lookups for :harness connect <type>
@@ -918,6 +923,7 @@ func NewModel(cfg ModelConfig) (Model, error) {
 		themes:        cfg.Themes,
 		editor:        ed,
 		postFlushHook: postFlushHook,
+		shell:         cfg.Shell,
 		cfg: modelConfigState{
 			ref:                cfg.Ref,
 			staged:             cfg.Staged,
@@ -1058,12 +1064,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleReviewFingerprintLoaded(msg)
 	case blameLoadedMsg:
 		return m.handleBlameLoaded(msg)
+	case blameDetailsMsg:
+		return m.handleBlameDetails(msg)
 	case editorFinishedMsg:
 		return m.handleEditorFinished(msg)
 	case sourceEditorFinishedMsg:
 		return m.handleSourceEditorFinished(msg)
 	case postFlushFinishedMsg:
 		return m.handlePostFlushFinished(msg)
+	case shellFinishedMsg:
+		return m.handleShellFinished(msg)
 	case wheelDebounceMsg:
 		return m.handleWheelDebounce(msg)
 	}

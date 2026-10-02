@@ -123,6 +123,10 @@ NUL/SOH via stdout.
 **Blame** (`blame.go`, `hgblame.go`, `jjblame.go`): `Blamer` interface provides `FileBlame()`
 returning `map[int]BlameLine` keyed by new line number. jj blame uses
 `jj file annotate -T <template>` with a tab-separated template.
+Git also implements `LineBlame()` in `blamedetails.go` for cursor-level attribution.
+It requests one line from the correct diff side, resolves triple-dot old sides through
+the merge base, and optionally queries GitHub's commit-to-PR endpoint through `gh`.
+The network lookup runs only on an explicit request and has a five-second timeout.
 
 ### app/ui/ — TUI package
 
@@ -155,6 +159,11 @@ across files by concern to keep files under ~500 lines:
   target state, route completion, and refresh the current file after a clean source-editor exit
 - **`output.go`** — in-session annotation flush and optional post-flush command handoff through
   injected `PostFlushHook` + `tea.ExecProcess`
+- **`shell.go`** — `:!` terminal handoff through injected `ShellRunner`, preserving shell text
+  and annotations and restoring mouse tracking after the child exits
+- **`blameview.go`** — `:blame view` snapshots the displayed line and side, loads attribution
+  asynchronously, and rejects results for closed or replaced popups. `KindBlame` reuses the
+  info layout without accepting review-info updates.
 - **`themeselect.go`** — theme selector operations: open, preview, confirm, apply (via injected
   `ThemeCatalog`)
 - **`filepicker.go`** — file picker open and selected-path jump integration; delegates
@@ -405,6 +414,13 @@ Single stateless type `Editor` bundling all behavior as methods (no standalone f
 
 Consumed by `app/ui` via the `ExternalEditor` interface (defined in `app/ui/editor.go`, consumer
 side). The default wiring is `editor.Editor{}` injected through `ModelConfig.Editor`.
+
+### app/shell/ — interactive shell commands
+
+`Runner.Prepare(command)` runs user-entered text through `$SHELL` (falling back to `/bin/sh`)
+in the launch directory. A separate wrapper waits for Enter after the command finishes and
+preserves its exit status. Shell text is an argument, not interpolated into the wrapper.
+`ModelConfig.Shell` injects it through the UI's `ShellRunner` interface.
 
 ### app/handoff/ — post-flush command preparation
 

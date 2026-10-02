@@ -21,6 +21,7 @@ import (
 	"github.com/umputun/revdiff/app/harnesses/amp"
 	"github.com/umputun/revdiff/app/highlight"
 	"github.com/umputun/revdiff/app/keymap"
+	"github.com/umputun/revdiff/app/shell"
 	"github.com/umputun/revdiff/app/theme"
 	"github.com/umputun/revdiff/app/ui"
 	"github.com/umputun/revdiff/app/ui/overlay"
@@ -267,6 +268,7 @@ func run(opts options) (int, error) {
 		LoadUntrackedRenames: untrackedRenamesFn,
 		Keymap:               km,
 		PostFlushHook:        postFlushHook,
+		Shell:                shell.Runner{},
 		Feedback:             feedback,
 		DiscoverFeedback:     discoverFeedback,
 		Harnesses:            harnesses,

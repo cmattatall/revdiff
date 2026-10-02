@@ -331,20 +331,20 @@ func TestModel_CommandCompletion(t *testing.T) {
 	require.Equal(t, "stage hunkxyz", m.command.input.Value())
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
 	m = model.(Model)
-	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("toggle word wrap")})
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("wrap long lines")})
 	m = model.(Model)
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = model.(Model)
-	require.Equal(t, "view wrap", m.command.input.Value(), "descriptions are searchable")
+	require.Equal(t, "set wrap", m.command.input.Value(), "descriptions are searchable")
 }
 
 func TestModel_CommandSemanticNames(t *testing.T) {
 	m := testModel(nil, nil)
 	for name, action := range map[string]keymap.Action{
-		"view collapsed": keymap.ActionToggleCollapsed, "view compact": keymap.ActionToggleCompact,
-		"view wrap": keymap.ActionToggleWrap, "view tree": keymap.ActionToggleTree,
-		"view numbers": keymap.ActionToggleLineNums, "view blame": keymap.ActionToggleBlame,
-		"view word diff": keymap.ActionToggleWordDiff, "view untracked": keymap.ActionToggleUntracked,
+		"diff removed hide": keymap.ActionToggleCollapsed, "diff context compact": keymap.ActionToggleCompact,
+		"set wrap": keymap.ActionToggleWrap, "tree show": keymap.ActionToggleTree,
+		"set number": keymap.ActionToggleLineNums, "blame on": keymap.ActionToggleBlame,
+		"diff words on": keymap.ActionToggleWordDiff, "files untracked show": keymap.ActionToggleUntracked,
 		"hunk toggle": keymap.ActionToggleHunk, "review mark": keymap.ActionMarkReviewed,
 		"filter unreviewed": keymap.ActionFilterUnreviewed, "filter annotated": keymap.ActionFilter,
 		"theme select": keymap.ActionThemeSelect, "review info": keymap.ActionInfo,
@@ -361,7 +361,7 @@ func TestModel_CommandSemanticNames(t *testing.T) {
 		count := 0
 		for _, section := range m.buildHelpSpec().Sections {
 			for _, entry := range section.Entries {
-				if entry.Command == ":"+name {
+				if strings.Split(entry.Command, " (")[0] == ":"+name {
 					count++
 				}
 				require.NotEqual(t, ":"+string(action), entry.Command, "help uses readable names")
@@ -371,26 +371,37 @@ func TestModel_CommandSemanticNames(t *testing.T) {
 	}
 }
 
-func TestModel_CommandViewToggles(t *testing.T) {
+func TestModel_CommandDisplaySettings(t *testing.T) {
 	for _, focus := range []pane{paneTree, paneDiff} {
-		for _, command := range []string{"view wrap", "view word diff", "view word d"} {
+		for _, tc := range []struct {
+			on, off string
+			state   func(Model) bool
+		}{
+			{"set wrap", "set nowrap", func(m Model) bool { return m.modes.wrap }},
+			{"diff words on", "diff words off", func(m Model) bool { return m.modes.wordDiff }},
+			{"diff removed hide", "diff removed show", func(m Model) bool { return m.modes.collapsed.enabled }},
+			{"diff context compact", "diff context full", func(m Model) bool { return m.modes.compact }},
+			{"tree show", "tree hide", func(m Model) bool { return !m.layout.treeHidden }},
+			{"files untracked show", "files untracked hide", func(m Model) bool { return m.modes.showUntracked }},
+		} {
 			m := testModel([]string{"a.go"}, nil)
 			m.file.name, m.layout.focus = "a.go", focus
 			m.file.lines = []diff.DiffLine{{NewNum: 1, Content: "line", ChangeType: diff.ChangeContext}}
-			m.modes.wrap, m.modes.wordDiff = false, false
-			for _, enabled := range []bool{true, false} {
+			m.compact.applicable = true
+			m.loadUntracked = func() ([]string, error) { return nil, nil }
+			for _, enabled := range []bool{false, false, true, true, false} {
+				command := tc.off
+				if enabled {
+					command = tc.on
+				}
 				m.startCommand()
 				m.command.input.SetValue(command)
 				model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 				m = model.(Model)
 				require.False(t, m.command.active, command)
-				require.Equal(t, focus, m.layout.focus)
-				if strings.Contains(command, "wrap") {
-					require.Equal(t, enabled, m.modes.wrap, command)
-					require.False(t, m.modes.wordDiff)
-				} else {
-					require.Equal(t, enabled, m.modes.wordDiff, command)
-					require.False(t, m.modes.wrap)
+				require.Equal(t, enabled, tc.state(m), command)
+				if tc.on != "tree show" {
+					require.Equal(t, focus, m.layout.focus)
 				}
 			}
 		}
@@ -413,7 +424,7 @@ func TestModel_CommandBlameFromEitherPane(t *testing.T) {
 				return map[int]diff.BlameLine{1: {Author: "Reviewer"}}, nil
 			}}
 			m.startCommand()
-			m.command.input.SetValue("view blame")
+			m.command.input.SetValue("blame on")
 			model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 			m = model.(Model)
 			require.NotNil(t, cmd)
@@ -423,7 +434,13 @@ func TestModel_CommandBlameFromEitherPane(t *testing.T) {
 			require.True(t, m.modes.showBlame)
 			require.Contains(t, ansi.Strip(m.renderDiff()), "Reviewer")
 			m.startCommand()
-			m.command.input.SetValue("view blame")
+			m.command.input.SetValue("blame on")
+			model, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			m = model.(Model)
+			require.Nil(t, cmd, "enabling an enabled gutter must not refetch blame")
+			require.True(t, m.modes.showBlame)
+			m.startCommand()
+			m.command.input.SetValue("blame off")
 			model, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 			m = model.(Model)
 			require.Nil(t, cmd)
@@ -432,6 +449,24 @@ func TestModel_CommandBlameFromEitherPane(t *testing.T) {
 			require.NotContains(t, ansi.Strip(m.renderDiff()), "Reviewer")
 		}
 	}
+}
+
+func TestModel_CommandFoldAllRemovedLines(t *testing.T) {
+	m := testModel([]string{"a.go"}, nil)
+	m.file.name = "a.go"
+	m.file.lines = []diff.DiffLine{
+		{OldNum: 1, Content: "old", ChangeType: diff.ChangeRemove},
+		{NewNum: 1, Content: "new", ChangeType: diff.ChangeAdd},
+	}
+	m.modes.collapsed.enabled = true
+	m.modes.collapsed.expandedHunks = map[int]bool{0: true}
+	m.startCommand()
+	m.command.input.SetValue("diff removed hide")
+	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(Model)
+	require.True(t, m.modes.collapsed.enabled)
+	require.Empty(t, m.modes.collapsed.expandedHunks, "explicit hide must also fold individually expanded hunks")
+	require.NotContains(t, ansi.Strip(m.renderDiff()), "old")
 }
 
 func TestModel_CommandAnnotationNavigationAndWrite(t *testing.T) {

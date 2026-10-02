@@ -33,6 +33,7 @@ const (
 	KindThemeSelect      // theme selector popup
 	KindFilePicker       // filterable file-jump popup
 	KindInfo             // unified info popup (description + session + commits)
+	KindBlame            // attribution for the selected source line
 )
 
 // OutcomeKind describes what happened after a key press in an overlay.
@@ -258,6 +259,20 @@ func (m *Manager) OpenInfo(spec InfoSpec) {
 	m.info.open(spec)
 }
 
+// OpenBlame uses the detail layout without accepting review-info updates.
+func (m *Manager) OpenBlame(spec InfoSpec) {
+	m.Close()
+	m.kind = KindBlame
+	m.info.open(spec)
+}
+
+// UpdateBlame replaces the active blame popup without reopening a dismissed one.
+func (m *Manager) UpdateBlame(spec InfoSpec) {
+	if m.kind == KindBlame {
+		m.info.spec = spec
+	}
+}
+
 // UpdateInfo replaces the active info popup's spec without resetting
 // the user's scroll position. Used when async data (review-stats fetch,
 // commit-log fetch) lands while the popup is open — the popup re-reads
@@ -287,7 +302,7 @@ func (m *Manager) HandleKey(msg tea.KeyMsg, action keymap.Action) Outcome {
 		out = m.themeSel.handleKey(msg, action)
 	case KindFilePicker:
 		out = m.filePick.handleKey(msg, action)
-	case KindInfo:
+	case KindInfo, KindBlame:
 		out = m.info.handleKey(msg, action)
 	default:
 		return Outcome{}
@@ -365,7 +380,7 @@ func (m *Manager) HandleMouse(msg tea.MouseMsg) Outcome {
 		out = m.themeSel.handleMouse(msg)
 	case KindFilePicker:
 		out = m.filePick.handleMouse(msg)
-	case KindInfo:
+	case KindInfo, KindBlame:
 		out = m.info.handleMouse(msg)
 	default: // KindNone handled by the early return above
 		return Outcome{}
@@ -395,7 +410,7 @@ func (m *Manager) Compose(base string, ctx RenderCtx) string {
 		fg = m.themeSel.render(ctx, m)
 	case KindFilePicker:
 		fg = m.filePick.render(ctx, m)
-	case KindInfo:
+	case KindInfo, KindBlame:
 		fg = m.info.render(ctx, m)
 	}
 	return m.overlayCenter(base, fg, ctx.Width)

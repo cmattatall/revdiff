@@ -135,7 +135,7 @@ The command palette runs operations such as `:edit`, `:stage file`, `:stage hunk
 
 Matching prefixes show a muted inline completion: typing `:h` displays `:help` with only `elp` dimmed. Arrow-key browsing changes the suggestion; `Tab` accepts it. Suggestions never change the typed command until accepted.
 
-The palette remembers the last 50 distinct executed commands for the current session. `Ctrl+R` opens a selectable history list, newest first. The input only fuzzy-filters the list, case-insensitively (`vwd` matches `view word diff`). Use `↑`/`↓`, `PgUp`/`PgDn`, or repeat `Ctrl+R` to browse results; `Enter` or `Tab` recalls the selected command without executing it. Press `Enter` again to run it. `Esc` returns to your previous input; `Ctrl+C` closes the palette. History is not saved across restarts.
+The palette remembers the last 50 distinct executed commands for the current session. `Ctrl+R` opens a selectable history list, newest first. The input only fuzzy-filters the list, case-insensitively (`dwo` matches `diff words on`). Use `↑`/`↓`, `PgUp`/`PgDn`, or repeat `Ctrl+R` to browse results; `Enter` or `Tab` recalls the selected command without executing it. Press `Enter` again to run it. `Esc` returns to your previous input; `Ctrl+C` closes the palette. History is not saved across restarts.
 
 Annotation commands are grouped under `:annotate`: `:annotate file`, `:annotate hunk`, and `:annotate list`. `:annotate` (or `:a`) annotates the current change hunk when the diff cursor is on one; otherwise it annotates the file, including from tree focus. Explicit hunk annotation requires a changed line. Hunk ranges use the new-code lines for replacements/additions and old-code lines for deletion-only changes. No keyword is needed in the comment. The existing `a`/`Enter` line-annotation shortcuts are unchanged.
 
@@ -145,7 +145,7 @@ Use `:focus staged` (`:fs`) or `:focus changed` (`:fc`) to focus that section of
 
 Use `:focus tree` to return to the selected tree section, or `:focus next` to switch panes. Palette commands use readable names such as `:focus diff`. Underscore-style keybinding IDs such as `focus_diff` are for the keybindings file, not command aliases.
 
-Display toggles are grouped under `:view`: `:view wrap`, `:view word diff`, `:view numbers`, `:view compact`, `:view collapsed`, `:view tree`, and `:view blame`. Related commands use `:hunk toggle`, `:filter annotated`, `:filter unreviewed`, `:review mark`, `:review info`, and `:theme select`. Use `:view untracked` where the legacy untracked toggle is available. Split working-tree reviews already include untracked files in Changes.
+Display commands request an explicit state: `:diff context compact` / `:diff context full` select nearby or whole-file context; `:diff removed hide` / `:diff removed show` fold or expand removed lines; `:diff words on` / `:diff words off` control word-change highlighting; and `:tree show` / `:tree hide` control the sidebar. Repeating a command keeps the requested state. Keyboard shortcuts still toggle. Related commands include `:hunk toggle`, `:filter annotated`, `:filter unreviewed`, `:review mark`, `:review info`, and `:theme select`. Use `:files untracked show` / `:files untracked hide` where untracked filtering is available. Split working-tree reviews already include untracked files in Changes.
 
 `.` or `:hunk toggle` shows/hides removed lines in the hunk under the diff cursor, from either pane. From normal view it enables collapsed mode while leaving the other hunks expanded. Repeating it reopens the hunk. Deletion-only hunks collapse to a placeholder. Context lines and addition-only hunks show a hint because there are no removed lines to fold.
 
@@ -153,7 +153,13 @@ Vim-style commands are available too: `:set number` / `:set nonumber` show/hide 
 
 Harness commands support completion too: `:harness connect amp` looks for an Amp session in the current directory without sending annotations; `:harness send` uses the same send/flush action as `O` and `:w`. An existing connection stays bound to its original session, including after an unconfirmed send.
 
-Annotation navigation also has typed commands: `:annotation next` and `:annotation prev`. These commands and `:w` appear in help under **Annotations**. View toggles, including `:view blame`, act on the displayed file from either tree or diff focus.
+Annotation navigation also has typed commands: `:annotation next` and `:annotation prev`. These commands and `:w` appear in help under **Annotations**. Display settings, including `:blame on` / `:blame off` for the blame gutter, work from either tree or diff focus.
+
+Run `:! <command>` to execute a shell command, for example `:! git status`. It runs through `$SHELL` (or `/bin/sh`) in revdiff's launch directory, with normal quoting, pipes, and terminal input/output. Press Enter when finished to return to the review. Commands are kept in session history with their original case. Annotations are preserved, and `:reload` refreshes the diff after external changes.
+
+Each command opens a clean screen without exposing or clearing your shell's scrollback. Use `:!!` to rerun the last shell command in this session, even after other palette commands.
+
+With the diff focused, `:blame view` (or `:bv`) opens attribution for the selected line: commit, author, date, and summary. Removed lines use the old side of the diff. This opens details without changing the gutter. For a github.com `origin`, it also shows a commit URL and looks up associated merged PRs using authenticated `gh` (optional, five-second timeout). Local blame still works when PR lookup is unavailable. Uncommitted lines have no commit or PR link.
 
 Single-line annotation, search, command, file-picker, and theme-picker inputs use revdiff's built-in Bubbles text-input bindings, not your shell's keymap: arrows and `Ctrl+B`/`Ctrl+F` move by character, `Ctrl+A`/`Ctrl+E` move to the start/end, `Backspace`/`Ctrl+H` delete backward, `Ctrl+W` (or `Alt+Backspace`) deletes the previous word, and `Ctrl+U`/`Ctrl+K` delete from the cursor to the start/end. Existing `Enter`, `Esc`, search-history, and list-navigation behavior is unchanged. The terminal sends key sequences; revdiff cannot inherit zsh/readline bindings or Command-key shortcuts. Configure Option/Alt to send Meta for Alt bindings.
 

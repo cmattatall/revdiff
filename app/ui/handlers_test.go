@@ -929,7 +929,7 @@ func TestBuildHelpSpec_PaletteCommands(t *testing.T) {
 		for _, entry := range section.Entries {
 			if entry.Command != "" {
 				entries[entry.Command] = entry
-				if entry.Command == ":w" {
+				if entry.Command == ":w (:harness send)" {
 					require.Equal(t, "Annotations", section.Title)
 				}
 			} else {
@@ -941,15 +941,40 @@ func TestBuildHelpSpec_PaletteCommands(t *testing.T) {
 		require.NotEmpty(t, motions[description].Keys, "motion help keeps its keybindings: %s", description)
 	}
 	for _, command := range m.commandEntries() {
-		assert.Contains(t, entries, ":"+command.name, "every executable command belongs in help")
+		found := false
+		for label := range entries {
+			if strings.Split(label, " (")[0] == ":"+command.name || strings.Contains(label, "(:"+command.name+")") {
+				found = true
+			}
+		}
+		assert.True(t, found, "help must include %s, either as a command or an inline alias", command.name)
 	}
-	assert.Equal(t, "Ctrl+F", entries[":w"].Keys)
-	assert.Contains(t, entries[":w"].Description, "harness / output / hook")
-	assert.Empty(t, entries[":quit"].Keys, "unbinding quit must not hide its palette command")
+	assert.Equal(t, "Ctrl+F", entries[":w (:harness send)"].Keys)
+	assert.Contains(t, entries[":w (:harness send)"].Description, "harness / output / hook")
+	assert.Empty(t, entries[":quit (:q)"].Keys, "unbinding quit must not hide its palette command")
 	assert.Contains(t, entries, ":set number")
 	assert.Equal(t, "e", entries[":edit"].Keys)
-	assert.Contains(t, entries, ":harness send")
 	assert.Contains(t, entries, ":harness connect example")
+}
+
+func TestBuildHelpSpec_GroupedAliases(t *testing.T) {
+	m := splitTestModel(t)
+	for canonical, alias := range map[string]string{
+		"focus diff": "fd", "focus changed": "fc", "focus staged": "fs",
+		"blame view": "bv", "quit": "q", "help": "h", "annotate": "a", "w": "harness send",
+	} {
+		want := ":" + canonical + " (:" + alias + ")"
+		var rows []string
+		for _, section := range m.buildHelpSpec().Sections {
+			for _, entry := range section.Entries {
+				name := strings.Split(entry.Command, " (")[0]
+				if name == ":"+canonical || name == ":"+alias {
+					rows = append(rows, entry.Command)
+				}
+			}
+		}
+		require.Equal(t, []string{want}, rows)
+	}
 }
 
 func TestBuildHelpSpec_SearchPromptHistoryEntries(t *testing.T) {

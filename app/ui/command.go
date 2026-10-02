@@ -22,6 +22,7 @@ type commandState struct {
 	err           string
 	selected      int
 	history       []string
+	lastShell     string
 	searchDraft   string
 	historySearch bool
 }
@@ -32,9 +33,40 @@ type commandEntry struct {
 	action      keymap.Action
 }
 
+type commandSetting struct {
+	on, off                       string
+	onDescription, offDescription string
+	action                        keymap.Action
+	enabled                       bool
+}
+
+func (m Model) commandSettings() []commandSetting {
+	settings := []commandSetting{
+		{"set number", "set nonumber", "show line numbers", "hide line numbers", keymap.ActionToggleLineNums, m.modes.lineNumbers},
+		{"set wrap", "set nowrap", "wrap long lines", "scroll long lines horizontally", keymap.ActionToggleWrap, m.modes.wrap},
+		{"blame on", "blame off", "show the blame gutter", "hide the blame gutter", keymap.ActionToggleBlame, m.modes.showBlame},
+		{"diff context compact", "diff context full", "show nearby context around changes", "show the whole file around changes", keymap.ActionToggleCompact, m.modes.compact},
+		{"diff removed hide", "diff removed show", "fold removed lines", "expand removed lines", keymap.ActionToggleCollapsed, m.modes.collapsed.enabled},
+		{"diff words on", "diff words off", "highlight changed words", "highlight changed lines only", keymap.ActionToggleWordDiff, m.modes.wordDiff},
+		{"tree show", "tree hide", "show the file tree pane", "hide the file tree pane", keymap.ActionToggleTree, !m.layout.treeHidden},
+	}
+	if !m.cfg.workingTree {
+		settings = append(settings, commandSetting{"files untracked show", "files untracked hide", "include untracked files", "exclude untracked files", keymap.ActionToggleUntracked, m.modes.showUntracked})
+	}
+	return settings
+}
+
 // paletteCommand names user-facing commands independently of keybinding IDs.
 // Keyboard motions appear in help but have no command palette entry.
 func (m Model) paletteCommand(action keymap.Action) string {
+	for _, setting := range m.commandSettings() {
+		if setting.action == action {
+			if setting.enabled {
+				return setting.off
+			}
+			return setting.on
+		}
+	}
 	switch action {
 	case keymap.ActionDown, keymap.ActionUp, keymap.ActionPageDown, keymap.ActionPageUp,
 		keymap.ActionHalfPageDown, keymap.ActionHalfPageUp, keymap.ActionHome, keymap.ActionEnd,
@@ -72,24 +104,8 @@ func (m Model) paletteCommand(action keymap.Action) string {
 		return "annotate file"
 	case keymap.ActionAnnotList:
 		return "annotate list"
-	case keymap.ActionToggleCollapsed:
-		return "view collapsed"
-	case keymap.ActionToggleCompact:
-		return "view compact"
-	case keymap.ActionToggleWrap:
-		return "view wrap"
-	case keymap.ActionToggleTree:
-		return "view tree"
-	case keymap.ActionToggleLineNums:
-		return "view numbers"
-	case keymap.ActionToggleBlame:
-		return "view blame"
-	case keymap.ActionToggleWordDiff:
-		return "view word diff"
 	case keymap.ActionToggleHunk:
 		return "hunk toggle"
-	case keymap.ActionToggleUntracked:
-		return "view untracked"
 	case keymap.ActionMarkReviewed:
 		return "review mark"
 	case keymap.ActionFilterUnreviewed:
@@ -107,15 +123,20 @@ func (m Model) paletteCommand(action keymap.Action) string {
 
 func (m Model) commandEntries() []commandEntry {
 	entries := []commandEntry{
-		{"annotate", "annotate the selected hunk or file (:a)", ""},
+		{"annotate", "annotate the selected hunk or file", ""},
 		{"annotate hunk", "annotate the change hunk under the diff cursor", ""},
+		{"blame view", "inspect the current line's commit and associated GitHub PR", ""},
+		{"bv", "inspect line blame (:blame view)", ""},
 		{"q", "quit", keymap.ActionQuit},
 		{"harness send", "send annotations to the connected harness", keymap.ActionFlushOutput},
 		{"fd", "focus the diff pane", keymap.ActionFocusDiff},
-		{"set number", "show line numbers", keymap.ActionToggleLineNums},
-		{"set nonumber", "hide line numbers", keymap.ActionToggleLineNums},
-		{"set wrap", "enable word wrap", keymap.ActionToggleWrap},
-		{"set nowrap", "disable word wrap", keymap.ActionToggleWrap},
+	}
+	settings := m.commandSettings()
+	for _, setting := range settings {
+		entries = append(entries,
+			commandEntry{setting.on, setting.onDescription, setting.action},
+			commandEntry{setting.off, setting.offDescription, setting.action},
+		)
 	}
 	if _, ok := m.tree.(*workingTree); ok {
 		entries = append(entries,
@@ -125,9 +146,15 @@ func (m Model) commandEntries() []commandEntry {
 			commandEntry{"fc", "focus the Changes section", ""},
 		)
 	}
+actions:
 	for _, entry := range m.keymap.Actions() {
 		if m.cfg.workingTree && entry.Action == keymap.ActionToggleUntracked {
 			continue
+		}
+		for _, setting := range settings {
+			if setting.action == entry.Action {
+				continue actions
+			}
 		}
 		if name := m.paletteCommand(entry.Action); name != "" {
 			entries = append(entries, commandEntry{name, entry.Description, entry.Action})
@@ -150,7 +177,7 @@ func (m *Model) startCommand() tea.Cmd {
 	ti.CharLimit = 128
 	ti.Width = max(1, m.layout.width-5) // borders, padding, and ':'
 	cmd := ti.Focus()
-	m.command = commandState{active: true, input: ti, history: m.command.history}
+	m.command = commandState{active: true, input: ti, history: m.command.history, lastShell: m.command.lastShell}
 	// The command pane remains independent of --no-status-bar.
 	m.layout.viewport.Height = m.paneHeight() - 1
 	return cmd
@@ -216,7 +243,11 @@ func (m *Model) updateCommandInput(msg tea.Msg) tea.Cmd {
 }
 
 func (m *Model) submitCommand() (tea.Model, tea.Cmd) {
-	value := strings.ToLower(strings.TrimSpace(m.command.input.Value()))
+	value := strings.TrimSpace(m.command.input.Value())
+	if strings.HasPrefix(value, "!") {
+		return m.runShellCommand(value)
+	}
+	value = strings.ToLower(value)
 	if value == "h" {
 		value = "help"
 	}
@@ -259,9 +290,19 @@ func (m *Model) submitCommand() (tea.Model, tea.Cmd) {
 			// blocker, and newly opened overlays need the restored pane height.
 			m.command.remember(entry.name)
 			m.closeCommand()
-			// Vim's set/unset commands are idempotent, unlike the underlying
-			// toggle actions. Still use normal dispatch when a change is needed.
+			if entry.action == keymap.ActionToggleCollapsed {
+				m.setCollapsedMode(entry.name == "diff removed hide")
+				return *m, nil
+			}
+			// Explicit settings use toggle dispatch only when the state must change.
+			for _, setting := range m.commandSettings() {
+				if setting.action == entry.action && setting.enabled == (entry.name == setting.on) {
+					return *m, nil
+				}
+			}
 			switch entry.name {
+			case "blame view", "bv":
+				return m.openBlameView()
 			case "annotate", "annotate file", "annotate hunk":
 				_, onHunk := m.cursorHunkStart()
 				hunk := entry.name == "annotate hunk" || (entry.name == "annotate" && m.layout.focus == paneDiff && onHunk)
@@ -287,14 +328,6 @@ func (m *Model) submitCommand() (tea.Model, tea.Cmd) {
 				m.pendingAnnotJump = nil
 				m.nav.pendingHunkJump = nil
 				return m.loadSelectedIfChanged()
-			case "set number", "set nonumber":
-				if m.modes.lineNumbers == (entry.name == "set number") {
-					return *m, nil
-				}
-			case "set wrap", "set nowrap":
-				if m.modes.wrap == (entry.name == "set wrap") {
-					return *m, nil
-				}
 			}
 			return m.dispatchAction(entry.action)
 		}
@@ -346,8 +379,8 @@ func (m *Model) submitCommand() (tea.Model, tea.Cmd) {
 
 func (m Model) commandMatches() []commandEntry {
 	query := strings.ToLower(strings.TrimSpace(m.command.input.Value()))
-	if query == "$" {
-		return nil // source-line address, not a search for $EDITOR commands
+	if query == "$" || strings.HasPrefix(query, "!") {
+		return nil // source addresses and shell text are not command searches
 	}
 	var matches []commandEntry
 	for _, entry := range m.commandEntries() {

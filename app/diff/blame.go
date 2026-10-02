@@ -11,8 +11,10 @@ import (
 
 // BlameLine holds blame information for a single line of a file.
 type BlameLine struct {
-	Author string
-	Time   time.Time
+	Author  string
+	Time    time.Time
+	Commit  string
+	Summary string
 }
 
 // FileBlame returns blame information for each line of the rendered side of a file diff.
@@ -89,6 +91,7 @@ func (g *Git) parseBlame(raw string) (map[int]BlameLine, error) {
 	var lineNum int
 	var author string
 	var authorTime time.Time
+	var commit, summary string
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -96,6 +99,8 @@ func (g *Git) parseBlame(raw string) (map[int]BlameLine, error) {
 		// header line: <40-hex-hash> <orig_line> <final_line> [<group_lines>]
 		if len(line) >= 40 && g.isHexString(line[:40]) {
 			parts := strings.Fields(line)
+			commit, summary = parts[0], ""
+			lineNum = 0
 			if len(parts) >= 3 {
 				if n, err := strconv.Atoi(parts[2]); err == nil {
 					lineNum = n
@@ -118,9 +123,14 @@ func (g *Git) parseBlame(raw string) (map[int]BlameLine, error) {
 			continue
 		}
 
+		if v, ok := strings.CutPrefix(line, "summary "); ok {
+			summary = v
+			continue
+		}
+
 		// content line (starts with tab) marks end of entry
 		if strings.HasPrefix(line, "\t") && lineNum > 0 {
-			result[lineNum] = BlameLine{Author: author, Time: authorTime}
+			result[lineNum] = BlameLine{Author: author, Time: authorTime, Commit: commit, Summary: summary}
 			continue
 		}
 	}

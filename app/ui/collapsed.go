@@ -405,10 +405,14 @@ func (m Model) cursorHunkStart() (int, bool) {
 // toggleCollapsedMode switches between collapsed and expanded diff view.
 // only operates when a file is loaded.
 func (m *Model) toggleCollapsedMode() {
+	m.setCollapsedMode(!m.modes.collapsed.enabled)
+}
+
+func (m *Model) setCollapsedMode(enabled bool) {
 	if m.file.name == "" {
 		return
 	}
-	m.modes.collapsed.enabled = !m.modes.collapsed.enabled
+	m.modes.collapsed.enabled = enabled
 	m.modes.collapsed.expandedHunks = make(map[int]bool)
 	m.annot.cursorOnAnnotation = false // visible lines change, reset annotation cursor state
 	m.adjustCursorIfHidden()
