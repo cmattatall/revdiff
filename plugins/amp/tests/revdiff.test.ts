@@ -114,7 +114,8 @@ test('valid feedback steers with guidance and enforces endpoint, auth, origin, a
   const f = fakeAmp(); await plugin(f.amp); const c = await connect(f, 'T-a')
   assert.equal((await post(c.descriptor, { id: 'one', content: 'fix this' })).status, 204)
   const [message, options] = f.messages.get('T-a')![1]
-  assert.equal(options.steer, true); assert.match(message.content, /user owns staging/i); assert.match(message.content, /fix this/)
+  assert.equal(options.steer, true)
+  assert.equal(message.content, 'Revdiff feedback. Ask before staging, unstaging, resetting, or committing.\n\nfix this')
   assert.equal((await post(c.descriptor, {}, { token: 'bad' })).status, 401)
   assert.equal((await post(c.descriptor, {}, { origin: 'https://example.com' })).status, 403)
   assert.equal((await fetch(c.descriptor.url.replace('/feedback', '/other'), { method: 'POST' })).status, 404)

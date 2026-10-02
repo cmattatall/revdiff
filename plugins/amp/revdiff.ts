@@ -11,7 +11,7 @@ export const description = 'Connect revdiff in a sibling terminal to the current
 const MAX_BODY = 1024 * 1024
 const MAX_ID = 256
 const GUIDANCE =
-  'Revdiff review feedback follows. The user owns staging. Do not stage, unstage, reset, or commit changes without asking first.\n\n'
+  'Revdiff feedback. Ask before staging, unstaging, resetting, or committing.\n\n'
 
 type Connection = { server: Server; directory: string; descriptor: string }
 type Outcome = { content: string; result: Promise<void> }
