@@ -66,9 +66,12 @@ func TestWorkingTreeLayoutAndMouseRows(t *testing.T) {
 		top := (height - 3) / 2
 		require.Len(t, rows, height)
 		require.Contains(t, rows[0], "Staged (1)")
+		require.Contains(t, rows[1], "./", "Staged keeps its existing layout")
 		require.Empty(t, strings.TrimSpace(rows[top+1]), "a blank row separates fixed-height regions")
 		require.Contains(t, rows[top+2], "Changes (2)")
-		require.True(t, w.SelectByVisibleRow(top+4)) // first file after Changes heading and directory
+		require.Contains(t, rows[top+3], "b.go", "root files follow Changes directly")
+		require.NotContains(t, strings.Join(rows[top+3:], "\n"), "./")
+		require.True(t, w.SelectByVisibleRow(top+3)) // first file immediately after Changes heading
 		require.Equal(t, "b.go", w.SelectedFile())
 		require.False(t, w.SelectedStaged())
 		require.False(t, w.SelectByVisibleRow(top+1), "separator is not a selectable row")

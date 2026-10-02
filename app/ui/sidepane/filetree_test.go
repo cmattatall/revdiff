@@ -42,6 +42,31 @@ func TestFileTree_BuildEntriesEmpty(t *testing.T) {
 	assert.Empty(t, ft.entries)
 }
 
+func TestFileTree_HideRootDirectory(t *testing.T) {
+	entries := fileEntries("a.go", "b.go", "src/c.go")
+	ft := NewFileTree(entries)
+	ft.SelectByPath("b.go")
+	ft.HideRootDirectory()
+	require.Equal(t, "b.go", ft.SelectedFile())
+	want := []treeEntry{
+		{name: "a.go", path: "a.go"},
+		{name: "b.go", path: "b.go"},
+		{name: "src/", isDir: true},
+		{name: "c.go", path: "src/c.go", depth: 1},
+	}
+	require.Equal(t, want, ft.entries)
+	ft.Rebuild(entries)
+	require.Equal(t, want, ft.entries, "reload must not reintroduce ./")
+	require.True(t, ft.SelectByVisibleRow(0))
+	require.Equal(t, "a.go", ft.SelectedFile())
+	ft.Move(MotionDown)
+	require.Equal(t, "b.go", ft.SelectedFile())
+	ft.ToggleFilter(map[string]bool{"b.go": true})
+	require.Equal(t, []treeEntry{{name: "b.go", path: "b.go"}}, ft.entries)
+	ft.ToggleFilter(nil)
+	require.Equal(t, want, ft.entries)
+}
+
 func TestFileTree_SelectedFile(t *testing.T) {
 	ft := NewFileTree(fileEntries("a.go", "b.go"))
 

@@ -20,7 +20,11 @@ type workingTree struct {
 }
 
 func newWorkingTree(factory func([]diff.FileEntry) FileTreeComponent) *workingTree {
-	return &workingTree{staged: factory(nil), changes: factory(nil), activeStaged: true}
+	changes := factory(nil)
+	if tree, ok := changes.(interface{ HideRootDirectory() }); ok {
+		tree.HideRootDirectory()
+	}
+	return &workingTree{staged: factory(nil), changes: changes, activeStaged: true}
 }
 func (w *workingTree) active() FileTreeComponent {
 	if w.activeStaged {

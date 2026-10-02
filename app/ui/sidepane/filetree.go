@@ -22,6 +22,7 @@ type FileTree struct {
 	allFiles     []string                   // original full file paths
 	filter       bool                       // when true, show only annotated files
 	unreviewed   bool                       // when true, show only files not marked reviewed
+	hideRoot     bool                       // omit the synthetic ./ group, not real directories
 	reviewed     map[string]string          // semantic diff fingerprint for files marked reviewed
 	fileStatuses map[string]diff.FileStatus // file change status from git, empty for non-git
 	oldPaths     map[string]string          // rename origin keyed by new path, empty for non-renames
@@ -74,6 +75,16 @@ func NewFileTree(entries []diff.FileEntry) *FileTree {
 		}
 	}
 	return ft
+}
+
+// HideRootDirectory places root-level files directly in the tree without a ./ row.
+// Remove it from the entry model too so keyboard, mouse, and scrolling agree.
+func (ft *FileTree) HideRootDirectory() {
+	selected := ft.SelectedFile()
+	ft.hideRoot = true
+	ft.entries = ft.buildEntries(ft.VisibleFiles())
+	ft.cursor, ft.offset = 0, 0
+	ft.SelectByPath(selected)
 }
 
 // SelectedFile returns the full path of the currently selected file,
@@ -516,14 +527,11 @@ func (ft *FileTree) buildEntries(files []string) []treeEntry {
 
 	entries := make([]treeEntry, 0, len(dirs)+len(files))
 	for _, dir := range dirs {
-		// add directory entry
-		dirName := dir
-		if dirName == "." {
-			dirName = "./"
-		} else {
-			dirName = dir + "/"
+		depth := 0
+		if dir != "." || !ft.hideRoot {
+			entries = append(entries, treeEntry{name: dir + "/", isDir: true, depth: 0})
+			depth = 1
 		}
-		entries = append(entries, treeEntry{name: dirName, isDir: true, depth: 0})
 
 		// add file entries under this directory, sorted
 		dirFileList := dirFiles[dir]
@@ -533,7 +541,7 @@ func (ft *FileTree) buildEntries(files []string) []treeEntry {
 				name:  filepath.Base(f),
 				path:  f,
 				isDir: false,
-				depth: 1,
+				depth: depth,
 			})
 		}
 	}
