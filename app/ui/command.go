@@ -44,9 +44,10 @@ type paletteCommand interface {
 
 type tuiCommand struct {
 	commandEntry
-	action keymap.Action
-	scope  commandScope
-	run    func(*Model, commandScope) (tea.Model, tea.Cmd)
+	action   keymap.Action
+	scope    commandScope
+	validate func(*Model) string
+	run      func(*Model, commandScope) (tea.Model, tea.Cmd)
 }
 
 // TODO: Move scope into shared UI state so actions outside the command palette
@@ -143,6 +144,28 @@ type commandSetting struct {
 	enabled                       bool
 }
 
+func (setting commandSetting) command(enabled bool) tuiCommand {
+	name, description := setting.off, setting.offDescription
+	if enabled {
+		name, description = setting.on, setting.onDescription
+	}
+	return tuiCommand{
+		commandEntry: commandEntry{name: name, description: description, section: "View"},
+		action:       setting.action,
+		run: func(m *Model, _ commandScope) (tea.Model, tea.Cmd) {
+			if setting.action == keymap.ActionToggleCollapsed {
+				// Explicit folding also clears individually expanded hunks.
+				m.setCollapsedMode(enabled)
+				return *m, nil
+			}
+			if setting.enabled == enabled {
+				return *m, nil
+			}
+			return m.dispatchAction(setting.action)
+		},
+	}
+}
+
 func (m Model) commandSettings() []commandSetting {
 	settings := []commandSetting{
 		{"set number", "set nonumber", "show line numbers", "hide line numbers", keymap.ActionToggleLineNums, m.modes.lineNumbers},
@@ -228,22 +251,25 @@ func (m Model) commandEntries() []paletteCommand {
 	entries := []paletteCommand{
 		tuiCommand{commandEntry: commandEntry{name: "annotate", description: "annotate the selected hunk or file", aliases: []string{"a"}, section: "Annotations"}, scope: commandScopeSelection, run: (*Model).annotateScope},
 		tuiCommand{commandEntry: commandEntry{name: "annotate hunk", description: "annotate the change hunk under the diff cursor", section: "Annotations"}, scope: commandScopeHunk, run: (*Model).annotateScope},
-		tuiCommand{commandEntry: commandEntry{name: "blame view", description: "inspect the current line's commit and associated GitHub PR", aliases: []string{"bv"}, section: "View"}},
+		tuiCommand{commandEntry: commandEntry{name: "blame view", description: "inspect the current line's commit and associated GitHub PR", aliases: []string{"bv"}, section: "View"},
+			run: func(m *Model, _ commandScope) (tea.Model, tea.Cmd) { return m.openBlameView() }},
 		shellCommand{commandEntry: commandEntry{name: "git", description: "run git through the shell", section: "Miscellaneous"}, prefix: "git"},
-		tuiCommand{commandEntry: commandEntry{name: "harness send", description: "compose a message to the connected harness", aliases: []string{"hs"}, section: "Harness"}},
-		tuiCommand{commandEntry: commandEntry{name: "quit!", description: "discard unsent feedback and quit", aliases: []string{"q!"}, section: "Miscellaneous"}},
+		tuiCommand{commandEntry: commandEntry{name: "harness send", description: "compose a message to the connected harness", aliases: []string{"hs"}, section: "Harness"},
+			run: func(m *Model, _ commandScope) (tea.Model, tea.Cmd) { return m.openHarnessMessage() }},
+		tuiCommand{commandEntry: commandEntry{name: "quit!", description: "discard unsent feedback and quit", aliases: []string{"q!"}, section: "Miscellaneous"},
+			validate: func(m *Model) string { return m.quitError(true) },
+			run:      func(m *Model, _ commandScope) (tea.Model, tea.Cmd) { return m.quitReview(true) }},
 	}
 	settings := m.commandSettings()
 	for _, setting := range settings {
-		entries = append(entries,
-			tuiCommand{commandEntry: commandEntry{name: setting.on, description: setting.onDescription, section: "View"}, action: setting.action},
-			tuiCommand{commandEntry: commandEntry{name: setting.off, description: setting.offDescription, section: "View"}, action: setting.action},
-		)
+		entries = append(entries, setting.command(true), setting.command(false))
 	}
 	if _, ok := m.tree.(*workingTree); ok {
 		entries = append(entries,
-			tuiCommand{commandEntry: commandEntry{name: "focus staged", description: "focus the Staged section", aliases: []string{"fs"}, section: keymap.SectionPane}},
-			tuiCommand{commandEntry: commandEntry{name: "focus changed", description: "focus the Changes section", aliases: []string{"fc"}, section: keymap.SectionPane}},
+			tuiCommand{commandEntry: commandEntry{name: "focus staged", description: "focus the Staged section", aliases: []string{"fs"}, section: keymap.SectionPane},
+				run: func(m *Model, _ commandScope) (tea.Model, tea.Cmd) { return m.focusTreeSection(true) }},
+			tuiCommand{commandEntry: commandEntry{name: "focus changed", description: "focus the Changes section", aliases: []string{"fc"}, section: keymap.SectionPane},
+				run: func(m *Model, _ commandScope) (tea.Model, tea.Cmd) { return m.focusTreeSection(false) }},
 		)
 	}
 actions:
@@ -261,10 +287,15 @@ actions:
 			switch entry.Action {
 			case keymap.ActionQuit:
 				command.aliases = []string{"q"}
+				command.validate = func(m *Model) string { return m.quitError(false) }
 			case keymap.ActionHelp:
 				command.aliases = []string{"h"}
 			case keymap.ActionFocusDiff:
 				command.aliases = []string{"fd"}
+				command.run = func(m *Model, _ commandScope) (tea.Model, tea.Cmd) {
+					m.layout.focus = paneDiff
+					return *m, nil
+				}
 			case keymap.ActionAnnotateFile:
 				command.scope, command.run = commandScopeFile, (*Model).annotateScope
 			}
@@ -272,10 +303,23 @@ actions:
 		}
 	}
 	for name := range m.live.harnesses {
-		entries = append(entries, tuiCommand{commandEntry: commandEntry{name: "harness connect " + name, description: "connect to " + name + " in this directory", section: "Harness"}})
+		entries = append(entries, tuiCommand{commandEntry: commandEntry{name: "harness connect " + name, description: "connect to " + name + " in this directory", section: "Harness"},
+			run: func(m *Model, _ commandScope) (tea.Model, tea.Cmd) { return m.connectHarness(name) }})
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].metadata().name < entries[j].metadata().name })
 	return entries
+}
+
+func (m *Model) focusTreeSection(staged bool) (tea.Model, tea.Cmd) {
+	// Only split working-tree reviews register section-focus commands.
+	m.tree.(*workingTree).activeStaged = staged
+	if m.layout.treeHidden {
+		m.toggleTreePane()
+	}
+	m.layout.focus = paneTree
+	m.pendingAnnotJump = nil
+	m.nav.pendingHunkJump = nil
+	return m.loadSelectedIfChanged()
 }
 
 func (m *Model) startCommand() tea.Cmd {
@@ -427,23 +471,47 @@ func (m *Model) submitCommand() (tea.Model, tea.Cmd) {
 	return *m, nil
 }
 
+func (entry tuiCommand) execute(m *Model, _ string) (tea.Model, tea.Cmd) {
+	scope, err := entry.scope.resolve(m)
+	if err == "" && entry.validate != nil {
+		err = entry.validate(m)
+	}
+	if err != "" {
+		m.command.err = err
+		return *m, nil
+	}
+	// Record the canonical name for Ctrl+R history, including commands entered by alias.
+	m.command.remember(entry.name)
+	// Close first so live operations and overlays see the restored pane height.
+	m.closeCommand()
+	if entry.run != nil {
+		return entry.run(m, scope)
+	}
+	return m.dispatchAction(entry.action)
+}
+
 func (m Model) commandMatches() []commandEntry {
 	query := strings.ToLower(strings.TrimSpace(m.command.input.Value()))
 	if query == "$" || strings.HasPrefix(query, "!") {
 		return nil // source addresses and shell text are not command searches
 	}
 	var matches []commandEntry
-	for _, entry := range m.commandEntries() {
+	for _, command := range m.commandEntries() {
+		entry := command.metadata()
+		if command.matchesInput(query) && !entry.matchesName(query) {
+			return nil // shell arguments are not completion queries
+		}
 		// A recalled stage command must not complete to its opposite operation.
 		if strings.HasPrefix(query, "stage ") && strings.HasPrefix(entry.name, "unstage ") {
 			continue
 		}
 		// Completing an exact name must not replace it with a substring match
 		// (for example, down must not complete to page_down).
-		if entry.name == query {
+		if entry.matchesName(query) {
 			return []commandEntry{entry}
 		}
-		if strings.Contains(entry.name, query) || strings.Contains(strings.ToLower(entry.description), query) {
+		aliasMatch := slices.ContainsFunc(entry.aliases, func(alias string) bool { return strings.HasPrefix(alias, query) })
+		if aliasMatch || strings.Contains(entry.name, query) || strings.Contains(strings.ToLower(entry.description), query) {
 			matches = append(matches, entry)
 		}
 	}
@@ -492,6 +560,9 @@ func (m Model) commandPaneHeight() int {
 }
 
 func (m Model) commandPaneView() string {
+	if m.message.active {
+		return m.harnessMessageView()
+	}
 	input := m.command.input
 	if m.search.active {
 		input = m.search.input
