@@ -63,7 +63,8 @@ func TestModel_DotKeyExpandsHunkInCollapsedMode(t *testing.T) {
 		{OldNum: 2, Content: "old", ChangeType: diff.ChangeRemove},   // 1 - hunk start
 		{NewNum: 2, Content: "new", ChangeType: diff.ChangeAdd},      // 2
 		{NewNum: 3, Content: "ctx2", ChangeType: diff.ChangeContext}, // 3
-		{NewNum: 4, Content: "add2", ChangeType: diff.ChangeAdd},     // 4 - hunk 2 start
+		{OldNum: 4, Content: "old2", ChangeType: diff.ChangeRemove},  // 4 - hunk 2 start
+		{NewNum: 4, Content: "add2", ChangeType: diff.ChangeAdd},
 	}
 	m := testModel(nil, nil)
 	m.file.lines = lines
@@ -106,7 +107,7 @@ func TestModel_DotKeyExpandsHunkInCollapsedMode(t *testing.T) {
 	})
 }
 
-func TestModel_DotKeyNoOpInExpandedMode(t *testing.T) {
+func TestModel_DotKeyExplainsAddOnlyHunk(t *testing.T) {
 	lines := []diff.DiffLine{
 		{NewNum: 1, Content: "add", ChangeType: diff.ChangeAdd},
 	}
@@ -121,7 +122,50 @@ func TestModel_DotKeyNoOpInExpandedMode(t *testing.T) {
 
 	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'.'}})
 	model := result.(Model)
-	assert.Empty(t, model.modes.collapsed.expandedHunks, "dot should be no-op in expanded mode")
+	assert.False(t, model.modes.collapsed.enabled)
+	assert.Contains(t, model.keys.hint, "no removed lines")
+}
+
+func TestModel_HunkToggleFromEitherPaneAndView(t *testing.T) {
+	lines := []diff.DiffLine{
+		{OldNum: 1, NewNum: 1, Content: "context", ChangeType: diff.ChangeContext},
+		{OldNum: 2, Content: "first old", ChangeType: diff.ChangeRemove},
+		{NewNum: 2, Content: "first new", ChangeType: diff.ChangeAdd},
+		{OldNum: 3, NewNum: 3, Content: "between", ChangeType: diff.ChangeContext},
+		{OldNum: 4, Content: "second old", ChangeType: diff.ChangeRemove},
+		{NewNum: 4, Content: "second new", ChangeType: diff.ChangeAdd},
+	}
+	for _, focus := range []pane{paneTree, paneDiff} {
+		for _, collapsed := range []bool{false, true} {
+			for _, palette := range []bool{false, true} {
+				m := testModel([]string{"a.go"}, nil)
+				m.file.name, m.file.lines = "a.go", lines
+				m.layout.focus, m.nav.diffCursor = focus, 2
+				m.modes.collapsed.enabled = collapsed
+				m.modes.collapsed.expandedHunks = map[int]bool{4: true}
+				for _, firstVisible := range []bool{collapsed, !collapsed} {
+					key := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'.'}}
+					if palette {
+						m.startCommand()
+						m.command.input.SetValue("hunk toggle")
+						key = tea.KeyMsg{Type: tea.KeyEnter}
+					}
+					model, _ := m.Update(key)
+					m = model.(Model)
+					require.Equal(t, focus, m.layout.focus)
+					require.Equal(t, 2, m.nav.diffCursor)
+					rendered := m.renderDiff()
+					if firstVisible {
+						require.Contains(t, rendered, "first old")
+					} else {
+						require.NotContains(t, rendered, "first old")
+					}
+					require.Contains(t, rendered, "first new")
+					require.Contains(t, rendered, "second old", "leave other hunks unchanged")
+				}
+			}
+		}
+	}
 }
 
 func TestModel_FileSwitchResetsExpandedHunksPreservesCollapsed(t *testing.T) {
@@ -878,6 +922,24 @@ func TestModel_ToggleHunkExpansionAdjustsCursor(t *testing.T) {
 	m.toggleHunkExpansion()
 	assert.False(t, m.modes.collapsed.expandedHunks[1], "hunk should be collapsed")
 	assert.Equal(t, 2, m.nav.diffCursor, "cursor should move to add line after hunk collapse")
+}
+
+func TestModel_CollapseDeletionKeepsCursorOnHunk(t *testing.T) {
+	m := testModel([]string{"a.go"}, nil)
+	m.file.name = "a.go"
+	m.file.lines = []diff.DiffLine{
+		{OldNum: 1, Content: "first deletion", ChangeType: diff.ChangeRemove},
+		{OldNum: 2, Content: "last deletion", ChangeType: diff.ChangeRemove},
+		{OldNum: 3, NewNum: 1, Content: "after", ChangeType: diff.ChangeContext},
+	}
+	m.modes.collapsed.enabled = true
+	m.modes.collapsed.expandedHunks = map[int]bool{0: true}
+	m.nav.diffCursor = 1
+	m.toggleHunkExpansion()
+	require.Equal(t, 0, m.nav.diffCursor, "stay on the deletion placeholder, not the next context line")
+	require.Contains(t, m.renderDiff(), "2 lines deleted")
+	m.toggleHunkExpansion()
+	require.Contains(t, m.renderDiff(), "last deletion")
 }
 
 func TestModel_CollapsedCursorDownSkipsPlaceholderAnnotation(t *testing.T) {

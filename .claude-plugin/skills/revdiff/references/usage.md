@@ -149,7 +149,11 @@ Annotation commands are grouped under `:annotate`: `:annotate file`, `:annotate 
 
 Use `:focus staged` (`:fs`) or `:focus changed` (`:fc`) to focus that section of the split file tree, revealing the tree if hidden and preserving the section's selection. Use `:focus diff` (`:fd`) to focus the diff pane without moving its cursor. From the diff, `Esc` returns to the tree's selected section and file; active prompts, overlays, and search results are dismissed first. A hidden or unavailable tree stays hidden. These commands support completion and unique abbreviations such as `:focus c`. Staged/Changes focus commands are available only in working-tree reviews.
 
-Display toggles are grouped under `:view`: `:view wrap`, `:view word diff`, `:view numbers`, `:view compact`, `:view collapsed`, `:view tree`, and `:view blame`. Related commands use `:hunk toggle`, `:filter annotated`, `:filter unreviewed`, `:review mark`, `:review info`, and `:theme select`. Help and completion show these readable names; exact keybinding action names such as `:toggle_wrap` still work. Use `:view untracked` where the legacy untracked toggle is available; split working-tree reviews already include untracked files in Changes.
+Use `:focus tree` to return to the selected tree section, or `:focus next` to switch panes. Palette commands use readable names such as `:focus diff`. Underscore-style keybinding IDs such as `focus_diff` are for the keybindings file, not command aliases.
+
+Display toggles are grouped under `:view`: `:view wrap`, `:view word diff`, `:view numbers`, `:view compact`, `:view collapsed`, `:view tree`, and `:view blame`. Related commands use `:hunk toggle`, `:filter annotated`, `:filter unreviewed`, `:review mark`, `:review info`, and `:theme select`. Use `:view untracked` where the legacy untracked toggle is available. Split working-tree reviews already include untracked files in Changes.
+
+`.` or `:hunk toggle` shows/hides removed lines in the hunk under the diff cursor, from either pane. From normal view it enables collapsed mode while leaving the other hunks expanded. Repeating it reopens the hunk. Deletion-only hunks collapse to a placeholder. Context lines and addition-only hunks show a hint because there are no removed lines to fold.
 
 Vim-style commands are available too: `:set number` / `:set nonumber` show/hide line numbers, and `:set wrap` / `:set nowrap` enable/disable wrapping. Repeating a `set` command keeps the requested state rather than toggling it. `:q` quits normally, and `:w` flushes annotations to the configured output or connected harness (it does not write source files). These names also support completion.
 
@@ -214,7 +218,7 @@ Press `Space` to mark the focused file reviewed. Press `F` to toggle the sidebar
 | `L` | Toggle line numbers (side-by-side old/new for diffs, single column for full-context files) |
 | `B` | Toggle blame gutter (author name + commit age per line) |
 | `W` | Toggle intra-line word-diff highlighting for paired add/remove lines |
-| `.` | Expand/collapse individual hunk under cursor (collapsed mode only) |
+| `.` | Show/hide removed lines in the hunk under the diff cursor |
 | `T` | Open theme selector with live preview |
 | `f` | Toggle filter: all files / annotated only |
 | `F` | Toggle filter: all files / unreviewed only |

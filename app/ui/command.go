@@ -53,6 +53,12 @@ func (m Model) paletteCommand(action keymap.Action) string {
 		return "w"
 	case keymap.ActionOpenFileInEditor:
 		return "edit"
+	case keymap.ActionFocusDiff:
+		return "focus diff"
+	case keymap.ActionFocusTree:
+		return "focus tree"
+	case keymap.ActionTogglePane:
+		return "focus next"
 	case keymap.ActionStageHunk, keymap.ActionStageFile:
 		verb, scope := "stage", "hunk"
 		if m.stagedContext() {
@@ -105,7 +111,6 @@ func (m Model) commandEntries() []commandEntry {
 		{"annotate hunk", "annotate the change hunk under the diff cursor", ""},
 		{"q", "quit", keymap.ActionQuit},
 		{"harness send", "send annotations to the connected harness", keymap.ActionFlushOutput},
-		{"focus diff", "focus the diff pane", keymap.ActionFocusDiff},
 		{"fd", "focus the diff pane", keymap.ActionFocusDiff},
 		{"set number", "show line numbers", keymap.ActionToggleLineNums},
 		{"set nonumber", "hide line numbers", keymap.ActionToggleLineNums},
@@ -235,8 +240,7 @@ func (m *Model) submitCommand() (tea.Model, tea.Cmd) {
 		return m.connectHarness(name)
 	}
 	for _, entry := range m.commandEntries() {
-		// Keep legacy keybinding aliases, except flush_output, which is now :w.
-		if entry.name == value || (entry.action != keymap.ActionFlushOutput && string(entry.action) == value && entry.name == m.paletteCommand(entry.action)) {
+		if entry.name == value {
 			if entry.name == "annotate" || entry.name == "annotate file" || entry.name == "annotate hunk" {
 				if !m.filesLoaded || m.file.requestedPath != "" {
 					m.command.err = "Wait for the selected file to load"

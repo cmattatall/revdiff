@@ -418,25 +418,46 @@ func (m *Model) toggleCollapsedMode() {
 }
 
 // toggleHunkExpansion toggles the expansion state of the hunk under the cursor.
-// only operates in collapsed mode; no-op in expanded mode or when cursor is not on a hunk.
+// Entering collapsed mode this way leaves the other hunks expanded.
 func (m *Model) toggleHunkExpansion() {
-	if !m.modes.collapsed.enabled {
-		return
-	}
 	hunkStart, ok := m.cursorHunkStart()
 	if !ok {
+		m.keys.hint = "Move the diff cursor onto a change hunk"
 		return
+	}
+	hasRemovals := false
+	for _, line := range m.file.lines[hunkStart:] {
+		if line.ChangeType != diff.ChangeAdd && line.ChangeType != diff.ChangeRemove {
+			break
+		}
+		if line.ChangeType == diff.ChangeRemove {
+			hasRemovals = true
+			break
+		}
+	}
+	if !hasRemovals {
+		m.keys.hint = "This hunk has no removed lines to fold"
+		return
+	}
+	if !m.modes.collapsed.enabled {
+		m.modes.collapsed.enabled = true
+		m.modes.collapsed.expandedHunks = make(map[int]bool)
+		for _, start := range m.findHunks() {
+			m.modes.collapsed.expandedHunks[start] = true
+		}
 	}
 	if m.modes.collapsed.expandedHunks[hunkStart] {
 		delete(m.modes.collapsed.expandedHunks, hunkStart)
 		m.annot.cursorOnAnnotation = false // annotations on removed lines become invisible
-		m.adjustCursorIfHidden()
+		hunks := m.findHunks()
+		if m.isCollapsedHidden(m.nav.diffCursor, hunks) {
+			m.nav.diffCursor = m.firstVisibleInHunk(hunkStart, hunks)
+		}
 		m.realignSearchCursor()
 	} else {
 		m.modes.collapsed.expandedHunks[hunkStart] = true
 	}
-	m.clampHorizontalScroll() // re-collapsing a hunk re-hides its removes, lowering the bound
-	m.layout.viewport.SetContent(m.renderDiff())
+	m.syncViewportToCursor()
 }
 
 // isCollapsedHidden returns true if the line at idx is hidden in collapsed mode.

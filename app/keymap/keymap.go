@@ -254,7 +254,7 @@ func defaultDescriptions() []HelpEntry {
 		{ActionToggleLineNums, "toggle line numbers", "View"},
 		{ActionToggleBlame, "toggle blame gutter", "View"},
 		{ActionToggleWordDiff, "toggle word-diff highlighting", "View"},
-		{ActionToggleHunk, "toggle hunk in collapsed", "View"},
+		{ActionToggleHunk, "show/hide removed lines in current hunk", "View"},
 		{ActionToggleUntracked, "show/hide untracked files", "View"},
 		{ActionMarkReviewed, "mark file as reviewed", "View"},
 		{ActionFilterUnreviewed, "show unreviewed files", "View"},

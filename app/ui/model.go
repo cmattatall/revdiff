@@ -1210,6 +1210,9 @@ func (m Model) dispatchAction(action keymap.Action) (tea.Model, tea.Cmd) {
 	case keymap.ActionToggleCollapsed, keymap.ActionToggleCompact, keymap.ActionToggleWrap, keymap.ActionToggleTree,
 		keymap.ActionToggleLineNums, keymap.ActionToggleBlame, keymap.ActionToggleWordDiff, keymap.ActionToggleUntracked:
 		return m.handleViewToggle(action)
+	case keymap.ActionToggleHunk:
+		m.toggleHunkExpansion()
+		return m, nil
 	case keymap.ActionNextHunk, keymap.ActionPrevHunk:
 		return m.handleHunkNav(action == keymap.ActionNextHunk)
 	case keymap.ActionNextAnnotation, keymap.ActionPrevAnnotation:

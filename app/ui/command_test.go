@@ -349,7 +349,9 @@ func TestModel_CommandSemanticNames(t *testing.T) {
 		"filter unreviewed": keymap.ActionFilterUnreviewed, "filter annotated": keymap.ActionFilter,
 		"theme select": keymap.ActionThemeSelect, "review info": keymap.ActionInfo,
 		"annotation next": keymap.ActionNextAnnotation, "annotation prev": keymap.ActionPrevAnnotation,
-		"w": keymap.ActionFlushOutput,
+		"focus diff": keymap.ActionFocusDiff, "focus tree": keymap.ActionFocusTree,
+		"focus next": keymap.ActionTogglePane,
+		"w":          keymap.ActionFlushOutput,
 	} {
 		m.startCommand()
 		m.command.input.SetValue(name)
@@ -371,7 +373,7 @@ func TestModel_CommandSemanticNames(t *testing.T) {
 
 func TestModel_CommandViewToggles(t *testing.T) {
 	for _, focus := range []pane{paneTree, paneDiff} {
-		for _, command := range []string{"view wrap", "view word diff", "view word d", "toggle_wrap", "toggle_word_diff"} {
+		for _, command := range []string{"view wrap", "view word diff", "view word d"} {
 			m := testModel([]string{"a.go"}, nil)
 			m.file.name, m.layout.focus = "a.go", focus
 			m.file.lines = []diff.DiffLine{{NewNum: 1, Content: "line", ChangeType: diff.ChangeContext}}
@@ -645,9 +647,13 @@ func TestModel_CommandDispatch(t *testing.T) {
 				m.keymap.Unbind(key)
 			}
 			m.startCommand()
-			model, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(string(action))})
+			command := string(action)
+			if action == keymap.ActionTogglePane {
+				command = "focus next"
+			}
+			model, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(command)})
 			m = model.(Model)
-			require.Equal(t, string(action), m.command.input.Value(), "long action names must not be truncated")
+			require.Equal(t, command, m.command.input.Value(), "command names must not be truncated")
 			model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 			m = model.(Model)
 			require.Equal(t, action == keymap.ActionCommand, m.command.active)
@@ -744,7 +750,11 @@ func TestModel_CommandStage(t *testing.T) {
 				m.store.Add(annotation.Annotation{File: "a.go", Line: 1, Comment: "keep"})
 			}
 			m.startCommand()
-			m.command.input.SetValue(string(action))
+			command := "stage hunk"
+			if action == keymap.ActionStageFile {
+				command = "stage file"
+			}
+			m.command.input.SetValue(command)
 			model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 			m = model.(Model)
 			require.False(t, m.command.active)
@@ -939,6 +949,22 @@ func TestModel_CommandFocusDiff(t *testing.T) {
 		require.False(t, m.command.active)
 		require.Equal(t, paneDiff, m.layout.focus)
 		require.Equal(t, 1, m.nav.diffCursor, "focusing must not reset the cursor")
+	}
+}
+
+func TestModel_CommandFocusTreeAndNext(t *testing.T) {
+	m := splitTestModel(t)
+	m.layout.focus = paneDiff
+	for _, step := range []struct {
+		command string
+		focus   pane
+	}{{"focus tree", paneTree}, {"focus next", paneDiff}, {"focus next", paneTree}, {"fd", paneDiff}} {
+		m.startCommand()
+		m.command.input.SetValue(step.command)
+		model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		m = model.(Model)
+		require.False(t, m.command.active)
+		require.Equal(t, step.focus, m.layout.focus, step.command)
 	}
 }
 
