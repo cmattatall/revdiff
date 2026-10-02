@@ -349,7 +349,8 @@ func TestModel_CommandSemanticNames(t *testing.T) {
 		"filter unreviewed": keymap.ActionFilterUnreviewed, "filter annotated": keymap.ActionFilter,
 		"theme select":    keymap.ActionThemeSelect,
 		"annotation next": keymap.ActionNextAnnotation, "annotation prev": keymap.ActionPrevAnnotation,
-		"focus diff": keymap.ActionFocusDiff, "focus tree": keymap.ActionFocusTree,
+		"annotation delete": keymap.ActionDeleteAnnotation,
+		"focus diff":        keymap.ActionFocusDiff, "focus tree": keymap.ActionFocusTree,
 		"focus next": keymap.ActionTogglePane,
 		"w":          keymap.ActionFlushOutput,
 	} {
@@ -1222,7 +1223,7 @@ func TestModel_CommandAnnotateCompletionAndValidation(t *testing.T) {
 			family = append(family, name)
 		}
 	}
-	require.Equal(t, []string{"annotate", "annotate file", "annotate hunk", "annotate list", "annotation next", "annotation prev"}, family)
+	require.Equal(t, []string{"annotate", "annotate file", "annotate hunk", "annotate list", "annotation delete", "annotation next", "annotation prev"}, family)
 	m.startCommand()
 	m.command.input.SetValue("a")
 	require.Equal(t, "annotate", m.commandMatches()[0].name)

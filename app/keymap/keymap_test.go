@@ -57,7 +57,7 @@ func TestDefault_allExpectedBindings(t *testing.T) {
 		{"tab", ActionTogglePane}, {"h", ActionFocusTree}, {"l", ActionFocusDiff},
 		{"/", ActionSearch},
 		{"a", ActionConfirm}, {"enter", ActionConfirm},
-		{"A", ActionAnnotateFile}, {"d", ActionDeleteAnnotation}, {"@", ActionAnnotList}, {"alt+e", ActionOpenEditor},
+		{"A", ActionAnnotateFile}, {"d", ActionDeleteAnnotation}, {"@", ActionAnnotList},
 		{"}", ActionNextAnnotation}, {"{", ActionPrevAnnotation}, {"O", ActionFlushOutput},
 		{"v", ActionToggleCollapsed}, {"C", ActionToggleCompact}, {"w", ActionToggleWrap}, {"t", ActionToggleTree},
 		{"L", ActionToggleLineNums}, {"B", ActionToggleBlame}, {"W", ActionToggleWordDiff},
@@ -111,10 +111,8 @@ func TestDefault_ctrlKeysMatchBubbletea(t *testing.T) {
 	assert.Equal(t, ActionHalfPageUp, km.Resolve(ctrlU.String()))
 }
 
-func TestOpenEditor_DefaultAndCustomCtrlE(t *testing.T) {
+func TestOpenEditor_CustomCtrlE(t *testing.T) {
 	km := Default()
-	assert.Equal(t, ActionOpenEditor, km.Resolve("alt+e"))
-	assert.Empty(t, km.Resolve("ctrl+e"), "ctrl+e is reserved for text-input end-of-line")
 
 	km.Bind("ctrl+e", ActionOpenEditor)
 	assert.Equal(t, ActionOpenEditor, km.Resolve("ctrl+e"), "explicit legacy remapping remains supported")
@@ -344,11 +342,6 @@ func TestActionToggleCompact_HelpEntry(t *testing.T) {
 
 func TestActionOpenEditor_IsValid(t *testing.T) {
 	assert.True(t, IsValidAction(ActionOpenEditor))
-}
-
-func TestActionOpenEditor_DefaultBinding(t *testing.T) {
-	km := Default()
-	assert.Equal(t, ActionOpenEditor, km.Resolve("alt+e"))
 }
 
 func TestActionOpenEditor_HelpEntry(t *testing.T) {

@@ -41,10 +41,11 @@ type Result struct {
 // Server configures one language-server process. LanguageIDs maps file
 // extensions (including the leading dot) to LSP language identifiers.
 type Server struct {
-	Command     string
-	Args        []string
-	LanguageIDs map[string]string
-	InstallHint string
+	Name           string
+	Command        string
+	Args           []string
+	LanguageIDs    map[string]string
+	InstallCommand string
 }
 
 const maxSourceSize = 16 << 20
@@ -170,6 +171,17 @@ func (c *Client) Query(ctx context.Context, operation Operation, position Positi
 		return Result{}, err
 	}
 	return c.decodeResult(operation, raw)
+}
+
+// InstallCommands supplies explicitly requested installers. Query never installs tools.
+func (c *Client) InstallCommands() map[string]string {
+	commands := make(map[string]string)
+	for _, server := range c.servers {
+		if server.Name != "" && server.InstallCommand != "" {
+			commands[server.Name] = server.InstallCommand
+		}
+	}
+	return commands
 }
 
 func (c *Client) ReadSource(ctx context.Context, path string) (string, error) {

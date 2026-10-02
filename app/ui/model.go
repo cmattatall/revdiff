@@ -736,6 +736,7 @@ type ModelConfig struct {
 	PostFlushHook        PostFlushHook                             // optional command run after an in-session output flush
 	Shell                ShellRunner                               // optional terminal handoff for :! commands
 	Inspector            CodeInspector                             // optional read-only language queries
+	LSPInstallCommands   map[string]string                         // language-owned commands, run only on explicit request
 	Feedback             FeedbackSender                            // optional harness connection; enables live refresh
 	DiscoverFeedback     func() (FeedbackSender, error)            // optional lookup until a connection is found
 	Harnesses            map[string]func() (FeedbackSender, error) // named lookups for :harness connect <type>
@@ -906,7 +907,7 @@ func NewModel(cfg ModelConfig) (Model, error) {
 	}
 
 	return Model{
-		inspection:    inspectionState{provider: cfg.Inspector},
+		inspection:    inspectionState{provider: cfg.Inspector, installCommands: cfg.LSPInstallCommands},
 		resolver:      cfg.StyleResolver,
 		renderer:      cfg.StyleRenderer,
 		sgr:           cfg.SGR,
@@ -1396,6 +1397,12 @@ func (m Model) handleModalKey(msg tea.KeyMsg) (bool, tea.Model, tea.Cmd) {
 	// overlay popup dispatch (help, annotation list, theme selector)
 	if m.overlay.Active() {
 		action := m.keymap.Resolve(msg.String())
+		if m.overlay.Kind() == overlay.KindInspection && m.inspection.page.kind == inspectionText && action == keymap.ActionCommand {
+			m.cancelInspection()
+			m.overlay.Close()
+			cmd := m.startCommand()
+			return true, m, cmd
+		}
 		out := m.overlay.HandleKey(msg, action)
 		switch out.Kind {
 		case overlay.OutcomeAnnotationChosen:

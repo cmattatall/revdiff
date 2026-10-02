@@ -30,9 +30,11 @@ type filePickerOverlay struct {
 	filter     filterInput
 	height     int
 	popupWidth int
+	heading    string
 }
 
 func (f *filePickerOverlay) open(spec FilePickerSpec) {
+	f.heading = "files"
 	f.all = slices.Clone(spec.Paths)
 	f.filter.open()
 	f.entries = slices.Clone(f.all)
@@ -93,9 +95,9 @@ func (f *filePickerOverlay) render(ctx RenderCtx, mgr *Manager) string {
 		}
 	}
 
-	title := fmt.Sprintf(" files (%d) ", len(f.all))
+	title := fmt.Sprintf(" %s (%d) ", style.SanitizeFilenameForDisplay(f.heading), len(f.all))
 	if f.filter.Value() != "" {
-		title = fmt.Sprintf(" files (%d/%d) ", len(f.entries), len(f.all))
+		title = fmt.Sprintf(" %s (%d/%d) ", style.SanitizeFilenameForDisplay(f.heading), len(f.entries), len(f.all))
 	}
 	box := ctx.Resolver.Style(style.StyleKeyFilePickerBox).Width(f.popupWidth).Render(strings.Join(parts, "\n"))
 	box = mgr.injectBorderTitle(box, title, borderEdgeText{

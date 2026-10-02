@@ -31,8 +31,8 @@ type ExternalEditor interface {
 	SourceCommand(path string, line int) (*exec.Cmd, error)
 }
 
-// editorFinishedMsg is dispatched after the external editor spawned via Alt+E
-// exits. The target fields (fileName, fileLevel, line, changeType) are
+// editorFinishedMsg is dispatched after the external annotation editor exits.
+// The target fields (fileName, fileLevel, line, changeType) are
 // captured when the editor is opened so subsequent cursor movement or file
 // navigation during editing does not misroute the saved annotation. The seed
 // is the content written into the temp file before the editor started; it is

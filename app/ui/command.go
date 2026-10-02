@@ -207,6 +207,8 @@ func (m Model) paletteCommand(action keymap.Action) string {
 		return "annotation next"
 	case keymap.ActionPrevAnnotation:
 		return "annotation prev"
+	case keymap.ActionDeleteAnnotation:
+		return "annotation delete"
 	case keymap.ActionFlushOutput:
 		return "w"
 	case keymap.ActionOpenFileInEditor:
@@ -253,12 +255,24 @@ func (m Model) commandEntries() []paletteCommand {
 		tuiCommand{commandEntry: commandEntry{name: "annotate hunk", description: "annotate the change hunk under the diff cursor", section: "Annotations"}, scope: commandScopeHunk, run: (*Model).annotateScope},
 		tuiCommand{commandEntry: commandEntry{name: "blame view", description: "inspect the current line's commit and associated GitHub PR", aliases: []string{"bv"}, section: "View"},
 			run: func(m *Model, _ commandScope) (tea.Model, tea.Cmd) { return m.openBlameView() }},
+		tuiCommand{commandEntry: commandEntry{name: "inspect hover", description: "show a symbol's type and documentation", section: "Inspection"},
+			run: func(m *Model, _ commandScope) (tea.Model, tea.Cmd) { return m.openInspection(InspectHover) }},
+		tuiCommand{commandEntry: commandEntry{name: "inspect definition", description: "preview a symbol's definition", section: "Inspection"},
+			run: func(m *Model, _ commandScope) (tea.Model, tea.Cmd) { return m.openInspection(InspectDefinition) }},
+		tuiCommand{commandEntry: commandEntry{name: "inspect references", description: "find and preview a symbol's references", section: "Inspection"},
+			run: func(m *Model, _ commandScope) (tea.Model, tea.Cmd) { return m.openInspection(InspectReferences) }},
 		shellCommand{commandEntry: commandEntry{name: "git", description: "run git through the shell", section: "Miscellaneous"}, prefix: "git"},
 		tuiCommand{commandEntry: commandEntry{name: "harness send", description: "compose a message to the connected harness", aliases: []string{"hs"}, section: "Harness"},
 			run: func(m *Model, _ commandScope) (tea.Model, tea.Cmd) { return m.openHarnessMessage() }},
 		tuiCommand{commandEntry: commandEntry{name: "quit!", description: "discard unsent feedback and quit", aliases: []string{"q!"}, section: "Miscellaneous"},
 			validate: func(m *Model) string { return m.quitError(true) },
 			run:      func(m *Model, _ commandScope) (tea.Model, tea.Cmd) { return m.quitReview(true) }},
+	}
+	for language, command := range m.inspection.installCommands {
+		entries = append(entries, shellCommand{
+			commandEntry: commandEntry{name: "lsp install " + language, description: "install the " + language + " language server", section: "Inspection"},
+			prefix:       command,
+		})
 	}
 	settings := m.commandSettings()
 	for _, setting := range settings {

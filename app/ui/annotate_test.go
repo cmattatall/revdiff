@@ -1939,6 +1939,7 @@ func TestModel_AnnotateCtrlEOpensEditor(t *testing.T) {
 		{NewNum: 2, Content: "added", ChangeType: diff.ChangeAdd},
 	}
 	m := testModel([]string{"a.go"}, map[string][]diff.DiffLine{"a.go": lines})
+	m.keymap.Bind("alt+e", keymap.ActionOpenEditor)
 	m.tree = testNewFileTree([]string{"a.go"})
 	m.layout.focus = paneDiff
 	m.file.name = "a.go"
@@ -1969,6 +1970,7 @@ func TestModel_AnnotateCtrlEOpensEditorFileLevel(t *testing.T) {
 	// annotation entry point — asserts Alt+E also dispatches the editor on
 	// startFileAnnotation() flow.
 	m := testModel([]string{"a.go"}, nil)
+	m.keymap.Bind("alt+e", keymap.ActionOpenEditor)
 	m.tree = testNewFileTree([]string{"a.go"})
 	m.layout.focus = paneDiff
 	m.file.name = "a.go"
@@ -2073,6 +2075,7 @@ func TestModel_EditorFinishedRetryAfterErrorReSeedsWithPreservedInput(t *testing
 		{NewNum: 1, Content: "added", ChangeType: diff.ChangeAdd},
 	}
 	m := testModel([]string{"a.go"}, map[string][]diff.DiffLine{"a.go": lines})
+	m.keymap.Bind("alt+e", keymap.ActionOpenEditor)
 	m.tree = testNewFileTree([]string{"a.go"})
 	m.layout.focus = paneDiff
 	m.file.name = "a.go"
@@ -2250,6 +2253,7 @@ func TestModel_ReAnnotateMultiLineCtrlESeedsFromStash(t *testing.T) {
 		{NewNum: 1, Content: "added", ChangeType: diff.ChangeAdd},
 	}
 	m := testModel([]string{"a.go"}, map[string][]diff.DiffLine{"a.go": lines})
+	m.keymap.Bind("alt+e", keymap.ActionOpenEditor)
 	m.tree = testNewFileTree([]string{"a.go"})
 	m.layout.focus = paneDiff
 	m.file.name = "a.go"
@@ -2305,6 +2309,7 @@ func TestModel_ReAnnotateSingleLinePreFillsAsBefore(t *testing.T) {
 		{NewNum: 1, Content: "added", ChangeType: diff.ChangeAdd},
 	}
 	m := testModel([]string{"a.go"}, map[string][]diff.DiffLine{"a.go": lines})
+	m.keymap.Bind("alt+e", keymap.ActionOpenEditor)
 	m.tree = testNewFileTree([]string{"a.go"})
 	m.layout.focus = paneDiff
 	m.file.name = "a.go"
@@ -2322,6 +2327,7 @@ func TestModel_ReAnnotateFileLevelMultiLineStashedNotFlattened(t *testing.T) {
 	// file-level path has the same sanitizer hazard as line-level; verify it
 	// also stashes multi-line content instead of flattening via SetValue.
 	m := testModel([]string{"a.go"}, nil)
+	m.keymap.Bind("alt+e", keymap.ActionOpenEditor)
 	m.tree = testNewFileTree([]string{"a.go"})
 	m.file.name = "a.go"
 	m.file.lines = []diff.DiffLine{{NewNum: 1, Content: "x", ChangeType: diff.ChangeContext}}
@@ -2499,6 +2505,7 @@ func TestModel_AnnotationPlaceholderMentionsEditor(t *testing.T) {
 		{NewNum: 1, Content: "x", ChangeType: diff.ChangeAdd},
 	}
 	m := testModel([]string{"a.go"}, map[string][]diff.DiffLine{"a.go": lines})
+	m.keymap.Bind("alt+e", keymap.ActionOpenEditor)
 	m.tree = testNewFileTree([]string{"a.go"})
 	m.layout.focus = paneDiff
 	m.file.name = "a.go"
@@ -2509,6 +2516,7 @@ func TestModel_AnnotationPlaceholderMentionsEditor(t *testing.T) {
 	assert.Contains(t, m.annot.input.Placeholder, "Alt+E", "line-level placeholder must mention Alt+E")
 
 	m2 := testModel([]string{"a.go"}, nil)
+	m2.keymap.Bind("alt+e", keymap.ActionOpenEditor)
 	m2.tree = testNewFileTree([]string{"a.go"})
 	m2.layout.focus = paneDiff
 	m2.file.name = "a.go"
@@ -2551,13 +2559,13 @@ func TestModel_AnnotationStandardTextEditing(t *testing.T) {
 	}
 }
 
-func TestModel_DefaultAltEAndCustomCtrlEOpenEditor(t *testing.T) {
+func TestModel_CustomEditorBindings(t *testing.T) {
 	for _, tt := range []struct {
 		name   string
 		custom bool
 		msg    tea.KeyMsg
 	}{
-		{"default alt+e", false, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}, Alt: true}},
+		{"custom alt+e", false, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}, Alt: true}},
 		{"custom ctrl+e", true, tea.KeyMsg{Type: tea.KeyCtrlE}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -2566,6 +2574,8 @@ func TestModel_DefaultAltEAndCustomCtrlEOpenEditor(t *testing.T) {
 			m.layout.focus, m.file.name, m.file.lines, m.nav.diffCursor = paneDiff, "a.go", lines, 0
 			if tt.custom {
 				m.keymap.Bind("ctrl+e", keymap.ActionOpenEditor)
+			} else {
+				m.keymap.Bind("alt+e", keymap.ActionOpenEditor)
 			}
 			fake := mockEditor("edited", nil)
 			m.editor = fake
@@ -2647,8 +2657,6 @@ func TestModel_UnboundEditorKeyFallsThrough(t *testing.T) {
 	m.file.name = "a.go"
 	m.file.lines = lines
 	m.nav.diffCursor = 0
-
-	m.keymap.Unbind("alt+e")
 
 	fake := mockEditor("edited", nil)
 	m.editor = fake
