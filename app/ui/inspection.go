@@ -54,8 +54,16 @@ type InspectionSymbol struct {
 	Column int
 }
 
+type InspectionProgress struct {
+	Server  string
+	Message string
+	Since   time.Time
+}
+
 // CodeInspector owns language servers and filesystem access outside the UI.
 type CodeInspector interface {
+	Warm(string) error
+	Progress() []InspectionProgress
 	Symbols(context.Context, InspectionPosition, string) ([]InspectionSymbol, error)
 	Query(context.Context, InspectionOperation, InspectionPosition, string) (InspectionResult, error)
 	ReadSource(context.Context, string) (string, error)
@@ -85,7 +93,11 @@ type inspectionState struct {
 	history         []inspectionPage
 	seq             uint64
 	cancel          context.CancelFunc
+	loadingSince    time.Time
+	progress        string
 }
+
+type inspectionTickMsg time.Time
 
 type inspectionLoadedMsg struct {
 	seq  uint64
@@ -111,7 +123,7 @@ func (m Model) listLanguageServers() (tea.Model, tea.Cmd) {
 			}
 			rows = append(rows, fmt.Sprintf("%s — %s (%s)\n  :lsp install %s", server.Name, server.Command, status, server.Name))
 		}
-		rows = append(rows, "Servers start only when you inspect a symbol. PATH discovery does not check server health.")
+		rows = append(rows, "Servers warm up when their first working-tree file loads. PATH discovery does not check server health.")
 		return inspectionLoadedMsg{seq: seq, page: inspectionPage{kind: inspectionText,
 			spec: overlay.InspectionSpec{Title: "Language servers", Text: strings.Join(rows, "\n\n")}}}
 	}
@@ -145,6 +157,7 @@ func (m Model) openInspection(op InspectionOperation) (tea.Model, tea.Cmd) {
 	m.cancelInspection()
 	m.inspection.op, m.inspection.history = op, nil
 	title := "Inspect " + string(op) + " · choose symbol"
+	m.inspection.loadingSince = time.Now()
 	m.showInspection(inspectionPage{kind: inspectionText, spec: overlay.InspectionSpec{Title: title, Text: "Loading…"}})
 	ctx, cancel := context.WithCancel(context.Background())
 	m.inspection.cancel = cancel
@@ -171,8 +184,9 @@ func (m Model) openInspection(op InspectionOperation) (tea.Model, tea.Cmd) {
 func (m Model) listFileSymbols() (tea.Model, tea.Cmd) {
 	m.cancelInspection()
 	m.inspection.op, m.inspection.history = InspectSymbols, nil
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithCancel(context.Background())
 	m.inspection.cancel = cancel
+	m.inspection.loadingSince = time.Now()
 	seq, provider, path := m.inspection.seq, m.inspection.provider, m.file.name
 	title := "Symbols · " + path
 	m.showInspection(inspectionPage{kind: inspectionText, spec: overlay.InspectionSpec{Title: title, Text: "Loading…"}})
@@ -201,6 +215,7 @@ func (m *Model) cancelInspection() {
 		m.inspection.cancel()
 		m.inspection.cancel = nil
 	}
+	m.inspection.loadingSince = time.Time{}
 	m.inspection.seq++
 }
 
@@ -224,8 +239,9 @@ func (m Model) chooseInspection(index int) (tea.Model, tea.Cmd) {
 	}
 	position := page.targets[index]
 	m.cancelInspection()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithCancel(context.Background())
 	m.inspection.cancel = cancel
+	m.inspection.loadingSince = time.Now()
 	seq, provider, op := m.inspection.seq, m.inspection.provider, m.inspection.op
 	m.inspection.history = append(m.inspection.history, page)
 	title := fmt.Sprintf("%s · %s:%d", op, position.Path, position.Line)
@@ -265,12 +281,54 @@ func (m Model) handleInspectionLoaded(msg inspectionLoadedMsg) (tea.Model, tea.C
 		return m, nil
 	}
 	m.inspection.cancel = nil
+	m.inspection.loadingSince = time.Time{}
 	if msg.err != nil {
 		m.showInspection(inspectionPage{kind: inspectionText, spec: overlay.InspectionSpec{Title: "Code inspection", Text: msg.err.Error()}})
 	} else {
 		m.showInspection(msg.page)
 	}
 	return m, nil
+}
+
+func (m Model) warmInspection() tea.Cmd {
+	if m.inspection.provider == nil || m.file.staged || m.cfg.staged || m.file.name == "" {
+		return nil
+	}
+	provider, path := m.inspection.provider, m.file.name
+	return func() tea.Msg {
+		// Unsupported files and missing servers are only errors on explicit inspection.
+		_ = provider.Warm(path)
+		return nil
+	}
+}
+
+func (m Model) inspectionTick() tea.Cmd {
+	if m.inspection.provider == nil {
+		return nil
+	}
+	return tea.Tick(time.Second, func(now time.Time) tea.Msg { return inspectionTickMsg(now) })
+}
+
+func (m Model) handleInspectionTick(now time.Time) (tea.Model, tea.Cmd) {
+	if m.inspection.provider == nil {
+		return m, nil
+	}
+	var progress []string
+	for _, status := range m.inspection.provider.Progress() {
+		text := strings.Join(strings.Fields(diff.SanitizeCommitText(status.Server+": "+status.Message)), " ")
+		progress = append(progress, fmt.Sprintf("%s · %s", text, max(0, now.Sub(status.Since)).Truncate(time.Second)))
+	}
+	m.inspection.progress = strings.Join(progress, " | ")
+	if !m.inspection.loadingSince.IsZero() && m.overlay.Kind() == overlay.KindInspection {
+		page := m.inspection.page
+		page.spec.Text = fmt.Sprintf("Loading… %s", max(0, now.Sub(m.inspection.loadingSince)).Truncate(time.Second))
+		if m.inspection.progress != "" {
+			page.spec.Text += "\n\n" + m.inspection.progress
+		}
+		page.spec.Text += "\n\nEsc returns to the review. Background indexing continues."
+		m.showInspection(page)
+	}
+	return m, m.inspectionTick()
 }
 
 // inspectionCode sanitizes server/file content before adding our own ANSI colors.

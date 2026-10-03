@@ -264,6 +264,150 @@ func TestServerDiscoveryAndInstallCommands(t *testing.T) {
 	require.Empty(t, c.sessions, "discovery must not start a server")
 }
 
+func TestWarmInitializationSurvivesCancelledWaiter(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "main.go"), []byte("😀Parent\n Child"), 0o600))
+	marker, release := filepath.Join(root, "started"), filepath.Join(root, "release")
+	t.Setenv("LSP_READY_FILE", marker)
+	t.Setenv("LSP_RELEASE_FILE", release)
+	useFakeServer(t, "slow-init")
+	c := New(root, Server{Name: "go", Command: "fake", LanguageIDs: map[string]string{".go": "go"}})
+	defer c.Close()
+	warmed := make(chan error, 1)
+	go func() { warmed <- c.Warm("main.go") }()
+	require.Eventually(t, func() bool { _, err := os.Stat(marker); return err == nil }, 3*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool {
+		progress := c.Progress()
+		return len(progress) == 1 && progress[0].Message == "Loading workspace"
+	}, time.Second, 10*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	_, err := c.Query(ctx, DocumentSymbols, Position{Path: "main.go"}, "")
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.NoError(t, c.Warm("main.go"), "navigation must not queue behind startup")
+	require.NoError(t, os.WriteFile(release, nil, 0o600))
+	require.NoError(t, <-warmed)
+	result, err := c.Query(context.Background(), DocumentSymbols, Position{Path: "main.go"}, "")
+	require.NoError(t, err)
+	require.Equal(t, "Parent.Child", result.Symbols[1].Name)
+	require.Empty(t, c.Progress())
+}
+
+func TestCancelledQueryPreservesWarmServer(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "main.go"), []byte("😀Parent\n Child"), 0o600))
+	useFakeServer(t, "indexing")
+	c := New(root, Server{Name: "go", Command: "fake", LanguageIDs: map[string]string{".go": "go"}})
+	defer c.Close()
+	require.NoError(t, c.Warm("main.go"))
+	require.Eventually(t, func() bool {
+		progress := c.Progress()
+		return len(progress) == 1 && progress[0].Message == "Indexing: packages (37%)"
+	}, 3*time.Second, 10*time.Millisecond)
+	s, err := c.session(0, c.root)
+	require.NoError(t, err)
+	conn := s.conn
+	cancelledCtx, stop := context.WithCancel(context.Background())
+	stop()
+	require.ErrorIs(t, conn.notify(cancelledCtx, "textDocument/didChange", nil), context.Canceled)
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	_, err = c.Query(ctx, Hover, Position{Path: "main.go", Line: 1, Column: 4}, "😀Parent")
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	result, err := c.Query(context.Background(), DocumentSymbols, Position{Path: "main.go"}, "")
+	require.NoError(t, err)
+	require.Len(t, result.Symbols, 2)
+	require.Same(t, conn, s.conn, "cancellation must not rebuild the index")
+	require.Empty(t, c.Progress(), "completed background progress must disappear")
+	require.NoError(t, c.Close())
+	select {
+	case <-conn.done:
+	default:
+		t.Fatal("Close left the warm server running")
+	}
+}
+
+func TestCloseCancelsWarmInitialization(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "main.go"), []byte("package main"), 0o600))
+	marker := filepath.Join(root, "started")
+	t.Setenv("LSP_READY_FILE", marker)
+	t.Setenv("LSP_RELEASE_FILE", filepath.Join(root, "never"))
+	useFakeServer(t, "slow-init")
+	c := New(root, Server{Name: "go", Command: "fake", LanguageIDs: map[string]string{".go": "go"}})
+	defer c.Close()
+	warmed := make(chan error, 1)
+	go func() { warmed <- c.Warm("main.go") }()
+	require.Eventually(t, func() bool { _, err := os.Stat(marker); return err == nil }, 3*time.Second, 10*time.Millisecond)
+	closed := make(chan struct{})
+	go func() { _ = c.Close(); close(closed) }()
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		t.Fatal("Close blocked on background initialization")
+	}
+	require.Error(t, <-warmed)
+	require.Empty(t, c.Progress())
+}
+
+func TestWarmIsBoundedAcrossProjectsAndFailures(t *testing.T) {
+	for _, command := range []string{"fake", "missing-server"} {
+		t.Run(command, func(t *testing.T) {
+			root := t.TempDir()
+			useFakeServer(t, "normal")
+			fakeCommand := commandContext
+			starts := 0
+			commandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+				starts++
+				if name == "missing-server" {
+					return exec.CommandContext(ctx, "revdiff-test-missing-language-server")
+				}
+				return fakeCommand(ctx, name, args...)
+			}
+			c := New(root, Server{Name: "go", Command: command, LanguageIDs: map[string]string{".go": "go"}, RootMarkers: []string{"go.mod"}})
+			defer c.Close()
+			for _, project := range []string{"one", "two"} {
+				dir := filepath.Join(root, project)
+				require.NoError(t, os.Mkdir(dir, 0o700))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), nil, 0o600))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "main.go"), []byte("😀Parent\n Child"), 0o600))
+				_ = c.Warm(project + "/main.go")
+			}
+			require.NoError(t, c.Warm("one/main.go"))
+			require.Equal(t, 1, starts)
+			require.Len(t, c.sessions, 1)
+			_, err := c.Query(context.Background(), DocumentSymbols, Position{Path: "two/main.go"}, "")
+			if command == "fake" {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
+			require.Equal(t, 2, starts, "explicit inspection can start another root or retry failure")
+		})
+	}
+}
+
+func TestDeletedWarmDocumentDoesNotBlockInspection(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"a.go", "b.go"} {
+		require.NoError(t, os.WriteFile(filepath.Join(root, name), []byte("😀Parent\n Child"), 0o600))
+	}
+	useFakeServer(t, "normal")
+	c := New(root, Server{Name: "go", Command: "fake", LanguageIDs: map[string]string{".go": "go"}})
+	defer c.Close()
+	require.NoError(t, c.Warm("a.go"))
+	s, err := c.session(0, c.root)
+	require.NoError(t, err)
+	conn := s.conn
+	require.NoError(t, os.Remove(filepath.Join(root, "a.go")))
+	result, err := c.Query(context.Background(), DocumentSymbols, Position{Path: "b.go"}, "")
+	require.NoError(t, err)
+	require.Len(t, result.Symbols, 2)
+	require.Same(t, conn, s.conn)
+	require.Len(t, s.docs, 1)
+	require.Contains(t, s.docs, pathURI(filepath.Join(c.root, "b.go")))
+}
+
 func useFakeServer(t *testing.T, mode string) {
 	t.Helper()
 	old := commandContext
@@ -280,6 +424,7 @@ func TestLSPHelperProcess(t *testing.T) {
 		return
 	}
 	r := bufio.NewReader(os.Stdin)
+	var canceled bool
 	for {
 		msg, err := readTestMessage(r)
 		if err != nil {
@@ -293,6 +438,17 @@ func TestLSPHelperProcess(t *testing.T) {
 			if msg["params"].(map[string]any)["rootUri"] != pathURI(cwd) {
 				os.Exit(25)
 			}
+			if os.Getenv("LSP_HELPER_MODE") == "slow-init" {
+				// #nosec G703 -- The parent test supplies paths in its temporary directory.
+				_ = os.WriteFile(os.Getenv("LSP_READY_FILE"), nil, 0o600)
+				for {
+					// #nosec G703 -- The parent test owns this release marker.
+					if _, err := os.Stat(os.Getenv("LSP_RELEASE_FILE")); err == nil {
+						break
+					}
+					time.Sleep(time.Millisecond)
+				}
+			}
 			writeTestMessage(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"capabilities": map[string]any{"positionEncoding": "utf-16"}}})
 		case "textDocument/didOpen":
 			params := msg["params"].(map[string]any)
@@ -300,7 +456,27 @@ func TestLSPHelperProcess(t *testing.T) {
 			if doc["languageId"] != os.Getenv("LSP_EXPECT_LANGUAGE") {
 				os.Exit(24)
 			}
+			if os.Getenv("LSP_HELPER_MODE") == "indexing" {
+				writeTestMessage(map[string]any{"jsonrpc": "2.0", "id": "progress", "method": "window/workDoneProgress/create", "params": map[string]any{"token": "index"}})
+			}
+		case "":
+			if id == "progress" {
+				if _, ok := msg["result"]; !ok {
+					os.Exit(27)
+				}
+				writeTestMessage(map[string]any{"jsonrpc": "2.0", "method": "$/progress", "params": map[string]any{"token": "index", "value": map[string]any{"kind": "begin", "title": "Indexing", "message": "packages", "percentage": 37}}})
+			}
+		case "$/cancelRequest":
+			canceled = true
+			cancelID := msg["params"].(map[string]any)["id"]
+			writeTestMessage(map[string]any{"jsonrpc": "2.0", "id": cancelID, "result": nil})
 		case "textDocument/documentSymbol":
+			if os.Getenv("LSP_HELPER_MODE") == "indexing" {
+				if !canceled {
+					os.Exit(28)
+				}
+				writeTestMessage(map[string]any{"jsonrpc": "2.0", "method": "$/progress", "params": map[string]any{"token": "index", "value": map[string]any{"kind": "end"}}})
+			}
 			params := msg["params"].(map[string]any)
 			if _, ok := params["position"]; ok {
 				os.Exit(26)
@@ -310,7 +486,7 @@ func TestLSPHelperProcess(t *testing.T) {
 				"children": []any{map[string]any{"name": "Child", "range": testRange(1, 0), "selectionRange": testRange(1, 1)}},
 			}}})
 		case "textDocument/hover", "textDocument/definition":
-			if os.Getenv("LSP_HELPER_MODE") == "hang" {
+			if os.Getenv("LSP_HELPER_MODE") == "hang" || os.Getenv("LSP_HELPER_MODE") == "indexing" {
 				if marker := os.Getenv("LSP_READY_FILE"); marker != "" {
 					_ = os.WriteFile(marker, nil, 0o600)
 				}

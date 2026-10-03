@@ -823,7 +823,7 @@ Bubble Tea v2 automatically negotiates enhanced keyboard input with supported te
 
 Hover code blocks and source previews use the active syntax-highlighting theme. Hover hides code fences and preserves the surrounding documentation. Unknown languages remain readable as plain text.
 
-Servers start on demand and must be on PATH. `:lsp list` shows supported languages, executables, PATH availability, and install commands without starting servers. Use `:lsp install <language>` to run the corresponding installer in the shell-command view:
+Servers must be on PATH. Each server warms up in the background when its first supported working-tree file loads. Additional project roots and failed starts are retried only on explicit inspection. `:lsp list` shows supported languages, executables, PATH availability, and install commands without starting servers. Use `:lsp install <language>` to run the corresponding installer in the shell-command view:
 
 | Language | Server | Install command |
 |----------|--------|-----------------|
@@ -832,7 +832,7 @@ Servers start on demand and must be on PATH. `:lsp list` shows supported languag
 | Python | `pyright-langserver --stdio` | `:lsp install python` (requires npm) |
 | Rust | `rust-analyzer` | `:lsp install rust` (requires rustup) |
 
-Inspection never installs tools automatically or applies server-requested edits. Installation is an explicit shell command that changes your toolchain. Add its binary directory to PATH before starting revdiff (for Go, commonly `$HOME/go/bin`). TypeScript projects need a compatible `typescript` installation. Inspection uses current files in working-tree, all-files, and standalone-file reviews. Staged, historical, stdin, compare, and removed lines are excluded. A changed source line reports a stale-view error rather than inspecting the wrong position. Esc cancels a pending query; requests time out after 30 seconds. Language-server indexing can make the first query slower.
+Inspection never installs tools automatically or applies server-requested edits. Installation is an explicit shell command that changes your toolchain. Add its binary directory to PATH before starting revdiff (for Go, commonly `$HOME/go/bin`). TypeScript projects need a compatible `typescript` installation. Inspection uses current files in working-tree, all-files, and standalone-file reviews. Staged, historical, stdin, compare, and removed lines are excluded. A changed source line reports a stale-view error rather than inspecting the wrong position. The footer and loading popup show server-reported indexing progress, with elapsed time when no percentage is available. Esc cancels a pending query without restarting a healthy server or discarding its index. Startup and queries allow up to ten minutes for large workspaces. Exiting revdiff stops its language servers.
 
 Single-line annotation, search, command, file-picker, and theme-picker inputs use revdiff's built-in Bubbles text-input bindings, not your shell's keymap: arrows and `Ctrl+B`/`Ctrl+F` move by character, `Ctrl+A`/`Ctrl+E` move to the start/end, `Backspace`/`Ctrl+H` delete backward, `Ctrl+W` (or `Alt+Backspace`) deletes the previous word, and `Ctrl+U`/`Ctrl+K` delete from the cursor to the start/end. Existing `Enter`, `Esc`, search-history, and list-navigation behavior is unchanged. The terminal sends key sequences; revdiff cannot inherit zsh/readline bindings or Command-key shortcuts. Configure Option/Alt to send Meta for Alt bindings.
 

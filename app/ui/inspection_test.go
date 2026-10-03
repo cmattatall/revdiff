@@ -18,10 +18,21 @@ import (
 )
 
 type inspectionStub struct {
-	symbols func(context.Context, InspectionPosition, string) ([]InspectionSymbol, error)
-	query   func(context.Context, InspectionOperation, InspectionPosition, string) (InspectionResult, error)
-	read    func(context.Context, string) (string, error)
+	symbols  func(context.Context, InspectionPosition, string) ([]InspectionSymbol, error)
+	query    func(context.Context, InspectionOperation, InspectionPosition, string) (InspectionResult, error)
+	read     func(context.Context, string) (string, error)
+	warm     func(string) error
+	progress []InspectionProgress
 }
+
+func (s inspectionStub) Warm(path string) error {
+	if s.warm != nil {
+		return s.warm(path)
+	}
+	return nil
+}
+
+func (s inspectionStub) Progress() []InspectionProgress { return s.progress }
 
 func (s inspectionStub) Symbols(ctx context.Context, pos InspectionPosition, line string) ([]InspectionSymbol, error) {
 	if s.symbols != nil {
@@ -321,4 +332,98 @@ func TestInspectionSyntaxHighlighting(t *testing.T) {
 	require.Equal(t, "var x = 1", m.inspectionMarkdown("a.go", "```go\nvar x = 1\n```"))
 	require.Equal(t, "a\n\n    b\n", m.inspectionCode("unknown-language", "a\n\n\tb\n"))
 	require.Equal(t, 4, len(strings.Split(m.inspectionCode("a.go", "a\n\n\tb\n"), "\n")))
+}
+
+func TestInspectionWarmsOnlyAcceptedWorkingFiles(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		msg  fileLoadedMsg
+		want bool
+	}{
+		{"working file", fileLoadedMsg{file: "a.go"}, true},
+		{"staged file", fileLoadedMsg{file: "a.go", staged: true}, false},
+		{"stale load", fileLoadedMsg{file: "a.go", seq: 12}, false},
+		{"failed load", fileLoadedMsg{file: "a.go", err: errors.New("deleted")}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := testModel([]string{"a.go"}, nil)
+			var warmed []string
+			m.inspection.provider = inspectionStub{warm: func(path string) error {
+				warmed = append(warmed, path)
+				return nil
+			}}
+			_, cmd := m.handleFileLoaded(tc.msg)
+			require.Empty(t, warmed, "Update must not start or wait for a server")
+			queue := []tea.Cmd{cmd}
+			for len(queue) > 0 {
+				cmd, queue = queue[0], queue[1:]
+				if cmd == nil {
+					continue
+				}
+				if batch, ok := cmd().(tea.BatchMsg); ok {
+					queue = append(queue, batch...)
+				}
+			}
+			if tc.want {
+				require.Equal(t, []string{"a.go"}, warmed)
+			} else {
+				require.Empty(t, warmed)
+			}
+		})
+	}
+}
+
+func TestInspectionLoadingProgressAndCancellation(t *testing.T) {
+	m := testModel([]string{"active.go"}, nil)
+	m.filesLoaded, m.file.name = true, "active.go"
+	m.layout.width = 100
+	started := time.Now().Add(-45 * time.Second)
+	var queryErr error
+	m.inspection.provider = inspectionStub{
+		progress: []InspectionProgress{{Server: "typescript", Message: "Indexing\nworkspace (37%)", Since: started}},
+		query: func(ctx context.Context, _ InspectionOperation, _ InspectionPosition, _ string) (InspectionResult, error) {
+			queryErr = ctx.Err()
+			_, hasDeadline := ctx.Deadline()
+			require.False(t, hasDeadline, "the UI must not time out before the LSP client's startup budget")
+			return InspectionResult{}, nil
+		},
+	}
+	model, query := m.listFileSymbols()
+	m = model.(Model)
+	m.inspection.loadingSince = started
+	model, tick := m.Update(inspectionTickMsg(started.Add(45 * time.Second)))
+	m = model.(Model)
+	require.NotNil(t, tick)
+	require.Contains(t, m.inspection.page.spec.Text, "Loading… 45s")
+	require.Contains(t, m.inspection.page.spec.Text, "typescript: Indexing workspace (37%) · 45s")
+	require.Contains(t, m.statusBarText(), "LSP · typescript: Indexing workspace (37%)")
+	require.Contains(t, m.statusBarText(), "? help", "progress must preserve the right-hand footer")
+	model, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
+	m = model.(Model)
+	model, _ = m.Update(query())
+	m = model.(Model)
+	require.ErrorIs(t, queryErr, context.Canceled)
+	require.False(t, m.overlay.Active(), "late results must not reopen the popup")
+	require.True(t, m.inspection.loadingSince.IsZero())
+	m.inspection.provider = inspectionStub{}
+	model, _ = m.Update(inspectionTickMsg(time.Now()))
+	m = model.(Model)
+	require.Empty(t, m.inspection.progress)
+}
+
+func TestInspectionLoadingWithoutServerProgress(t *testing.T) {
+	m := testModel([]string{"active.go"}, nil)
+	m.file.name = "active.go"
+	m.inspection.provider = inspectionStub{}
+	model, _ := m.listFileSymbols()
+	m = model.(Model)
+	defer m.inspection.cancel()
+	model, _ = m.Update(inspectionTickMsg(m.inspection.loadingSince.Add(31 * time.Second)))
+	m = model.(Model)
+	require.Contains(t, m.inspection.page.spec.Text, "Loading… 31s")
+	require.NotContains(t, m.inspection.page.spec.Text, "%", "unknown progress must not invent a percentage")
+	model, _ = m.Update(inspectionLoadedMsg{seq: m.inspection.seq, page: inspectionPage{kind: inspectionText, spec: overlay.InspectionSpec{Text: "Loaded"}}})
+	m = model.(Model)
+	model, _ = m.Update(inspectionTickMsg(time.Now()))
+	require.Equal(t, "Loaded", model.(Model).inspection.page.spec.Text)
 }

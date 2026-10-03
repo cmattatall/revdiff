@@ -636,7 +636,7 @@ func (m Model) handleFileLoaded(msg fileLoadedMsg) (tea.Model, tea.Cmd) {
 		m.file.blameAuthorLen = 0
 		blameCmd = m.loadBlame(msg.file)
 	}
-	preparedCmd := tea.Batch(highlightCmd, blameCmd)
+	preparedCmd := tea.Batch(highlightCmd, blameCmd, m.warmInspection())
 
 	// handle pending annotation list jump
 	if m.pendingAnnotJump != nil && m.pendingAnnotJump.File == msg.file {

@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 type rpcMessage struct {
@@ -42,10 +43,11 @@ type connection struct {
 	done      chan struct{}
 	err       error
 	closeOnce sync.Once
+	progress  *progressState
 }
 
-func newConnection(command string, cmd *exec.Cmd, in io.WriteCloser, out io.Reader, cancel context.CancelFunc) *connection {
-	c := &connection{cmd: cmd, in: in, cancel: cancel, pending: make(map[int64]chan response), done: make(chan struct{})}
+func newConnection(command string, cmd *exec.Cmd, in io.WriteCloser, out io.Reader, cancel context.CancelFunc, progress *progressState) *connection {
+	c := &connection{cmd: cmd, in: in, cancel: cancel, pending: make(map[int64]chan response), done: make(chan struct{}), progress: progress}
 	go c.readLoop(out)
 	go func() {
 		err := cmd.Wait()
@@ -58,6 +60,9 @@ func newConnection(command string, cmd *exec.Cmd, in io.WriteCloser, out io.Read
 }
 
 func (c *connection) request(ctx context.Context, method string, params any) (json.RawMessage, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("lsp: %s: %w", method, err)
+	}
 	c.mu.Lock()
 	select {
 	case <-c.done:
@@ -71,17 +76,23 @@ func (c *connection) request(ctx context.Context, method string, params any) (js
 	ch := make(chan response, 1)
 	c.pending[id] = ch
 	c.mu.Unlock()
+	// Only a blocked write requires killing the transport. Cancel reads via LSP
+	// so dismissing a popup does not throw away the server's index.
 	stop := context.AfterFunc(ctx, func() { _ = c.close() })
 	defer stop()
 	if err := c.send(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params}); err != nil {
 		c.remove(id)
 		return nil, err
 	}
+	stop()
 	select {
 	case r := <-ch:
 		return r.result, r.err
 	case <-ctx.Done():
 		c.remove(id)
+		cancelCtx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+		defer cancel()
+		_ = c.notify(cancelCtx, "$/cancelRequest", map[string]any{"id": id})
 		return nil, ctx.Err()
 	case <-c.done:
 		c.mu.Lock()
@@ -92,6 +103,9 @@ func (c *connection) request(ctx context.Context, method string, params any) (js
 }
 
 func (c *connection) notify(ctx context.Context, method string, params any) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("lsp: %s: %w", method, err)
+	}
 	stop := context.AfterFunc(ctx, func() { _ = c.close() })
 	defer stop()
 	return c.send(map[string]any{"jsonrpc": "2.0", "method": method, "params": params})
@@ -117,6 +131,7 @@ func (c *connection) send(v any) error {
 		_, err = c.in.Write(b)
 	}
 	if err != nil {
+		_ = c.close()
 		return fmt.Errorf("lsp: write message: %w", err)
 	}
 	return nil
@@ -156,10 +171,13 @@ func (c *connection) readLoop(r io.Reader) {
 			return
 		}
 		if msg.Method != "" && len(msg.ID) != 0 {
-			c.rejectRequest(msg)
+			c.handleRequest(msg)
 			continue
 		}
 		if len(msg.ID) == 0 {
+			if msg.Method == "$/progress" {
+				c.progress.update(msg.Params)
+			}
 			continue
 		}
 		var id int64
@@ -180,15 +198,18 @@ func (c *connection) readLoop(r io.Reader) {
 	}
 }
 
-func (c *connection) rejectRequest(msg rpcMessage) {
+func (c *connection) handleRequest(msg rpcMessage) {
 	var reply map[string]any
 	var id any
 	_ = json.Unmarshal(msg.ID, &id)
-	if msg.Method == "workspace/applyEdit" {
+	switch msg.Method {
+	case "window/workDoneProgress/create":
+		reply = map[string]any{"jsonrpc": "2.0", "id": id, "result": nil}
+	case "workspace/applyEdit":
 		reply = map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{
 			"applied": false, "failureReason": "revdiff is read-only",
 		}}
-	} else {
+	default:
 		reply = map[string]any{"jsonrpc": "2.0", "id": id, "error": map[string]any{
 			"code": -32601, "message": "method not supported by read-only client",
 		}}
@@ -209,6 +230,7 @@ func (c *connection) fail(err error) {
 		c.pending = make(map[int64]chan response)
 		close(c.done)
 		c.mu.Unlock()
+		c.progress.reset()
 		for _, ch := range pending {
 			ch <- response{err: err}
 		}

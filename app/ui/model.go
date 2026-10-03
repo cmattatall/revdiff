@@ -995,7 +995,7 @@ func (m Model) Store() *annotation.Store {
 // (e.g. --stdin, standalone file, working-tree review), so tea.Batch harmlessly
 // drops it in those cases.
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.loadFiles(), m.loadCommits(), m.liveTick(), m.harnessDiscoveryTick())
+	return tea.Batch(m.loadFiles(), m.loadCommits(), m.liveTick(), m.harnessDiscoveryTick(), m.inspectionTick())
 }
 
 // Update handles messages and updates the model state.
@@ -1079,6 +1079,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleBlameDetails(msg)
 	case inspectionLoadedMsg:
 		return m.handleInspectionLoaded(msg)
+	case inspectionTickMsg:
+		return m.handleInspectionTick(time.Time(msg))
 	case editorFinishedMsg:
 		return m.handleEditorFinished(msg)
 	case sourceEditorFinishedMsg:

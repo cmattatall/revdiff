@@ -15,6 +15,15 @@ import (
 // lspInspector adapts language-server data to the UI's read-only contract.
 type lspInspector struct{ *lsp.Client }
 
+func (c *lspInspector) Progress() []ui.InspectionProgress {
+	statuses := c.Client.Progress()
+	progress := make([]ui.InspectionProgress, 0, len(statuses))
+	for _, status := range statuses {
+		progress = append(progress, ui.InspectionProgress(status))
+	}
+	return progress
+}
+
 func (c *lspInspector) Symbols(ctx context.Context, pos ui.InspectionPosition, line string) ([]ui.InspectionSymbol, error) {
 	symbols, err := c.Client.Symbols(ctx, lsp.Position(pos), line)
 	if err != nil {

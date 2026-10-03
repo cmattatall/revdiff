@@ -58,7 +58,10 @@ type ServerStatus struct {
 	Path    string
 }
 
-const maxSourceSize = 16 << 20
+const (
+	maxSourceSize = 16 << 20
+	queryTimeout  = 10 * time.Minute
+)
 
 var commandContext = exec.CommandContext
 
@@ -70,6 +73,7 @@ type Client struct {
 	ctx      context.Context
 	cancel   context.CancelFunc
 	sessions map[sessionKey]*session
+	warmed   map[int]bool
 }
 
 type sessionKey struct {
@@ -82,10 +86,11 @@ type document struct {
 	text    string
 }
 type session struct {
-	gate chan struct{}
-	root string
-	conn *connection
-	docs map[string]document
+	gate     chan struct{}
+	root     string
+	conn     *connection
+	docs     map[string]document
+	progress progressState
 }
 
 func New(root string, servers ...Server) *Client {
@@ -97,14 +102,14 @@ func New(root string, servers ...Server) *Client {
 		abs = resolved
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Client{root: abs, servers: append([]Server(nil), servers...), ctx: ctx, cancel: cancel, sessions: make(map[sessionKey]*session)}
+	return &Client{root: abs, servers: append([]Server(nil), servers...), ctx: ctx, cancel: cancel, sessions: make(map[sessionKey]*session), warmed: make(map[int]bool)}
 }
 
 func (c *Client) Query(ctx context.Context, operation Operation, position Position, expectedLine string) (Result, error) {
 	if ctx == nil {
 		return Result{}, errors.New("lsp: nil context")
 	}
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithTimeout(ctx, queryTimeout)
 	stop := context.AfterFunc(c.ctx, cancel)
 	defer stop()
 	defer cancel()
@@ -128,6 +133,8 @@ func (c *Client) Query(ctx context.Context, operation Operation, position Positi
 	case <-ctx.Done():
 		return Result{}, ctx.Err()
 	}
+	s.progress.setActivity("Loading " + string(operation))
+	defer s.progress.setActivity("")
 	source, err := c.readFile(path)
 	if err != nil {
 		return Result{}, err
@@ -151,33 +158,15 @@ func (c *Client) Query(ctx context.Context, operation Operation, position Positi
 	if err != nil {
 		return Result{}, err
 	}
-	if err = c.syncDocuments(ctx, s, conn); err != nil {
-		c.dropConnection(s, conn)
-		return Result{}, err
+	if syncErr := c.syncDocuments(ctx, s, conn); syncErr != nil {
+		return Result{}, syncErr
 	}
-	uri := pathURI(path)
-	doc := s.docs[uri]
-	version := doc.version + 1
-	if version == 1 {
-		err = conn.notify(ctx, "textDocument/didOpen", map[string]any{"textDocument": map[string]any{
-			"uri": uri, "languageId": languageID, "version": version, "text": source,
-		}})
-	} else if doc.text != source {
-		err = conn.notify(ctx, "textDocument/didChange", map[string]any{
-			"textDocument":   map[string]any{"uri": uri, "version": version},
-			"contentChanges": []any{map[string]any{"text": source}},
-		})
-	}
-	if err != nil {
-		c.dropConnection(s, conn)
-		return Result{}, err
-	}
-	if version == 1 || doc.text != source {
-		s.docs[uri] = document{version: version, text: source}
+	if openErr := c.openDocument(ctx, s, conn, path, languageID, source); openErr != nil {
+		return Result{}, openErr
 	}
 
 	params := map[string]any{
-		"textDocument": map[string]any{"uri": uri},
+		"textDocument": map[string]any{"uri": pathURI(path)},
 	}
 	if operation != DocumentSymbols {
 		params["position"] = map[string]any{"line": position.Line - 1, "character": byteToUTF16(line, position.Column)}
@@ -188,13 +177,51 @@ func (c *Client) Query(ctx context.Context, operation Operation, position Positi
 	}
 	raw, err := conn.request(ctx, method, params)
 	if err != nil {
-		c.dropConnection(s, conn)
 		return Result{}, err
 	}
 	if operation == DocumentSymbols {
 		return c.decodeDocumentSymbols(raw, path, source)
 	}
 	return c.decodeResult(operation, raw)
+}
+
+// Warm starts one background session per server. Further roots and retries
+// require explicit inspection, so browsing cannot spawn a process per project.
+func (c *Client) Warm(path string) error {
+	path, index, language, err := c.queryPath(path)
+	if err != nil {
+		return err
+	}
+	c.mu.Lock()
+	warmed := c.warmed[index]
+	c.warmed[index] = true
+	c.mu.Unlock()
+	if warmed {
+		return nil
+	}
+	s, err := c.session(index, c.workspaceRoot(path, index))
+	if err != nil {
+		return err
+	}
+	select {
+	case s.gate <- struct{}{}:
+		defer func() { <-s.gate }()
+	default:
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(c.ctx, queryTimeout)
+	defer cancel()
+	s.progress.setActivity("Loading workspace")
+	defer s.progress.setActivity("")
+	source, err := c.readFile(path)
+	if err != nil {
+		return err
+	}
+	conn, err := c.connection(ctx, index, s)
+	if err != nil {
+		return err
+	}
+	return c.openDocument(ctx, s, conn, path, language, source)
 }
 
 // InstallCommands supplies explicitly requested installers. Query never installs tools.
@@ -290,7 +317,12 @@ func (c *Client) connection(ctx context.Context, index int, s *session) (*connec
 	}
 	c.mu.Unlock()
 	if s.conn != nil {
-		return s.conn, nil
+		select {
+		case <-s.conn.done:
+			c.dropConnection(s, s.conn)
+		default:
+			return s.conn, nil
+		}
 	}
 	server := c.servers[index]
 
@@ -314,7 +346,7 @@ func (c *Client) connection(ctx context.Context, index int, s *session) (*connec
 		}
 		return nil, fmt.Errorf("lsp: start %s: %w", server.Command, err)
 	}
-	conn := newConnection(server.Command, cmd, stdin, stdout, procCancel)
+	conn := newConnection(server.Command, cmd, stdin, stdout, procCancel, &s.progress)
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
@@ -329,6 +361,7 @@ func (c *Client) connection(ctx context.Context, index int, s *session) (*connec
 		"workspaceFolders": []any{map[string]any{"uri": pathURI(s.root), "name": filepath.Base(s.root)}},
 		"capabilities": map[string]any{
 			"general":   map[string]any{"positionEncodings": []string{"utf-16"}},
+			"window":    map[string]any{"workDoneProgress": true},
 			"workspace": map[string]any{"applyEdit": false, "workspaceFolders": true},
 			"textDocument": map[string]any{
 				"synchronization": map[string]any{"dynamicRegistration": false, "didSave": false},
@@ -426,6 +459,27 @@ func (c *Client) dropConnection(s *session, conn *connection) {
 	}
 }
 
+func (c *Client) openDocument(ctx context.Context, s *session, conn *connection, path, language, source string) error {
+	uri := pathURI(path)
+	doc := s.docs[uri]
+	version := doc.version + 1
+	var err error
+	if version == 1 {
+		err = conn.notify(ctx, "textDocument/didOpen", map[string]any{"textDocument": map[string]any{
+			"uri": uri, "languageId": language, "version": version, "text": source,
+		}})
+	} else if doc.text != source {
+		err = conn.notify(ctx, "textDocument/didChange", map[string]any{
+			"textDocument":   map[string]any{"uri": uri, "version": version},
+			"contentChanges": []any{map[string]any{"text": source}},
+		})
+	}
+	if err == nil && (version == 1 || doc.text != source) {
+		s.docs[uri] = document{version: version, text: source}
+	}
+	return err
+}
+
 func (c *Client) syncDocuments(ctx context.Context, s *session, conn *connection) error {
 	for uri, doc := range s.docs {
 		path, err := uriPath(uri)
@@ -434,13 +488,17 @@ func (c *Client) syncDocuments(ctx context.Context, s *session, conn *connection
 		}
 		text, err := c.readFile(path)
 		if err != nil {
-			return err
+			if closeErr := conn.notify(ctx, "textDocument/didClose", map[string]any{"textDocument": map[string]any{"uri": uri}}); closeErr != nil {
+				return closeErr
+			}
+			delete(s.docs, uri)
+			continue
 		}
 		if text == doc.text {
 			continue
 		}
 		doc.version++
-		if err = conn.notify(ctx, "textDocument/didChange", map[string]any{"textDocument": map[string]any{"uri": uri, "version": doc.version}, "contentChanges": []any{map[string]any{"text": text}}}); err != nil {
+		if err := conn.notify(ctx, "textDocument/didChange", map[string]any{"textDocument": map[string]any{"uri": uri, "version": doc.version}, "contentChanges": []any{map[string]any{"text": text}}}); err != nil {
 			return err
 		}
 		doc.text = text

@@ -337,6 +337,9 @@ func (m Model) statusBarContent() string {
 	if m.review.cfg != nil {
 		left = ansi.Truncate(left, available, "…")
 	}
+	if m.inspection.progress != "" {
+		left = ansi.Truncate("LSP · "+m.inspection.progress, available, "…")
+	}
 
 	return m.joinStatusSections(left, right, sep)
 }

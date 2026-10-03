@@ -436,7 +436,7 @@ side). The default wiring is `editor.Editor{}` injected through `ModelConfig.Edi
 
 ### app/lsp/ — read-only code inspection
 
-The shared `Client` owns stdio JSON-RPC, lazy per-server/workspace sessions, document synchronization,
+The shared `Client` owns stdio JSON-RPC, per-server/workspace sessions, document synchronization,
 UTF-8/UTF-16 position conversion, cancellation, shutdown, and bounded local source reads.
 `golang/`, `typescript/`, `python/`, and `rust/` each supply a `Server` descriptor with executable,
 arguments, file extensions, root markers, language IDs, and an explicit install command. No language is a
@@ -446,6 +446,13 @@ requests to apply edits are rejected.
 Root selection follows Helix's outermost-marker approach, bounded by the review root. For example,
 `go.work` can group nested Go modules, while sibling projects without a shared marker receive
 separate sessions. The selected root is used for both the process working directory and LSP initialization.
+
+After a working-tree file loads, `Client.Warm` initializes its server and sends `didOpen`
+in the background. It attempts this once per server, so browsing a monorepo cannot start
+a process for every project or repeatedly restart a broken server. Additional roots and
+retries require an explicit query. The server owns indexing, not a second client-side cache.
+`window/workDoneProgress/create` and `$/progress` supply indexing status. The UI polls
+in-memory progress once per second for the footer and loading popup, with elapsed-time fallback.
 
 `app/revdiff/inspection.go` adapts this to the UI's `CodeInspector` contract and gates inspection
 to current working files. `Client.Symbols` tokenizes the current source with the language's
@@ -461,8 +468,9 @@ fences supply language names, while source previews use filenames. The overlay p
 the generated ANSI during wrapping and scrolling. Plaintext hover responses stay literal.
 Generation-tagged asynchronous results cannot reopen canceled views. A page stack restores the
 inspection path without changing the review file, cursor, annotations, or scroll position.
-Esc cancels pending queries, which otherwise time out after 30 seconds. Cancellation terminates
-that server connection, and the next query starts a fresh one.
+Esc sends `$/cancelRequest` without discarding a healthy server's index. Startup and queries
+have a ten-minute backstop for large workspaces. Background startup belongs to the client
+lifetime, not a popup. Closing the client cancels outstanding work and stops its processes.
 
 `:lsp list` checks executable PATH availability without launching servers. Language-owned
 install commands are registered as built-in actions (`:lsp install go`, etc.) whose handlers
